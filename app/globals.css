@@ -34,8 +34,21 @@
   --status-danger: #f87171;
   --status-info: #60a5fa;
   --status-neutral: #9ca3af;
+}
 
-  --radius: 10px;
+/*
+  ONE radius scale for the whole product. Every `rounded-*` utility resolves
+  through these — never hand-tune a corner on a component. Tuned slightly
+  softer than the Tailwind defaults for a more premium feel.
+*/
+@theme {
+  --radius-xs: 0.3125rem;  /*  5px */
+  --radius-sm: 0.5rem;     /*  8px */
+  --radius-md: 0.6875rem;  /* 11px */
+  --radius-lg: 0.875rem;   /* 14px — buttons, inputs, list rows */
+  --radius-xl: 1.125rem;   /* 18px — cards, tables */
+  --radius-2xl: 1.375rem;  /* 22px — modals, floating nav, hero panels */
+  --radius-3xl: 1.75rem;   /* 28px */
 }
 
 @theme inline {
@@ -71,7 +84,28 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+  Typographic hierarchy. Headings get tight tracking + tight leading so they
+  read as deliberate, not default-bold. A `tracking-*` utility on the element
+  still wins where a component wants something specific.
+*/
+h1,
+h2,
+h3,
+h4,
+h5 {
+  line-height: 1.15;
+  letter-spacing: -0.021em;
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
 }
 
 ::selection {

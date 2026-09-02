@@ -17,8 +17,8 @@ export default async function SettingsPage() {
     <>
       <PageHeader title="Settings" description="Your account and profile." />
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div className="space-y-5 lg:col-span-2">
           <Card>
             <CardHeader title="Profile" />
             <CardBody>

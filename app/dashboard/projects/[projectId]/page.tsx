@@ -116,8 +116,8 @@ export default async function ProjectDetailPage({
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div className="space-y-5 lg:col-span-2">
           <Card>
             <CardHeader title="Transformer specification" />
             <CardBody>
@@ -189,7 +189,7 @@ export default async function ProjectDetailPage({
           />
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-5">
           <Card>
             <CardHeader title="Team" />
             <CardBody className="space-y-3">

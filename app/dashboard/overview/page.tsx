@@ -56,7 +56,7 @@ export default async function OverviewPage() {
         description="Your production picture at a glance."
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
           label="Projects in scope"
           value={proj.length}
@@ -94,7 +94,7 @@ export default async function OverviewPage() {
         )}
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-8 grid gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader
             title="Recent projects"

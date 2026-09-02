@@ -120,10 +120,12 @@ export default async function OverviewPage() {
                 <li key={p.id}>
                   <Link
                     href={`/dashboard/projects/${p.id}`}
-                    className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-white/[0.02]"
+                    className="nr-interactive group flex items-center justify-between gap-3 px-5 py-3 hover:bg-white/[0.03]"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-[13px] font-medium">{p.name}</p>
+                      <p className="nr-interactive truncate text-[13px] font-medium group-hover:translate-x-0.5">
+                        {p.name}
+                      </p>
                       <p className="truncate text-[12px] text-text-tertiary">
                         {p.client_name || "—"}
                       </p>

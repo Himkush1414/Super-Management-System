@@ -42,7 +42,7 @@ function NavList({ role, onNavigate }: { role: Role; onNavigate?: () => void }) 
               href={item.href}
               onClick={onNavigate}
               className={cn(
-                "flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] font-medium transition-colors",
+                "nr-interactive flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] font-medium hover:translate-x-0.5",
                 active
                   ? "bg-white/[0.07] text-text"
                   : "text-text-secondary hover:bg-white/[0.04] hover:text-text",
@@ -120,7 +120,7 @@ export function Sidebar({
                 <Logo />
                 <button
                   onClick={onClose}
-                  className="inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06]"
+                  className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06]"
                   aria-label="Close menu"
                 >
                   <X size={16} />

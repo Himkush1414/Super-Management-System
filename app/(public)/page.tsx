@@ -53,13 +53,13 @@ export default function HomePage() {
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
               href="/products"
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg hover:bg-accent-hover transition-colors"
+              className="inline-flex items-center gap-2 nr-interactive nr-press rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg hover:bg-accent-hover hover:shadow-[0_8px_24px_-6px_rgba(59,130,246,0.5)]"
             >
               Explore products <ArrowRight size={16} />
             </Link>
             <Link
               href="/contact"
-              className="inline-flex items-center gap-2 rounded-lg border border-border-strong px-5 py-2.5 text-sm font-medium text-text hover:bg-white/[0.05] transition-colors"
+              className="inline-flex items-center gap-2 nr-interactive nr-press rounded-lg border border-border-strong px-5 py-2.5 text-sm font-medium text-text hover:bg-white/[0.06] hover:border-white/25"
             >
               Request a quote
             </Link>
@@ -99,7 +99,7 @@ export default function HomePage() {
           {CAPABILITIES.map((c) => (
             <div
               key={c.title}
-              className="rounded-xl border border-border bg-panel/60 p-5 transition-colors hover:border-border-strong"
+              className="nr-interactive rounded-xl border border-border bg-panel/60 p-5 hover:border-border-strong hover:bg-panel/80"
             >
               <c.icon size={20} className="text-accent" strokeWidth={1.75} />
               <h3 className="mt-4 text-[15px] font-semibold">{c.title}</h3>
@@ -122,7 +122,7 @@ export default function HomePage() {
         </p>
         <Link
           href="/contact"
-          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg hover:bg-accent-hover transition-colors"
+          className="mt-6 inline-flex items-center gap-2 nr-interactive nr-press rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg hover:bg-accent-hover hover:shadow-[0_8px_24px_-6px_rgba(59,130,246,0.5)]"
         >
           Talk to engineering <ArrowRight size={16} />
         </Link>

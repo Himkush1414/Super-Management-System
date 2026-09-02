@@ -50,7 +50,7 @@ export function TR({
   return (
     <tr
       className={cn(
-        "border-b border-border last:border-0 transition-colors hover:bg-white/[0.02]",
+        "nr-interactive border-b border-border last:border-0 hover:bg-white/[0.025]",
         className,
       )}
     >

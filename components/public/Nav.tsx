@@ -49,7 +49,7 @@ export function Nav() {
                 key={l.href}
                 href={l.href}
                 className={cn(
-                  "rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors",
+                  "nr-interactive rounded-lg px-3 py-1.5 text-[13px] font-medium",
                   pathname === l.href
                     ? "text-text bg-white/[0.06]"
                     : "text-text-secondary hover:text-text hover:bg-white/[0.04]",
@@ -63,13 +63,13 @@ export function Nav() {
           <div className="hidden md:flex items-center gap-2">
             <Link
               href="/signin"
-              className="rounded-lg border border-border-strong px-3.5 py-1.5 text-[13px] font-medium text-text hover:bg-white/[0.05] transition-colors"
+              className="nr-interactive nr-press rounded-lg border border-border-strong px-3.5 py-1.5 text-[13px] font-medium text-text hover:bg-white/[0.06] hover:border-white/25"
             >
               Sign In
             </Link>
             <Link
               href="/signin?mode=login"
-              className="rounded-lg bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-fg hover:bg-accent-hover transition-colors"
+              className="nr-interactive nr-press rounded-lg bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-fg hover:bg-accent-hover hover:shadow-[0_6px_20px_-4px_rgba(59,130,246,0.5)]"
             >
               Login
             </Link>
@@ -77,7 +77,7 @@ export function Nav() {
 
           <button
             onClick={() => setOpen((v) => !v)}
-            className="md:hidden inline-flex size-9 items-center justify-center rounded-lg text-text hover:bg-white/[0.06]"
+            className="nr-interactive md:hidden inline-flex size-9 items-center justify-center rounded-lg text-text hover:bg-white/[0.06]"
             aria-label={open ? "Close menu" : "Open menu"}
           >
             {open ? <X size={18} /> : <Menu size={18} />}

@@ -75,7 +75,7 @@ export function Shell({
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-bg/80 px-4 backdrop-blur">
           <button
             onClick={() => setMobileOpen(true)}
-            className="inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] md:hidden"
+            className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] md:hidden"
             aria-label="Open menu"
           >
             <Menu size={16} />
@@ -86,7 +86,7 @@ export function Shell({
             <form action={signOutAction}>
               <button
                 type="submit"
-                className="inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] hover:text-text"
+                className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] hover:text-text"
                 aria-label="Sign out"
                 title="Sign out"
               >

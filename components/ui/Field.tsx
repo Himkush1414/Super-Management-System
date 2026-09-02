@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 const base =
   "w-full h-9 px-3 rounded-lg bg-bg-subtle border border-border-strong text-sm text-text placeholder:text-text-tertiary " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:border-accent/50 transition-colors " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:border-accent/50 nr-interactive " +
   "disabled:opacity-50";
 
 export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(

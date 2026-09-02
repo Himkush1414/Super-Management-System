@@ -150,6 +150,33 @@ p {
   animation: nr-fade-in 0.35s ease both;
 }
 
+/*
+  Micro-interactions. Fast (≤160ms), restrained — no bounce. All motion is
+  gated behind prefers-reduced-motion.
+*/
+.nr-interactive {
+  transition:
+    transform 0.14s ease,
+    box-shadow 0.14s ease,
+    border-color 0.14s ease,
+    background-color 0.14s ease,
+    color 0.14s ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .nr-lift:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  }
+  .nr-lift:active {
+    transform: translateY(0);
+  }
+  .nr-press:active {
+    transform: scale(0.97);
+  }
+}
+
 /* glassmorphic floating nav */
 .glass {
   background: color-mix(in srgb, var(--bg) 55%, transparent);

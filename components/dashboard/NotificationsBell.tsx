@@ -54,7 +54,7 @@ export function NotificationsBell({
           setOpen((v) => !v);
           if (!open) load();
         }}
-        className="relative inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] hover:text-text"
+        className="nr-interactive relative inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] hover:text-text"
         aria-label="Notifications"
       >
         <Bell size={16} />

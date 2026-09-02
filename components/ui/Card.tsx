@@ -3,14 +3,18 @@ import { cn } from "@/lib/utils";
 export function Card({
   className,
   children,
+  interactive,
 }: {
   className?: string;
   children: React.ReactNode;
+  /** adds a hover lift — use only when the whole card is a link/button */
+  interactive?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-panel/60 backdrop-blur-sm",
+        "nr-interactive rounded-xl border border-border bg-panel/60 backdrop-blur-sm hover:border-border-strong",
+        interactive && "nr-lift cursor-pointer",
         className,
       )}
     >

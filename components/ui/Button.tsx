@@ -6,12 +6,13 @@ type Size = "sm" | "md" | "lg";
 
 const variants: Record<Variant, string> = {
   primary:
-    "bg-accent text-accent-fg hover:bg-accent-hover border border-transparent",
+    "bg-accent text-accent-fg hover:bg-accent-hover border border-transparent hover:shadow-[0_6px_20px_-4px_rgba(59,130,246,0.45)]",
   secondary:
-    "bg-elevated text-text hover:bg-panel-2 border border-border-strong",
+    "bg-elevated text-text hover:bg-panel-2 hover:border-border-strong border border-border",
   outline:
-    "bg-transparent text-text hover:bg-elevated border border-border-strong",
-  ghost: "bg-transparent text-text-secondary hover:text-text hover:bg-elevated border border-transparent",
+    "bg-transparent text-text hover:bg-elevated hover:border-border-strong border border-border-strong",
+  ghost:
+    "bg-transparent text-text-secondary hover:text-text hover:bg-elevated border border-transparent",
   danger:
     "bg-transparent text-status-danger hover:bg-status-danger/10 border border-status-danger/40",
 };
@@ -35,9 +36,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ref={ref}
       disabled={disabled || loading}
       className={cn(
-        "inline-flex items-center justify-center gap-2 font-medium transition-colors",
+        "nr-interactive nr-press inline-flex items-center justify-center gap-2 font-medium",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-        "disabled:opacity-50 disabled:pointer-events-none select-none",
+        "disabled:opacity-50 disabled:pointer-events-none disabled:active:scale-100 select-none",
         variants[variant],
         sizes[size],
         className,

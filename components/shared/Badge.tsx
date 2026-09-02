@@ -5,12 +5,12 @@ import type { ProjectStatus, TaskStatus, UserStatus } from "@/types/database.typ
 type Tone = "neutral" | "success" | "warning" | "danger" | "info" | "accent";
 
 const tones: Record<Tone, string> = {
-  neutral: "bg-white/[0.06] text-text-secondary ring-white/10",
-  success: "bg-status-success/10 text-status-success ring-status-success/20",
-  warning: "bg-status-warning/10 text-status-warning ring-status-warning/20",
-  danger: "bg-status-danger/10 text-status-danger ring-status-danger/20",
-  info: "bg-status-info/10 text-status-info ring-status-info/20",
-  accent: "bg-accent/10 text-accent ring-accent/20",
+  neutral: "bg-white/[0.09] text-text ring-white/15",
+  success: "bg-status-success/15 text-status-success ring-status-success/30",
+  warning: "bg-status-warning/15 text-status-warning ring-status-warning/30",
+  danger: "bg-status-danger/15 text-status-danger ring-status-danger/30",
+  info: "bg-status-info/15 text-status-info ring-status-info/30",
+  accent: "bg-accent/15 text-accent ring-accent/35",
 };
 
 export function Badge({
@@ -27,12 +27,12 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium leading-5 ring-1 ring-inset whitespace-nowrap",
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium leading-none tracking-[0.01em] ring-1 ring-inset whitespace-nowrap",
         tones[tone],
         className,
       )}
     >
-      {dot && <span className="size-1.5 rounded-full bg-current" />}
+      {dot && <span className="-ml-0.5 size-1.5 rounded-full bg-current" />}
       {children}
     </span>
   );

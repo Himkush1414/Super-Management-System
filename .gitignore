@@ -32,10 +32,18 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but keep the no-secrets template
+!.env.example
 
 # vercel
 .vercel
 
+# supabase CLI local state (never commit — linked-project info, versions, pooler url)
+supabase/.temp
+supabase/.branches
+supabase/.env
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.env*.local

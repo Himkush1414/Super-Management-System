@@ -1,0 +1,25 @@
+# Supabase CLI config for NR Industries.
+# `supabase link --project-ref ywzwzrzlittjiosskmcy` then `supabase db push`
+# for the hosted project, or `supabase start` + `supabase db reset` locally.
+project_id = "ywzwzrzlittjiosskmcy"
+
+[db]
+major_version = 15
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[auth]
+enable_signup = true
+# Email confirmation is disabled so approved users can sign in immediately —
+# the app's own pending/active gate is the real access control.
+[auth.email]
+enable_confirmations = false
+enable_signup = true
+# OTP length used by the login second factor.
+otp_length = 6
+otp_expiry = 600
+
+[realtime]
+enabled = true

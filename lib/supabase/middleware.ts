@@ -99,8 +99,15 @@ export async function updateSession(request: NextRequest) {
     // dashboard shell (whose layout renders the PendingGate); dashboard
     // visits pass through untouched — no route-guard checks below apply,
     // since a pending/rejected profile has no real capabilities anyway.
+    //
+    // GET-only: the sign-up wizard's own steps are POSTs (Server Actions)
+    // to /signup made *after* the OTP session cookie already exists (e.g.
+    // setSignupPassword, called while status is still "pending"). Redirecting
+    // those hijacks the action before it runs — the browser's action-fetch
+    // follows the redirect and the framework treats the resulting page
+    // response as a malformed action reply. Only intercept real navigations.
     if (status !== "active") {
-      if (isAuthPage) {
+      if (isAuthPage && request.method === "GET") {
         const url = request.nextUrl.clone();
         url.pathname = "/dashboard/overview";
         return NextResponse.redirect(url);
@@ -109,7 +116,7 @@ export async function updateSession(request: NextRequest) {
     }
 
     // Active user landing on an auth page -> send to the dashboard.
-    if (isAuthPage) {
+    if (isAuthPage && request.method === "GET") {
       const url = request.nextUrl.clone();
       url.pathname = "/dashboard/overview";
       return NextResponse.redirect(url);

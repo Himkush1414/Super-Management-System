@@ -331,6 +331,34 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- on_new_signup_request: 0004's version referenced new.requested_role in the
+-- notification body, which is now always null at insert time (role is
+-- assigned later, at approval) — `text || null` is null, which violated
+-- notifications.body's not-null constraint and made every sign-up fail with
+-- "Database error saving new user". Drop the role mention entirely.
+-- ---------------------------------------------------------------------------
+create or replace function public.on_new_signup_request()
+returns trigger
+language plpgsql security definer set search_path = public
+as $$
+declare
+  requester_name text;
+begin
+  if new.status = 'pending' then
+    select full_name into requester_name from public.profiles where id = new.profile_id;
+
+    insert into public.notifications (user_id, type, title, body, entity_type, entity_id)
+    select p.id, 'approval', 'New access request',
+           coalesce(nullif(requester_name, ''), 'A user') || ' requested access.',
+           'signup_request', new.id
+    from public.profiles p
+    where p.role in ('head_admin', 'admin') and p.status = 'active';
+  end if;
+  return new;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
 -- Head Admin invisibility, enforced at the RLS layer (not just UI hiding):
 -- Admin (and teammates/staffing) never get the head_admin row back at all.
 -- ---------------------------------------------------------------------------

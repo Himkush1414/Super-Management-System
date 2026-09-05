@@ -21,5 +21,13 @@ enable_signup = true
 otp_length = 6
 otp_expiry = 600
 
+# The sign-up wizard and the sign-in second factor both ask the user to type
+# a 6-digit code. GoTrue's built-in "magic link" template only renders a
+# clickable link — it never exposes the numeric token — so without this
+# override the code the UI promises never actually reaches the user's inbox.
+[auth.email.template.magic_link]
+subject = "Your NR Industries verification code"
+content_path = "./supabase/templates/magic_link.html"
+
 [realtime]
 enabled = true

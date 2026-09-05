@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(sg docker *)",
+      "Bash(tmux send-keys *)",
+      "Bash(python3 -c ' *)",
+      "Bash(tmux capture-pane *)"
+    ]
+  }
+}

@@ -110,6 +110,21 @@ create trigger new_direct_message after insert on public.direct_messages
   for each row execute function public.on_new_direct_message();
 
 -- ---------------------------------------------------------------------------
+-- Contact directory: listContacts() reads public.profiles directly, but the
+-- pre-existing policies only cover admin-tier, project-teammates, and
+-- manager-staffing visibility — none of which hold between two arbitrary
+-- non-privileged roles with no shared project (e.g. maker <-> maker, or a
+-- maker viewing a manager). Without this, listContacts() silently returned
+-- nothing for most users, even though this file's own header promises
+-- "any-to-any between all non-Head-Admin roles".
+-- ---------------------------------------------------------------------------
+drop policy if exists profiles_select_messaging on public.profiles;
+create policy profiles_select_messaging on public.profiles
+  for select using (
+    public.is_active() and status = 'active' and role <> 'head_admin'
+  );
+
+-- ---------------------------------------------------------------------------
 -- RLS: participants only. No update/delete for regular users — the 60h
 -- cleanup job (service role, RLS-exempt) is the only deletion path.
 -- ---------------------------------------------------------------------------

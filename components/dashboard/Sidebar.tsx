@@ -19,7 +19,9 @@ const SECTION_LABEL: Record<string, string | null> = {
 
 function NavList({ role, onNavigate }: { role: Role; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const visible = NAV_ITEMS.filter((i) => !i.perm || can(role, i.perm));
+  const visible = NAV_ITEMS.filter(
+    (i) => (!i.perm || can(role, i.perm)) && (!i.roles || i.roles.includes(role)),
+  );
 
   return (
     <nav className="flex-1 space-y-0.5 px-3 py-3">

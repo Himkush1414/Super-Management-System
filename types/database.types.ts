@@ -49,6 +49,7 @@ export interface Profile {
   role: UserRole;
   status: UserStatus;
   is_demo_account: boolean;
+  last_active_at: string;
   created_at: string;
   updated_at: string;
 }
@@ -56,7 +57,8 @@ export interface Profile {
 export interface SignupRequest {
   id: string;
   profile_id: string;
-  requested_role: UserRole;
+  /** Null while pending — set by Head Admin at approval time. */
+  requested_role: UserRole | null;
   status: RequestStatus;
   reviewer_id: string | null;
   reviewed_at: string | null;
@@ -125,11 +127,31 @@ export interface AuditEntry {
   id: string;
   actor_id: string | null;
   actor_label: string | null;
+  /** Denormalised at write time; used only by audit_log_view's masking. */
+  actor_role?: UserRole | null;
   action: string;
   entity_type: string;
   entity_id: string | null;
   before: Json;
   after: Json;
+  created_at: string;
+}
+
+export interface DirectConversation {
+  id: string;
+  user_a: string;
+  user_b: string;
+  last_message_at: string;
+  created_at: string;
+}
+
+export interface DirectMessage {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  kind: "text" | "voice";
+  body: string | null;
+  voice_path: string | null;
   created_at: string;
 }
 
@@ -158,16 +180,26 @@ export interface Database {
       messages: Row<Message>;
       audit_log: Row<AuditEntry>;
       notifications: Row<NotificationRow>;
+      direct_conversations: Row<DirectConversation>;
+      direct_messages: Row<DirectMessage>;
     };
-    Views: Record<string, never>;
+    Views: {
+      audit_log_view: { Row: Omit<AuditEntry, "actor_role">; Relationships: [] };
+    };
     Functions: {
       review_signup_request: {
-        Args: { request_id: string; decision: RequestStatus; note?: string | null };
+        Args: {
+          request_id: string;
+          decision: RequestStatus;
+          assigned_role?: UserRole | null;
+          note?: string | null;
+        };
         Returns: undefined;
       };
       reapply_signup: { Args: { requested?: UserRole | null }; Returns: undefined };
       set_user_role: { Args: { target: string; new_role: UserRole }; Returns: undefined };
       has_perm: { Args: { perm: string }; Returns: boolean };
+      get_or_create_direct_conversation: { Args: { other: string }; Returns: string };
     };
     Enums: {
       user_role: UserRole;

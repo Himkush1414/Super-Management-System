@@ -3,16 +3,19 @@ import { requirePermission } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState } from "@/components/shared/Page";
 import { Card } from "@/components/ui/Card";
-import { RoleBadge } from "@/components/shared/Badge";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
-import { ApprovalActions } from "@/components/dashboard/ApprovalActions";
 import { formatRelativeTime } from "@/lib/utils";
 import type { Profile, SignupRequest } from "@/types/database.types";
 
 export const metadata = { title: "Approvals" };
 
+/**
+ * View-only queue (spec §2): Admin can see name, contact and submitted time
+ * for pending requests, but no longer decides them — that's Head Admin
+ * exclusive, on the separate /dashboard/approvals/review route.
+ */
 export default async function ApprovalsPage() {
-  await requirePermission("approvals.manage");
+  await requirePermission("approvals.view");
   const supabase = await createClient();
 
   const { data } = await supabase
@@ -30,7 +33,7 @@ export default async function ApprovalsPage() {
       <LiveRefresh channel="approvals-queue" table="signup_requests" />
       <PageHeader
         title="Pending approvals"
-        description="Approve or reject access requests. Approving activates the account and notifies the user."
+        description="Access requests awaiting a decision. This queue is view-only."
       />
 
       {rows.length === 0 ? (
@@ -43,24 +46,11 @@ export default async function ApprovalsPage() {
         <div className="space-y-3">
           {rows.map((r) => (
             <Card key={r.id} className="p-4">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-[14px] font-medium">
-                      {r.profiles?.full_name || "Unnamed"}
-                    </p>
-                    <span className="text-[12px] text-text-tertiary">requested</span>
-                    <RoleBadge role={r.requested_role} />
-                  </div>
-                  <p className="mt-1 text-[12px] text-text-secondary">
-                    {r.profiles?.contact_method === "phone"
-                      ? r.profiles?.phone
-                      : r.profiles?.email}{" "}
-                    · {formatRelativeTime(r.created_at)}
-                  </p>
-                </div>
-                <ApprovalActions requestId={r.id} />
-              </div>
+              <p className="text-[14px] font-medium">{r.profiles?.full_name || "Unnamed"}</p>
+              <p className="mt-1 text-[12px] text-text-secondary">
+                {r.profiles?.contact_method === "phone" ? r.profiles?.phone : r.profiles?.email}{" "}
+                · Submitted {formatRelativeTime(r.created_at)}
+              </p>
             </Card>
           ))}
         </div>

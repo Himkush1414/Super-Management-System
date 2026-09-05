@@ -1,26 +1,69 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import { signUpAction, type ActionState } from "@/lib/auth/actions";
+import {
+  startSignup,
+  verifySignupOtp,
+  setSignupPassword,
+  type WizardState,
+} from "@/lib/auth/actions";
 import { AuthCard, FormAlert } from "@/components/shared/AuthCard";
-import { Input, Label, FormRow, Select } from "@/components/ui/Field";
+import { Input, Label, FormRow } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
-import { SELF_SELECTABLE_ROLES, ROLE_LABEL, ROLE_DESCRIPTION } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 
+type Method = "email" | "phone";
+type Step = "identity" | "otp" | "password";
+
 export default function SignUpPage() {
-  const [state, formAction, pending] = useActionState<ActionState, FormData>(
-    signUpAction,
-    null,
-  );
-  const [method, setMethod] = useState<"email" | "phone">("email");
-  const [role, setRole] = useState(SELF_SELECTABLE_ROLES[0]);
+  const [step, setStep] = useState<Step>("identity");
+  const [fullName, setFullName] = useState("");
+  const [method, setMethod] = useState<Method>("email");
+  const [contact, setContact] = useState("");
+  const [token, setToken] = useState("");
+  const [password, setPassword] = useState("");
+  const [devCode, setDevCode] = useState<string | null>(null);
+  const [state, setState] = useState<WizardState>(null);
+  const [pending, start] = useTransition();
+
+  function sendOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setState(null);
+    start(async () => {
+      const r = await startSignup({ fullName, method, contact });
+      setState(r);
+      if (!r?.error) {
+        setDevCode(r?.devCode ?? null);
+        setStep("otp");
+      }
+    });
+  }
+
+  function verify(e: React.FormEvent) {
+    e.preventDefault();
+    setState(null);
+    start(async () => {
+      const r = await verifySignupOtp({ method, contact, token });
+      setState(r);
+      if (!r?.error) setStep("password");
+    });
+  }
+
+  function finish(e: React.FormEvent) {
+    e.preventDefault();
+    setState(null);
+    start(async () => {
+      const r = await setSignupPassword({ fullName, method, contact, password });
+      // Success redirects server-side — any return here is an error.
+      if (r) setState(r);
+    });
+  }
 
   return (
     <AuthCard
       title="Request access"
-      subtitle="Accounts are reviewed by an administrator before they're activated. You'll be notified once a decision is made."
+      subtitle="Accounts are reviewed before they're activated. You'll be notified once a decision is made."
       footer={
         <>
           Already have an account?{" "}
@@ -30,94 +73,124 @@ export default function SignUpPage() {
         </>
       }
     >
-      <form action={formAction} className="space-y-4">
-        <FormAlert state={state} />
+      {step === "identity" && (
+        <form onSubmit={sendOtp} className="space-y-4">
+          <FormAlert state={state} />
 
-        <FormRow>
-          <Label htmlFor="full_name">Full name</Label>
-          <Input id="full_name" name="full_name" autoComplete="name" required />
-        </FormRow>
+          <FormRow>
+            <Label htmlFor="full_name">Full name</Label>
+            <Input
+              id="full_name"
+              autoComplete="name"
+              required
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+            />
+          </FormRow>
 
-        <div>
-          <Label>Contact method</Label>
-          <div className="grid grid-cols-2 gap-2">
-            {(["email", "phone"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMethod(m)}
-                className={cn(
-                  "h-9 rounded-lg border text-[13px] font-medium capitalize transition-colors",
-                  method === m
-                    ? "border-accent/50 bg-accent/10 text-text"
-                    : "border-border-strong text-text-secondary hover:text-text",
-                )}
-              >
-                {m}
-              </button>
-            ))}
+          <div>
+            <Label>Contact method</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {(["email", "phone"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    setMethod(m);
+                    setContact("");
+                  }}
+                  className={cn(
+                    "h-9 rounded-lg border text-[13px] font-medium capitalize transition-colors",
+                    method === m
+                      ? "border-accent/50 bg-accent/10 text-text"
+                      : "border-border-strong text-text-secondary hover:text-text",
+                  )}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
           </div>
-          <input type="hidden" name="contact_method" value={method} />
-        </div>
 
-        <FormRow>
-          <Label htmlFor="contact">
-            {method === "email" ? "Email address" : "Phone number"}
-          </Label>
-          <Input
-            id="contact"
-            name="contact"
-            type={method === "email" ? "email" : "tel"}
-            autoComplete={method === "email" ? "email" : "tel"}
-            required
-          />
-          {method === "phone" && (
-            <p className="text-[12px] text-status-warning">
-              Phone registration is being enabled — use email for now.
+          <FormRow>
+            <Label htmlFor="contact">{method === "email" ? "Email address" : "Phone number"}</Label>
+            <Input
+              id="contact"
+              type={method === "email" ? "email" : "tel"}
+              autoComplete={method === "email" ? "email" : "tel"}
+              required
+              value={contact}
+              onChange={(e) => setContact(e.target.value)}
+            />
+          </FormRow>
+
+          <Button type="submit" className="w-full" loading={pending}>
+            Next
+          </Button>
+        </form>
+      )}
+
+      {step === "otp" && (
+        <form onSubmit={verify} className="space-y-4">
+          <FormAlert state={state} />
+          <p className="text-[13px] text-text-secondary">
+            {method === "email"
+              ? `We sent a 6-digit code to ${contact}.`
+              : `Enter the 6-digit code sent to ${contact}.`}
+          </p>
+          {devCode && (
+            <p className="rounded-lg border border-status-warning/30 bg-status-warning/10 p-2.5 text-[12px] text-status-warning">
+              Dev mode — phone OTP is stubbed, no SMS is sent. Code:{" "}
+              <span className="tnum font-semibold">{devCode}</span>
             </p>
           )}
-        </FormRow>
+          <FormRow>
+            <Label htmlFor="token">Verification code</Label>
+            <Input
+              id="token"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              pattern="[0-9]{6}"
+              placeholder="000000"
+              className="tracking-[0.5em] text-center text-lg"
+              required
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+            />
+          </FormRow>
+          <Button type="submit" className="w-full" loading={pending}>
+            Verify &amp; continue
+          </Button>
+        </form>
+      )}
 
-        <FormRow>
-          <Label htmlFor="password" hint="min 8 characters">
-            Password
-          </Label>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            minLength={8}
-            required
-          />
-        </FormRow>
-
-        <FormRow>
-          <Label htmlFor="requested_role">Requested role</Label>
-          <Select
-            id="requested_role"
-            name="requested_role"
-            value={role}
-            onChange={(e) => setRole(e.target.value as typeof role)}
-          >
-            {SELF_SELECTABLE_ROLES.map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABEL[r]}
-              </option>
-            ))}
-          </Select>
-          <p className="text-[12px] text-text-tertiary">{ROLE_DESCRIPTION[role]}</p>
-        </FormRow>
-
-        <Button
-          type="submit"
-          className="w-full"
-          loading={pending}
-          disabled={method === "phone"}
-        >
-          Submit request
-        </Button>
-      </form>
+      {step === "password" && (
+        <form onSubmit={finish} className="space-y-4">
+          <FormAlert state={state} />
+          <FormRow>
+            <Label htmlFor="password" hint="exactly 6 digits, numbers only">
+              Set your password
+            </Label>
+            <Input
+              id="password"
+              type="password"
+              inputMode="numeric"
+              autoComplete="new-password"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              placeholder="••••••"
+              className="tracking-[0.5em] text-center text-lg"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value.replace(/\D/g, ""))}
+            />
+          </FormRow>
+          <Button type="submit" className="w-full" loading={pending}>
+            Create account
+          </Button>
+        </form>
+      )}
     </AuthCard>
   );
 }

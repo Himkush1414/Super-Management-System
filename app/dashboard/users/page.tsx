@@ -8,8 +8,8 @@ import { RoleEditor } from "@/components/dashboard/RoleEditor";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
 import {
   PERMISSION_MATRIX,
-  ROLES,
   ROLE_LABEL,
+  visibleRoles,
   type Permission,
   type Role,
 } from "@/lib/permissions";
@@ -25,7 +25,8 @@ const PERMS: { key: Permission; label: string }[] = [
   { key: "specs.edit", label: "Edit specs" },
   { key: "projects.create", label: "Create project" },
   { key: "tasks.assign", label: "Assign makers" },
-  { key: "approvals.manage", label: "Approve signups" },
+  { key: "approvals.view", label: "View approval queue" },
+  { key: "approvals.decide", label: "Decide approvals" },
   { key: "users.changeRole", label: "Change roles" },
   { key: "audit.view", label: "View audit log" },
 ];
@@ -46,7 +47,7 @@ export default async function UsersPage() {
       <LiveRefresh channel="users-list" table="profiles" />
       <PageHeader
         title="Users"
-        description="Head Admin can change any user's role. Changes are written to the audit log."
+        description="Role changes are written to the audit log."
       />
 
       <Card className="mb-6">
@@ -102,7 +103,7 @@ export default async function UsersPage() {
             <THead>
               <TR>
                 <TH>Capability</TH>
-                {ROLES.map((r) => (
+                {visibleRoles(ctx.role).map((r) => (
                   <TH key={r} className="text-center">
                     {ROLE_LABEL[r]}
                   </TH>
@@ -113,7 +114,7 @@ export default async function UsersPage() {
               {PERMS.map((p) => (
                 <TR key={p.key}>
                   <TD className="text-text-secondary">{p.label}</TD>
-                  {ROLES.map((r) => (
+                  {visibleRoles(ctx.role).map((r) => (
                     <TD key={r} className="text-center">
                       {PERMISSION_MATRIX[r][p.key] ? (
                         <span className="text-status-success">●</span>

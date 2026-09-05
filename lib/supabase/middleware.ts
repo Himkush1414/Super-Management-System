@@ -5,10 +5,16 @@ import { can, type Role } from "@/lib/permissions";
 /** Route groups that require an authenticated, active session. */
 const DASHBOARD_PREFIX = "/dashboard";
 
-/** Per-path minimum permission. Checked after auth + active-status. */
+/**
+ * Per-path minimum permission. Checked after auth + active-status. A path
+ * must satisfy every guard whose prefix it matches (e.g.
+ * /dashboard/approvals/review matches both the "review" and the plain
+ * "approvals" guard below, so Head Admin needs both perms — which they do).
+ */
 const ROUTE_GUARDS: { prefix: string; perm: Parameters<typeof can>[1] }[] = [
   { prefix: "/dashboard/users", perm: "users.changeRole" },
-  { prefix: "/dashboard/approvals", perm: "approvals.manage" },
+  { prefix: "/dashboard/approvals/review", perm: "approvals.decide" },
+  { prefix: "/dashboard/approvals", perm: "approvals.view" },
   { prefix: "/dashboard/audit-log", perm: "audit.view" },
 ];
 
@@ -81,11 +87,22 @@ export async function updateSession(request: NextRequest) {
     const status = profile?.status;
     const role = profile?.role as Role | undefined;
 
-    // Signed in but not yet approved.
+    // Suspended is a hard lockout, unlike pending/rejected below.
+    if (status === "suspended") {
+      await supabase.auth.signOut();
+      const url = request.nextUrl.clone();
+      url.pathname = "/signin";
+      return NextResponse.redirect(url);
+    }
+
+    // Signed in but not yet approved: send auth-page visits into the
+    // dashboard shell (whose layout renders the PendingGate); dashboard
+    // visits pass through untouched — no route-guard checks below apply,
+    // since a pending/rejected profile has no real capabilities anyway.
     if (status !== "active") {
-      if (path !== "/pending-approval") {
+      if (isAuthPage) {
         const url = request.nextUrl.clone();
-        url.pathname = "/pending-approval";
+        url.pathname = "/dashboard/overview";
         return NextResponse.redirect(url);
       }
       return response;

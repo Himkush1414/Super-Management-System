@@ -19,13 +19,6 @@ export const ROLES = [
 
 export type Role = (typeof ROLES)[number];
 
-/** Roles a person may request for themselves at sign-up. */
-export const SELF_SELECTABLE_ROLES: Role[] = [
-  "manager",
-  "product_supervisor",
-  "maker",
-];
-
 export const ROLE_LEVEL: Record<Role, number> = {
   head_admin: 4,
   admin: 3,
@@ -62,7 +55,8 @@ export type Permission =
   | "specs.edit" // edit specs / requirements / quality fields
   | "tasks.updateOwn" // move status on own assigned tasks
   | "tasks.assign" // assign / reassign Makers to tasks
-  | "approvals.manage" // approve / reject signup requests
+  | "approvals.view" // see the pending-signup queue (read-only)
+  | "approvals.decide" // approve (with role assignment) / reject signup requests
   | "users.changeRole" // change another user's role
   | "permissions.edit" // edit the permission matrix itself
   | "audit.view" // read the audit log
@@ -85,7 +79,8 @@ export const PERMISSION_MATRIX: Matrix = {
     "specs.edit": T,
     "tasks.updateOwn": T,
     "tasks.assign": T,
-    "approvals.manage": T,
+    "approvals.view": T,
+    "approvals.decide": T,
     "users.changeRole": T,
     "permissions.edit": T,
     "audit.view": T,
@@ -102,7 +97,8 @@ export const PERMISSION_MATRIX: Matrix = {
     "specs.edit": T,
     "tasks.updateOwn": T,
     "tasks.assign": T,
-    "approvals.manage": T,
+    "approvals.view": T,
+    "approvals.decide": F,
     "users.changeRole": F,
     "permissions.edit": F,
     "audit.view": T,
@@ -119,7 +115,8 @@ export const PERMISSION_MATRIX: Matrix = {
     "specs.edit": T,
     "tasks.updateOwn": T,
     "tasks.assign": T,
-    "approvals.manage": F,
+    "approvals.view": F,
+    "approvals.decide": F,
     "users.changeRole": F,
     "permissions.edit": F,
     "audit.view": F,
@@ -136,7 +133,8 @@ export const PERMISSION_MATRIX: Matrix = {
     "specs.edit": T,
     "tasks.updateOwn": T,
     "tasks.assign": F,
-    "approvals.manage": F,
+    "approvals.view": F,
+    "approvals.decide": F,
     "users.changeRole": F,
     "permissions.edit": F,
     "audit.view": F,
@@ -153,7 +151,8 @@ export const PERMISSION_MATRIX: Matrix = {
     "specs.edit": F,
     "tasks.updateOwn": T,
     "tasks.assign": F,
-    "approvals.manage": F,
+    "approvals.view": F,
+    "approvals.decide": F,
     "users.changeRole": F,
     "permissions.edit": F,
     "audit.view": F,
@@ -166,6 +165,26 @@ export function can(role: Role | null | undefined, perm: Permission): boolean {
   if (!role) return false;
   return PERMISSION_MATRIX[role]?.[perm] ?? false;
 }
+
+/**
+ * Head Admin invisibility (spec §1): the head_admin role/account must never
+ * be surfaced to any other role — role badges, dropdowns, user lists, audit
+ * actor names. Self-view is always allowed. This is UI-side defense in depth
+ * only — the real enforcement is in RLS (profiles_select_admin / teammates
+ * policies) and the audit_log_view masking, which never return the row in
+ * the first place.
+ */
+export function isRoleVisible(role: Role, viewerRole: Role): boolean {
+  return role !== "head_admin" || viewerRole === "head_admin";
+}
+
+/** Roles a viewer is allowed to see exist — filters head_admin out for everyone else. */
+export function visibleRoles(viewerRole: Role): Role[] {
+  return ROLES.filter((r) => isRoleVisible(r, viewerRole));
+}
+
+/** Roles assignable to another user — head_admin can never be assigned, only seeded. */
+export const ASSIGNABLE_ROLES: Role[] = ROLES.filter((r) => r !== "head_admin");
 
 /** True when the role only ever sees projects it is explicitly assigned to. */
 export function isAssignmentScoped(role: Role): boolean {

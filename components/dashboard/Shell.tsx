@@ -18,6 +18,8 @@ const CRUMB_LABELS: Record<string, string> = {
   "audit-log": "Audit log",
   settings: "Settings",
   chat: "Chat",
+  messages: "Messages",
+  review: "Review",
 };
 
 function Breadcrumbs() {
@@ -52,37 +54,45 @@ export function Shell({
   name,
   userId,
   initialUnread,
+  minimal,
   children,
 }: {
   role: Role;
   name: string;
   userId: string;
   initialUnread: number;
+  /** True for a not-yet-active account: hides the sidebar/nav entirely so
+   * there's nothing to discover before approval (spec §2 step 6). */
+  minimal?: boolean;
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="flex min-h-screen bg-bg">
-      <Sidebar
-        role={role}
-        name={name}
-        mobileOpen={mobileOpen}
-        onClose={() => setMobileOpen(false)}
-      />
+      {!minimal && (
+        <Sidebar
+          role={role}
+          name={name}
+          mobileOpen={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+        />
+      )}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-bg/80 px-4 backdrop-blur">
-          <button
-            onClick={() => setMobileOpen(true)}
-            className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] md:hidden"
-            aria-label="Open menu"
-          >
-            <Menu size={16} />
-          </button>
-          <Breadcrumbs />
+          {!minimal && (
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] md:hidden"
+              aria-label="Open menu"
+            >
+              <Menu size={16} />
+            </button>
+          )}
+          {!minimal && <Breadcrumbs />}
           <div className="ml-auto flex items-center gap-1.5">
-            <NotificationsBell userId={userId} initialUnread={initialUnread} />
+            {!minimal && <NotificationsBell userId={userId} initialUnread={initialUnread} />}
             <form action={signOutAction}>
               <button
                 type="submit"
@@ -96,8 +106,8 @@ export function Shell({
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mx-auto max-w-6xl">{children}</div>
+        <main className="flex flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto flex w-full max-w-6xl flex-1">{children}</div>
         </main>
       </div>
     </div>

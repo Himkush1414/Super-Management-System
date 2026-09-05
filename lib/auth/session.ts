@@ -13,10 +13,14 @@ export interface SessionContext {
   can: (perm: Permission) => boolean;
 }
 
+const INACTIVITY_LIMIT_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
- * Resolve the current user + profile for a dashboard route. Redirects to the
- * right place when the user isn't signed in or isn't active. Middleware already
- * guards these routes — this is the in-page contract + data source.
+ * Resolve the current user + profile for a dashboard route. Redirects to
+ * sign-in when the user isn't signed in, or when a non-Head-Admin session has
+ * been inactive for 7+ days (spec §2 — forced re-login). Pending/rejected
+ * accounts are NOT redirected away — they reach the dashboard shell, which
+ * renders the PendingGate instead of the real page content.
  */
 export async function requireSession(): Promise<SessionContext> {
   const supabase = await createClient();
@@ -34,9 +38,26 @@ export async function requireSession(): Promise<SessionContext> {
   const profile = profileData as Profile | null;
 
   if (!profile) redirect("/signin");
-  if (profile.status !== "active") redirect("/pending-approval");
+  if (profile.status === "suspended") {
+    await supabase.auth.signOut();
+    redirect("/signin");
+  }
 
   const role = profile.role as Role;
+
+  if (role !== "head_admin") {
+    const lastActive = profile.last_active_at ? new Date(profile.last_active_at).getTime() : 0;
+    if (Date.now() - lastActive > INACTIVITY_LIMIT_MS) {
+      await supabase.auth.signOut();
+      redirect("/signin");
+    }
+  }
+
+  await supabase
+    .from("profiles")
+    .update({ last_active_at: new Date().toISOString() })
+    .eq("id", user.id);
+
   return {
     userId: user.id,
     email: user.email ?? null,

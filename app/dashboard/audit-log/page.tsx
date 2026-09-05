@@ -38,7 +38,7 @@ export default async function AuditLogPage() {
   const supabase = await createClient();
 
   const { data } = await supabase
-    .from("audit_log")
+    .from("audit_log_view")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(200);

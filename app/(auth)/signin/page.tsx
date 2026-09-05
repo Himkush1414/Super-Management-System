@@ -29,8 +29,8 @@ export default function SignInPage() {
       <form action={formAction} className="space-y-4">
         <FormAlert state={state} />
         <FormRow>
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" autoComplete="email" required />
+          <Label htmlFor="identifier">Email or phone</Label>
+          <Input id="identifier" name="identifier" autoComplete="username" required />
         </FormRow>
         <FormRow>
           <Label htmlFor="password">Password</Label>
@@ -46,12 +46,6 @@ export default function SignInPage() {
           Continue
         </Button>
       </form>
-
-      <p className="mt-4 rounded-lg bg-bg-subtle p-3 text-[12px] leading-relaxed text-text-tertiary">
-        Demo: <span className="tnum">headadmin@demo.nrindustries.local</span> ·
-        password <span className="tnum">DemoPass123!</span> (demo accounts skip
-        the second factor).
-      </p>
     </AuthCard>
   );
 }

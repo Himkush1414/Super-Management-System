@@ -64,8 +64,8 @@ export default async function SettingsPage() {
             <Row k="Email" v={ctx.email ?? "—"} />
             <Row k="Member since" v={formatDate(ctx.profile.created_at)} />
             <p className="border-t border-border pt-3 text-[12px] text-text-tertiary">
-              Only the Head Admin can change roles. Contact them if your access
-              needs to change.
+              Role changes are handled by system administrators. Contact one
+              if your access needs to change.
             </p>
           </CardBody>
         </Card>

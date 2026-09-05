@@ -31,7 +31,7 @@ export default async function OverviewPage() {
       .select("*")
       .order("updated_at", { ascending: false })
       .limit(50),
-    ctx.can("approvals.manage")
+    ctx.can("approvals.view")
       ? supabase
           .from("signup_requests")
           .select("id", { count: "exact", head: true })
@@ -69,7 +69,7 @@ export default async function OverviewPage() {
           sub={`${tk.length - openTasks.length} completed`}
           icon={<ListTodo size={15} />}
         />
-        {ctx.can("approvals.manage") && (
+        {ctx.can("approvals.view") && (
           <StatCard
             label="Pending approvals"
             value={approvals.count ?? 0}

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { changeUserRole } from "@/lib/actions/admin";
-import { ROLES, ROLE_LABEL, type Role } from "@/lib/permissions";
+import { ASSIGNABLE_ROLES, ROLE_LABEL, type Role } from "@/lib/permissions";
 import { Select } from "@/components/ui/Field";
 
 export function RoleEditor({
@@ -40,7 +40,7 @@ export function RoleEditor({
           });
         }}
       >
-        {ROLES.map((r) => (
+        {ASSIGNABLE_ROLES.map((r) => (
           <option key={r} value={r}>
             {ROLE_LABEL[r]}
           </option>

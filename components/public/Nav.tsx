@@ -62,13 +62,13 @@ export function Nav() {
 
           <div className="hidden md:flex items-center gap-2">
             <Link
-              href="/signin"
+              href="/signup"
               className="nr-interactive nr-press rounded-lg border border-border-strong px-3.5 py-1.5 text-[13px] font-medium text-text hover:bg-white/[0.06] hover:border-white/25"
             >
               Sign In
             </Link>
             <Link
-              href="/signin?mode=login"
+              href="/signin"
               className="nr-interactive nr-press rounded-lg bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-fg hover:bg-accent-hover hover:shadow-[0_6px_20px_-4px_rgba(59,130,246,0.5)]"
             >
               Login
@@ -111,14 +111,14 @@ export function Nav() {
                 ))}
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <Link
-                    href="/signin"
+                    href="/signup"
                     onClick={() => setOpen(false)}
                     className="rounded-lg border border-border-strong px-3 py-2 text-center text-sm font-medium text-text"
                   >
                     Sign In
                   </Link>
                   <Link
-                    href="/signin?mode=login"
+                    href="/signin"
                     onClick={() => setOpen(false)}
                     className="rounded-lg bg-accent px-3 py-2 text-center text-sm font-medium text-accent-fg"
                   >

@@ -20,8 +20,8 @@ export default async function PendingApprovalPage() {
 
   return (
     <AuthCard
-      title="Request submitted"
-      subtitle="Your request has been sent. Please wait for approval."
+      title="Welcome to NR Industries"
+      subtitle="Your account is pending approval — you'll get access soon."
     >
       <Link href="/signin">
         <Button variant="secondary" className="w-full">

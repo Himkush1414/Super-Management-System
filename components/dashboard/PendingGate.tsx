@@ -26,7 +26,7 @@ export function PendingGate({ status }: { status: UserStatus }) {
         <p className="mt-4 text-[14px] leading-relaxed text-text">
           {rejected
             ? "Your request was not approved."
-            : "Your request has been sent. Please wait for approval."}
+            : "Welcome to NR Industries. Your account is pending approval — you'll get access soon."}
         </p>
         {rejected && (
           <div className="mt-4 w-full">

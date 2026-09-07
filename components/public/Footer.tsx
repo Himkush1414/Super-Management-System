@@ -22,8 +22,8 @@ export function Footer() {
             </div>
             <div className="space-y-2">
               <p className="text-text-tertiary font-medium">Access</p>
-              <Link href="/signin" className="block text-text-secondary hover:text-text">Sign In</Link>
-              <Link href="/signin?mode=login" className="block text-text-secondary hover:text-text">Login</Link>
+              <Link href="/signup" className="block text-text-secondary hover:text-text">Sign In</Link>
+              <Link href="/signin" className="block text-text-secondary hover:text-text">Login</Link>
             </div>
           </div>
         </div>

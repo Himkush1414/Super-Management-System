@@ -5,6 +5,7 @@ import Link from "next/link";
 import { loginAction, type ActionState } from "@/lib/auth/actions";
 import { AuthCard, FormAlert } from "@/components/shared/AuthCard";
 import { Input, Label, FormRow } from "@/components/ui/Field";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Button } from "@/components/ui/Button";
 
 export default function SignInPage() {
@@ -34,10 +35,9 @@ export default function SignInPage() {
         </FormRow>
         <FormRow>
           <Label htmlFor="password">Password</Label>
-          <Input
+          <PasswordInput
             id="password"
             name="password"
-            type="password"
             autoComplete="current-password"
             required
           />

@@ -10,6 +10,7 @@ import {
 } from "@/lib/auth/actions";
 import { AuthCard, FormAlert } from "@/components/shared/AuthCard";
 import { Input, Label, FormRow } from "@/components/ui/Field";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
@@ -172,9 +173,9 @@ export default function SignUpPage() {
             <Label htmlFor="password" hint="exactly 6 digits, numbers only">
               Set your password
             </Label>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
+              centered
               inputMode="numeric"
               autoComplete="new-password"
               pattern="[0-9]{6}"

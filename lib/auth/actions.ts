@@ -11,6 +11,15 @@ export type WizardState = { error?: string; ok?: string; devCode?: string } | nu
 const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 const isSixDigitPassword = (v: string) => /^\d{6}$/.test(v);
 
+/**
+ * GoTrue refuses a second OTP email within SMTP_MAX_FREQUENCY of the last one
+ * (60s on hosted Supabase). That happens routinely on a legitimate login — the
+ * sign-up wizard, a prior attempt, or a "Resend" click already sent a code
+ * moments ago — so it is not a failure: a usable code is already in the inbox.
+ */
+const isOtpResendThrottled = (e: { status?: number; code?: string } | null) =>
+  !!e && (e.status === 429 || e.code === "over_email_send_rate_limit");
+
 const OTP_TTL_MS = 10 * 60 * 1000;
 const hashCode = (code: string) => crypto.createHash("sha256").update(code).digest("hex");
 const randomCode = () => String(crypto.randomInt(100000, 1000000));
@@ -204,7 +213,9 @@ export async function loginAction(
     email: identifier,
     options: { shouldCreateUser: false },
   });
-  if (otpErr) return { error: otpErr.message };
+  // A throttled resend still means "a code was just sent" — send the user to
+  // enter it rather than showing what looks like a rejected login.
+  if (otpErr && !isOtpResendThrottled(otpErr)) return { error: otpErr.message };
 
   redirect(`/verify-otp?email=${encodeURIComponent(identifier)}`);
 }
@@ -241,8 +252,12 @@ export async function resendOtpAction(
     email,
     options: { shouldCreateUser: false },
   });
-  if (error) return { error: error.message };
-  return { ok: "A new code is on its way." };
+  if (error && !isOtpResendThrottled(error)) return { error: error.message };
+  return {
+    ok: isOtpResendThrottled(error)
+      ? "A code was sent moments ago — check your inbox (and spam)."
+      : "A new code is on its way.",
+  };
 }
 
 /* ------------------------------------------------------------------- re-apply */

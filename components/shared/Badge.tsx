@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
-import { ROLE_LABEL, type Role } from "@/lib/permissions";
-import type { ProjectStatus, TaskStatus, UserStatus } from "@/types/database.types";
+import type { OrderStatus } from "@/types/database.types";
+import { stageName } from "@/lib/orders";
 
 type Tone = "neutral" | "success" | "warning" | "danger" | "info" | "accent";
 
@@ -38,58 +38,28 @@ export function Badge({
   );
 }
 
-const roleTone: Record<Role, Tone> = {
-  head_admin: "accent",
-  admin: "info",
-  manager: "success",
-  product_supervisor: "warning",
-  maker: "neutral",
-};
+const stageTone = (n: number): Tone =>
+  n >= 5 ? "success" : n === 4 ? "info" : n >= 2 ? "accent" : "neutral";
 
-export function RoleBadge({ role }: { role: Role }) {
-  return <Badge tone={roleTone[role]}>{ROLE_LABEL[role]}</Badge>;
-}
-
-const projectStatusTone: Record<ProjectStatus, Tone> = {
-  draft: "neutral",
-  quoted: "info",
-  approved: "info",
-  in_production: "accent",
-  quality_check: "warning",
-  completed: "success",
-  on_hold: "warning",
-  cancelled: "danger",
-};
-
-export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
+export function StageBadge({ stage }: { stage: number }) {
   return (
-    <Badge tone={projectStatusTone[status]} dot>
-      {status.replace(/_/g, " ")}
+    <Badge tone={stageTone(stage)} dot>
+      {stage} · {stageName(stage)}
     </Badge>
   );
 }
 
-const taskStatusTone: Record<TaskStatus, Tone> = {
-  assigned: "neutral",
-  in_progress: "info",
-  completed: "success",
-};
-
-export function TaskStatusBadge({ status }: { status: TaskStatus }) {
-  return (
-    <Badge tone={taskStatusTone[status]} dot>
-      {status.replace(/_/g, " ")}
-    </Badge>
-  );
+export function OrderStatusBadge({ status }: { status: OrderStatus }) {
+  if (status === "waiting_on_production_phone") {
+    return <Badge tone="warning">Waiting on production phone</Badge>;
+  }
+  return <Badge tone="success" dot>Active</Badge>;
 }
 
-const userStatusTone: Record<UserStatus, Tone> = {
-  pending: "warning",
-  active: "success",
-  rejected: "danger",
-  suspended: "neutral",
-};
-
-export function UserStatusBadge({ status }: { status: UserStatus }) {
-  return <Badge tone={userStatusTone[status]}>{status}</Badge>;
+export function WhatsAppBadge({ created }: { created: boolean }) {
+  return created ? (
+    <Badge tone="success">WhatsApp group ready</Badge>
+  ) : (
+    <Badge tone="neutral">WhatsApp: not configured</Badge>
+  );
 }

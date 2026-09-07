@@ -1,8 +1,6 @@
 /**
  * types/database.types.ts
- * Hand-maintained until `supabase gen types typescript` is wired up:
- *   npx supabase gen types typescript --project-id ywzwzrzlittjiosskmcy > types/database.types.ts
- * Keep in sync with supabase/migrations/.
+ * Hand-maintained. Keep in sync with supabase/migrations/.
  */
 
 export type Json =
@@ -13,145 +11,52 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export type UserRole =
-  | "head_admin"
-  | "admin"
-  | "manager"
-  | "product_supervisor"
-  | "maker";
+export type UserRole = "head_admin" | "admin" | "marketing" | "production";
 
-export type UserStatus = "pending" | "active" | "rejected" | "suspended";
-export type RequestStatus = "pending" | "approved" | "rejected";
-export type ProjectStatus =
-  | "draft"
-  | "quoted"
-  | "approved"
-  | "in_production"
-  | "quality_check"
-  | "completed"
-  | "on_hold"
-  | "cancelled";
-export type TaskStatus = "assigned" | "in_progress" | "completed";
-export type TransformerType =
-  | "distribution"
-  | "power"
-  | "dry_type"
-  | "furnace"
-  | "rectifier"
-  | "isolation";
+export type OrderStatus = "active" | "waiting_on_production_phone";
 
 export interface Profile {
   id: string;
+  username: string;
   full_name: string;
-  email: string | null;
-  phone: string | null;
-  contact_method: "email" | "phone";
   role: UserRole;
-  status: UserStatus;
-  is_demo_account: boolean;
-  last_active_at: string;
   created_at: string;
   updated_at: string;
 }
 
-export interface SignupRequest {
-  id: string;
+export interface ProductionSettings {
   profile_id: string;
-  /** Null while pending — set by Head Admin at approval time. */
-  requested_role: UserRole | null;
-  status: RequestStatus;
-  reviewer_id: string | null;
-  reviewed_at: string | null;
-  decision_note: string | null;
-  created_at: string;
+  phone: string | null;
+  confirmed_at: string | null;
+  updated_at: string;
 }
 
-export interface Project {
+export interface Order {
   id: string;
-  name: string;
-  client_name: string;
-  client_contact: string | null;
-  status: ProjectStatus;
-  transformer_kind: TransformerType;
-  capacity_kva: number | null;
-  primary_voltage: string | null;
-  secondary_voltage: string | null;
-  phase: number | null;
-  frequency_hz: number | null;
-  cooling_type: string | null;
-  impedance_pct: number | null;
-  requirements_notes: string;
+  created_by: string;
+  assigned_to: string;
+  product_name: string;
+  quality: string;
   quantity: number;
-  unit_price: number | null;
-  material_cost: number | null;
-  labour_cost: number | null;
-  margin: number | null;
-  total_price: number | null;
-  assigned_manager: string | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ProjectAssignment {
-  id: string;
-  project_id: string;
-  user_id: string;
-  role_at_assignment: UserRole;
-  assigned_by: string | null;
-  created_at: string;
-}
-
-export interface Task {
-  id: string;
-  project_id: string;
-  title: string;
+  power_type: string;
   description: string;
-  assigned_to: string | null;
-  status: TaskStatus;
-  due_date: string | null;
-  created_by: string | null;
+  /** null when the viewer isn't allowed to see it (production). */
+  price: number | null;
+  stage: number;
+  status: OrderStatus;
+  whatsapp_group_created: boolean;
+  whatsapp_group_id: string | null;
+  production_phone: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface Message {
+export interface OrderStageEvent {
   id: string;
-  project_id: string;
-  sender_id: string;
-  body: string;
-  created_at: string;
-}
-
-export interface AuditEntry {
-  id: string;
-  actor_id: string | null;
-  actor_label: string | null;
-  /** Denormalised at write time; used only by audit_log_view's masking. */
-  actor_role?: UserRole | null;
-  action: string;
-  entity_type: string;
-  entity_id: string | null;
-  before: Json;
-  after: Json;
-  created_at: string;
-}
-
-export interface DirectConversation {
-  id: string;
-  user_a: string;
-  user_b: string;
-  last_message_at: string;
-  created_at: string;
-}
-
-export interface DirectMessage {
-  id: string;
-  conversation_id: string;
-  sender_id: string;
-  kind: "text" | "voice";
-  body: string | null;
-  voice_path: string | null;
+  order_id: string;
+  from_stage: number | null;
+  to_stage: number;
+  changed_by: string | null;
   created_at: string;
 }
 
@@ -173,42 +78,14 @@ export interface Database {
   public: {
     Tables: {
       profiles: Row<Profile>;
-      signup_requests: Row<SignupRequest>;
-      projects: Row<Project>;
-      project_assignments: Row<ProjectAssignment>;
-      tasks: Row<Task>;
-      messages: Row<Message>;
-      audit_log: Row<AuditEntry>;
+      production_settings: Row<ProductionSettings>;
+      orders: Row<Order>;
+      order_stage_events: Row<OrderStageEvent>;
       notifications: Row<NotificationRow>;
-      direct_conversations: Row<DirectConversation>;
-      direct_messages: Row<DirectMessage>;
     };
     Views: {
-      audit_log_view: { Row: Omit<AuditEntry, "actor_role">; Relationships: [] };
+      order_feed: { Row: Order; Relationships: [] };
     };
-    Functions: {
-      review_signup_request: {
-        Args: {
-          request_id: string;
-          decision: RequestStatus;
-          assigned_role?: UserRole | null;
-          note?: string | null;
-        };
-        Returns: undefined;
-      };
-      reapply_signup: { Args: { requested?: UserRole | null }; Returns: undefined };
-      set_user_role: { Args: { target: string; new_role: UserRole }; Returns: undefined };
-      has_perm: { Args: { perm: string }; Returns: boolean };
-      get_or_create_direct_conversation: { Args: { other: string }; Returns: string };
-    };
-    Enums: {
-      user_role: UserRole;
-      user_status: UserStatus;
-      request_status: RequestStatus;
-      project_status: ProjectStatus;
-      task_status: TaskStatus;
-      transformer_type: TransformerType;
-    };
-    CompositeTypes: Record<string, never>;
+    Functions: Record<string, never>;
   };
 }

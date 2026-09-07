@@ -6,20 +6,14 @@ import { usePathname } from "next/navigation";
 import { Menu, LogOut, ChevronRight } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { NotificationsBell } from "./NotificationsBell";
-import { signOutAction } from "@/lib/auth/actions";
+import { logoutAction } from "@/lib/auth/actions";
 import type { Role } from "@/lib/permissions";
 
 const CRUMB_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
-  overview: "Overview",
-  projects: "Projects",
-  approvals: "Approvals",
-  users: "Users",
-  "audit-log": "Audit log",
+  orders: "Orders",
+  new: "Dispatch order",
   settings: "Settings",
-  chat: "Chat",
-  messages: "Messages",
-  review: "Review",
 };
 
 function Breadcrumbs() {
@@ -30,8 +24,7 @@ function Breadcrumbs() {
         const href = "/" + parts.slice(0, i + 1).join("/");
         const isLast = i === parts.length - 1;
         const label =
-          CRUMB_LABELS[p] ??
-          (p.length > 14 ? p.slice(0, 8) + "…" : p.replace(/-/g, " "));
+          CRUMB_LABELS[p] ?? (p.length > 12 ? p.slice(0, 8) + "…" : p);
         return (
           <span key={href} className="flex items-center gap-1.5">
             {i > 0 && <ChevronRight size={13} className="text-text-tertiary" />}
@@ -54,46 +47,38 @@ export function Shell({
   name,
   userId,
   initialUnread,
-  minimal,
   children,
 }: {
   role: Role;
   name: string;
   userId: string;
   initialUnread: number;
-  /** True for a not-yet-active account: hides the sidebar/nav entirely so
-   * there's nothing to discover before approval (spec §2 step 6). */
-  minimal?: boolean;
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="flex min-h-screen bg-bg">
-      {!minimal && (
-        <Sidebar
-          role={role}
-          name={name}
-          mobileOpen={mobileOpen}
-          onClose={() => setMobileOpen(false)}
-        />
-      )}
+      <Sidebar
+        role={role}
+        name={name}
+        mobileOpen={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+      />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-bg/80 px-4 backdrop-blur">
-          {!minimal && (
-            <button
-              onClick={() => setMobileOpen(true)}
-              className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] md:hidden"
-              aria-label="Open menu"
-            >
-              <Menu size={16} />
-            </button>
-          )}
-          {!minimal && <Breadcrumbs />}
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] md:hidden"
+            aria-label="Open menu"
+          >
+            <Menu size={16} />
+          </button>
+          <Breadcrumbs />
           <div className="ml-auto flex items-center gap-1.5">
-            {!minimal && <NotificationsBell userId={userId} initialUnread={initialUnread} />}
-            <form action={signOutAction}>
+            <NotificationsBell userId={userId} initialUnread={initialUnread} />
+            <form action={logoutAction}>
               <button
                 type="submit"
                 className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] hover:text-text"
@@ -107,7 +92,9 @@ export function Shell({
         </header>
 
         <main className="flex flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mx-auto flex w-full max-w-6xl flex-1">{children}</div>
+          <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col">
+            {children}
+          </div>
         </main>
       </div>
     </div>

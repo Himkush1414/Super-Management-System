@@ -1,7 +1,6 @@
 import { requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { Shell } from "@/components/dashboard/Shell";
-import { PendingGate } from "@/components/dashboard/PendingGate";
 
 export default async function DashboardLayout({
   children,
@@ -16,17 +15,14 @@ export default async function DashboardLayout({
     .select("id", { count: "exact", head: true })
     .is("read_at", null);
 
-  const isActive = ctx.profile.status === "active";
-
   return (
     <Shell
       role={ctx.role}
-      name={ctx.profile.full_name || ctx.email || "User"}
+      name={ctx.name}
       userId={ctx.userId}
       initialUnread={count ?? 0}
-      minimal={!isActive}
     >
-      {isActive ? children : <PendingGate status={ctx.profile.status} />}
+      {children}
     </Shell>
   );
 }

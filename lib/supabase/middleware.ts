@@ -1,21 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { can, type Role } from "@/lib/permissions";
+import { type Role, can } from "@/lib/permissions";
 
-/** Route groups that require an authenticated, active session. */
 const DASHBOARD_PREFIX = "/dashboard";
 
-/**
- * Per-path minimum permission. Checked after auth + active-status. A path
- * must satisfy every guard whose prefix it matches (e.g.
- * /dashboard/approvals/review matches both the "review" and the plain
- * "approvals" guard below, so Head Admin needs both perms — which they do).
- */
+/** Per-path minimum permission, checked after auth. */
 const ROUTE_GUARDS: { prefix: string; perm: Parameters<typeof can>[1] }[] = [
-  { prefix: "/dashboard/users", perm: "users.changeRole" },
-  { prefix: "/dashboard/approvals/review", perm: "approvals.decide" },
-  { prefix: "/dashboard/approvals", perm: "approvals.view" },
-  { prefix: "/dashboard/audit-log", perm: "audit.view" },
+  { prefix: "/dashboard/orders/new", perm: "orders.dispatch" },
+  { prefix: "/dashboard/settings", perm: "production.settings" },
 ];
 
 export async function updateSession(request: NextRequest) {
@@ -24,37 +16,34 @@ export async function updateSession(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const path = request.nextUrl.pathname;
+  const isDashboard = path.startsWith(DASHBOARD_PREFIX);
+  const isLogin = path === "/login";
 
-  // Without Supabase configured, only guard the dashboard (send to sign-in).
   if (!url || !key) {
-    if (path.startsWith(DASHBOARD_PREFIX)) {
-      const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/signin";
-      return NextResponse.redirect(redirectUrl);
+    if (isDashboard) {
+      const u = request.nextUrl.clone();
+      u.pathname = "/login";
+      return NextResponse.redirect(u);
     }
     return response;
   }
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
-          );
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-        },
+  const supabase = createServerClient(url, key, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value }) =>
+          request.cookies.set(name, value),
+        );
+        response = NextResponse.next({ request });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          response.cookies.set(name, value, options),
+        );
       },
     },
-  );
+  });
 
   let user = null;
   try {
@@ -63,72 +52,35 @@ export async function updateSession(request: NextRequest) {
     user = null;
   }
 
-  const isDashboard = path.startsWith(DASHBOARD_PREFIX);
-  const isAuthPage =
-    path.startsWith("/signin") ||
-    path.startsWith("/signup") ||
-    path.startsWith("/verify-otp");
-
-  // Unauthenticated user hitting the dashboard -> bounce to sign in.
-  if (!user && isDashboard) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/signin";
-    url.searchParams.set("next", path);
-    return NextResponse.redirect(url);
+  if (!user) {
+    if (isDashboard) {
+      const u = request.nextUrl.clone();
+      u.pathname = "/login";
+      return NextResponse.redirect(u);
+    }
+    return response;
   }
 
-  if (user && (isDashboard || isAuthPage)) {
+  // Signed in.
+  if (isLogin || path === "/") {
+    const u = request.nextUrl.clone();
+    u.pathname = "/dashboard/orders";
+    return NextResponse.redirect(u);
+  }
+
+  if (isDashboard) {
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role, status")
+      .select("role")
       .eq("id", user.id)
       .single();
-
-    const status = profile?.status;
     const role = profile?.role as Role | undefined;
 
-    // Suspended is a hard lockout, unlike pending/rejected below.
-    if (status === "suspended") {
-      await supabase.auth.signOut();
-      const url = request.nextUrl.clone();
-      url.pathname = "/signin";
-      return NextResponse.redirect(url);
-    }
-
-    // Signed in but not yet approved: send auth-page visits into the
-    // dashboard shell (whose layout renders the PendingGate); dashboard
-    // visits pass through untouched — no route-guard checks below apply,
-    // since a pending/rejected profile has no real capabilities anyway.
-    //
-    // GET-only: the sign-up wizard's own steps are POSTs (Server Actions)
-    // to /signup made *after* the OTP session cookie already exists (e.g.
-    // setSignupPassword, called while status is still "pending"). Redirecting
-    // those hijacks the action before it runs — the browser's action-fetch
-    // follows the redirect and the framework treats the resulting page
-    // response as a malformed action reply. Only intercept real navigations.
-    if (status !== "active") {
-      if (isAuthPage && request.method === "GET") {
-        const url = request.nextUrl.clone();
-        url.pathname = "/dashboard/overview";
-        return NextResponse.redirect(url);
-      }
-      return response;
-    }
-
-    // Active user landing on an auth page -> send to the dashboard.
-    if (isAuthPage && request.method === "GET") {
-      const url = request.nextUrl.clone();
-      url.pathname = "/dashboard/overview";
-      return NextResponse.redirect(url);
-    }
-
-    // Per-route permission guards.
     for (const guard of ROUTE_GUARDS) {
       if (path.startsWith(guard.prefix) && !can(role ?? null, guard.perm)) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/dashboard/overview";
-        url.searchParams.set("denied", guard.prefix);
-        return NextResponse.redirect(url);
+        const u = request.nextUrl.clone();
+        u.pathname = "/dashboard/orders";
+        return NextResponse.redirect(u);
       }
     }
   }

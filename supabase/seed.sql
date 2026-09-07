@@ -1,63 +1,88 @@
 -- ============================================================================
--- ⚠️  REAL PRODUCTION HEAD ADMIN CREDENTIAL — not a shared/guessable demo
--- password. This is the one and only account seeded into the system; every
--- other account (Admin / Manager / Product Supervisor / Maker) is created by
--- real users through the sign-up + approval flow and assigned a role by this
--- Head Admin at approval time. Rotate this password if this file's history
--- is ever exposed. Unlike the old demo seed, do NOT delete this row before
--- production — it is the production Head Admin.
+-- NR Industries — seed.sql   (runs automatically on `supabase db reset`)
 --
--- This file is intentionally SEPARATE from supabase/migrations/ so it can be
--- re-run (or, if ever necessary, swapped) without touching the schema. Runs
--- automatically on `supabase db reset`.
+-- The ONLY way accounts enter the system. There is no sign-up, no OTP, no
+-- self-registration. Exactly these fixed accounts exist.
 --
---   manikrana831@gmail.com / Manikrana1414
+-- Login field is the USERNAME. Supabase Auth needs an email internally, so
+-- each account is stored as <username>@nr.local in auth.users — that address
+-- is never shown or typed anywhere in the app.
 --
--- is_demo_account = false, status = 'active', role = 'head_admin'. The
--- 6-digit-numeric password rule only applies to the sign-up wizard — this
--- row is inserted directly, so it's naturally exempt (never touched by that
--- validator).
+-- Passwords are bcrypt-hashed via crypt()/gen_salt('bf'), which is exactly
+-- the scheme Supabase Auth (GoTrue) verifies against on sign-in.
+--
+--   head_admin  / Manikrana1414
+--   admin       / nrindustry1414
+--   marketing1  / Mark@NR1        marketing2 / Mark@NR102
+--   marketing3  / Mark@NR1003     marketing4 / Mark@NR1004
+--   production1 / Pro@NR1         production2 / Pro@NR102
+--   production3 / Pro@NR1003      production4 / Pro@NR1004
 -- ============================================================================
 
 do $$
 declare
-  head_admin_id uuid := '00000000-0000-0000-0000-0000000000a1';
-  head_admin_pw text := crypt('Manikrana1414', gen_salt('bf'));
+  acct record;
+  uid  uuid;
 begin
-  insert into auth.users (
-    id, instance_id, aud, role, email, encrypted_password,
-    email_confirmed_at, recovery_sent_at, last_sign_in_at,
-    raw_app_meta_data, raw_user_meta_data,
-    created_at, updated_at, confirmation_token, email_change,
-    email_change_token_new, recovery_token
-  )
-  values (
-    head_admin_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated',
-    'manikrana831@gmail.com', head_admin_pw, now(), null, now(),
-    '{"provider":"email","providers":["email"]}'::jsonb,
-    jsonb_build_object(
-      'full_name', 'Head Admin',
-      'contact_method', 'email',
-      'is_demo_account', true -- forces the handle_new_user trigger to create the profile as active, not pending
-    ),
-    now(), now(), '', '', '', ''
-  )
-  on conflict (id) do nothing;
+  for acct in
+    select * from (values
+      ('head_admin',  'Manikrana1414',  'head_admin', 'Manik Rana'),
+      ('admin',       'nrindustry1414', 'admin',      'Administrator'),
+      ('marketing1',  'Mark@NR1',       'marketing',  'Marketing 1'),
+      ('marketing2',  'Mark@NR102',     'marketing',  'Marketing 2'),
+      ('marketing3',  'Mark@NR1003',    'marketing',  'Marketing 3'),
+      ('marketing4',  'Mark@NR1004',    'marketing',  'Marketing 4'),
+      ('production1', 'Pro@NR1',        'production',  'Production 1'),
+      ('production2', 'Pro@NR102',      'production',  'Production 2'),
+      ('production3', 'Pro@NR1003',     'production',  'Production 3'),
+      ('production4', 'Pro@NR1004',     'production',  'Production 4')
+    ) as t(username, password, role, full_name)
+  loop
+    uid := gen_random_uuid();
 
-  insert into auth.identities (
-    id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at
-  )
-  values (
-    head_admin_id, head_admin_id, head_admin_id::text,
-    jsonb_build_object('sub', head_admin_id::text, 'email', 'manikrana831@gmail.com', 'email_verified', true),
-    'email', now(), now(), now()
-  )
-  on conflict (provider_id, provider) do nothing;
+    insert into auth.users (
+      id, instance_id, aud, role, email, encrypted_password,
+      email_confirmed_at, last_sign_in_at,
+      raw_app_meta_data, raw_user_meta_data,
+      created_at, updated_at,
+      confirmation_token, email_change, email_change_token_new, recovery_token
+    )
+    values (
+      uid,
+      '00000000-0000-0000-0000-000000000000',
+      'authenticated', 'authenticated',
+      acct.username || '@nr.local',
+      crypt(acct.password, gen_salt('bf')),
+      now(), now(),
+      '{"provider":"email","providers":["email"]}'::jsonb,
+      jsonb_build_object(
+        'username',  acct.username,
+        'full_name', acct.full_name,
+        'role',      acct.role
+      ),
+      now(), now(), '', '', '', ''
+    );
+
+    insert into auth.identities (
+      id, user_id, provider_id, identity_data, provider,
+      last_sign_in_at, created_at, updated_at
+    )
+    values (
+      gen_random_uuid(), uid, uid::text,
+      jsonb_build_object(
+        'sub', uid::text,
+        'email', acct.username || '@nr.local',
+        'email_verified', true
+      ),
+      'email', now(), now(), now()
+    );
+
+    -- handle_new_user() already inserted the profile from raw_user_meta_data;
+    -- make role/username/name authoritative here in case that ever changes.
+    update public.profiles
+       set username  = acct.username,
+           full_name = acct.full_name,
+           role      = acct.role::user_role
+     where id = uid;
+  end loop;
 end $$;
-
--- The handle_new_user trigger created the profile with role='maker' (its
--- inert default) and is_demo_account=true/active. Fix it up to the real
--- Head Admin row: role='head_admin', is_demo_account=false, active.
-update public.profiles
-   set role = 'head_admin', status = 'active', is_demo_account = false, full_name = 'Head Admin'
- where id = '00000000-0000-0000-0000-0000000000a1';

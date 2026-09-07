@@ -1,234 +1,65 @@
 /**
- * lib/permissions.ts
- * ------------------------------------------------------------------
- * THE single source of truth for the NR Industries role/permission
- * matrix (see spec §1). Every UI conditional and every API route MUST
- * import from here. The Postgres RLS policies in
- * supabase/migrations/ mirror this exact table — if you change a rule
- * here, change the matching policy there in the same commit.
- * ------------------------------------------------------------------
+ * lib/permissions.ts — single source of truth for the role model.
+ *
+ * Four roles. `marketing` and `production` are each held by several fixed
+ * accounts (marketing1..4, production1..4); individual scoping (an account
+ * only sees its own orders) is enforced by RLS on `created_by` / `assigned_to`,
+ * not by the role.
+ *
+ * head_admin invisibility (original spec §2): the role exists, but nothing
+ * user-facing — no label, badge, dropdown, nav item, or audit row — ever
+ * reveals it to another role. `admin` believes it is the top level.
  */
 
-export const ROLES = [
-  "head_admin",
-  "admin",
-  "manager",
-  "product_supervisor",
-  "maker",
-] as const;
-
+export const ROLES = ["head_admin", "admin", "marketing", "production"] as const;
 export type Role = (typeof ROLES)[number];
 
-export const ROLE_LEVEL: Record<Role, number> = {
-  head_admin: 4,
-  admin: 3,
-  manager: 2,
-  product_supervisor: 2,
-  maker: 1,
-};
-
-export const ROLE_LABEL: Record<Role, string> = {
-  head_admin: "Head Admin",
-  admin: "Admin",
-  manager: "Manager",
-  product_supervisor: "Product Supervisor",
-  maker: "Maker",
-};
-
-export const ROLE_DESCRIPTION: Record<Role, string> = {
-  head_admin: "Full control. Sole role-changer and permission authorizer.",
-  admin: "Full visibility. Approves signups. Cannot change roles.",
-  manager: "Assigned projects with pricing. Assigns work to Makers.",
-  product_supervisor:
-    "Assigned projects — specs & quality. Pricing is restricted.",
-  maker: "Own assigned tasks only. Never sees pricing.",
-};
-
-/** Every gated capability in the system. */
 export type Permission =
-  | "projects.view" // see projects (scoped by assignment for L1–L2)
-  | "projects.viewAll" // see every project regardless of assignment
-  | "projects.create" // create a new project / order
-  | "pricing.view" // see price / cost fields
-  | "pricing.edit" // edit price / cost fields
-  | "specs.view" // see production specs / requirements
-  | "specs.edit" // edit specs / requirements / quality fields
-  | "tasks.updateOwn" // move status on own assigned tasks
-  | "tasks.assign" // assign / reassign Makers to tasks
-  | "approvals.view" // see the pending-signup queue (read-only)
-  | "approvals.decide" // approve (with role assignment) / reject signup requests
-  | "users.changeRole" // change another user's role
-  | "permissions.edit" // edit the permission matrix itself
-  | "audit.view" // read the audit log
-  | "pdf.generate" // generate a spec-sheet PDF
-  | "chat.access"; // access project chat threads
-
-type Matrix = Record<Role, Record<Permission, boolean>>;
+  | "orders.dispatch" // create an order (marketing)
+  | "orders.viewOwn" // see orders you dispatched (marketing)
+  | "orders.viewAssigned" // see orders assigned to you (production)
+  | "orders.viewAll" // see every order (admin tier)
+  | "orders.advanceStage" // move an assigned order to the next stage (production)
+  | "price.view" // see the price field
+  | "production.settings" // register a production phone number
+  | "roster.viewAll"; // resolve every account's name (admin tier)
 
 const T = true;
-const F = false;
+type Caps = Partial<Record<Permission, boolean>>;
 
-export const PERMISSION_MATRIX: Matrix = {
+const MATRIX: Record<Role, Caps> = {
   head_admin: {
-    "projects.view": T,
-    "projects.viewAll": T,
-    "projects.create": T,
-    "pricing.view": T,
-    "pricing.edit": T,
-    "specs.view": T,
-    "specs.edit": T,
-    "tasks.updateOwn": T,
-    "tasks.assign": T,
-    "approvals.view": T,
-    "approvals.decide": T,
-    "users.changeRole": T,
-    "permissions.edit": T,
-    "audit.view": T,
-    "pdf.generate": T,
-    "chat.access": T,
+    "orders.viewAll": T,
+    "price.view": T,
+    "roster.viewAll": T,
   },
   admin: {
-    "projects.view": T,
-    "projects.viewAll": T,
-    "projects.create": T,
-    "pricing.view": T,
-    "pricing.edit": T,
-    "specs.view": T,
-    "specs.edit": T,
-    "tasks.updateOwn": T,
-    "tasks.assign": T,
-    "approvals.view": T,
-    "approvals.decide": F,
-    "users.changeRole": F,
-    "permissions.edit": F,
-    "audit.view": T,
-    "pdf.generate": T,
-    "chat.access": T,
+    "orders.viewAll": T,
+    "price.view": T,
+    "roster.viewAll": T,
   },
-  manager: {
-    "projects.view": T,
-    "projects.viewAll": F,
-    "projects.create": T,
-    "pricing.view": T,
-    "pricing.edit": T,
-    "specs.view": T,
-    "specs.edit": T,
-    "tasks.updateOwn": T,
-    "tasks.assign": T,
-    "approvals.view": F,
-    "approvals.decide": F,
-    "users.changeRole": F,
-    "permissions.edit": F,
-    "audit.view": F,
-    "pdf.generate": T,
-    "chat.access": T,
+  marketing: {
+    "orders.dispatch": T,
+    "orders.viewOwn": T,
+    "price.view": T, // their own orders only — enforced by RLS/order_feed
   },
-  product_supervisor: {
-    "projects.view": T,
-    "projects.viewAll": F,
-    "projects.create": F,
-    "pricing.view": F,
-    "pricing.edit": F,
-    "specs.view": T,
-    "specs.edit": T,
-    "tasks.updateOwn": T,
-    "tasks.assign": F,
-    "approvals.view": F,
-    "approvals.decide": F,
-    "users.changeRole": F,
-    "permissions.edit": F,
-    "audit.view": F,
-    "pdf.generate": T,
-    "chat.access": T,
-  },
-  maker: {
-    "projects.view": T,
-    "projects.viewAll": F,
-    "projects.create": F,
-    "pricing.view": F,
-    "pricing.edit": F,
-    "specs.view": T,
-    "specs.edit": F,
-    "tasks.updateOwn": T,
-    "tasks.assign": F,
-    "approvals.view": F,
-    "approvals.decide": F,
-    "users.changeRole": F,
-    "permissions.edit": F,
-    "audit.view": F,
-    "pdf.generate": T, // own tasks only — scope enforced at query time
-    "chat.access": T, // scoped to assigned project threads
+  production: {
+    "orders.viewAssigned": T,
+    "orders.advanceStage": T,
+    "production.settings": T,
   },
 };
 
 export function can(role: Role | null | undefined, perm: Permission): boolean {
   if (!role) return false;
-  return PERMISSION_MATRIX[role]?.[perm] ?? false;
+  return MATRIX[role]?.[perm] ?? false;
 }
+
+export const isAdminTier = (role: Role | null | undefined): boolean =>
+  role === "head_admin" || role === "admin";
 
 /**
- * Head Admin invisibility (spec §1): the head_admin role/account must never
- * be surfaced to any other role — role badges, dropdowns, user lists, audit
- * actor names. Self-view is always allowed. This is UI-side defense in depth
- * only — the real enforcement is in RLS (profiles_select_admin / teammates
- * policies) and the audit_log_view masking, which never return the row in
- * the first place.
+ * Where a role lands after login / when it hits a route it can't use.
+ * Everyone goes to the orders list; it renders the right view per role.
  */
-export function isRoleVisible(role: Role, viewerRole: Role): boolean {
-  return role !== "head_admin" || viewerRole === "head_admin";
-}
-
-/** Roles a viewer is allowed to see exist — filters head_admin out for everyone else. */
-export function visibleRoles(viewerRole: Role): Role[] {
-  return ROLES.filter((r) => isRoleVisible(r, viewerRole));
-}
-
-/** Roles assignable to another user — head_admin can never be assigned, only seeded. */
-export const ASSIGNABLE_ROLES: Role[] = ROLES.filter((r) => r !== "head_admin");
-
-/** True when the role only ever sees projects it is explicitly assigned to. */
-export function isAssignmentScoped(role: Role): boolean {
-  return !can(role, "projects.viewAll");
-}
-
-/**
- * Maker status transitions are a fixed ladder — no free-text, no delete,
- * no reassign (spec §4).
- */
-export const MAKER_TASK_STATUSES = [
-  "assigned",
-  "in_progress",
-  "completed",
-] as const;
-export type MakerTaskStatus = (typeof MAKER_TASK_STATUSES)[number];
-
-export const PROJECT_STATUSES = [
-  "draft",
-  "quoted",
-  "approved",
-  "in_production",
-  "quality_check",
-  "completed",
-  "on_hold",
-  "cancelled",
-] as const;
-export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
-
-/**
- * Field-level redaction. When a role cannot view pricing we never render a
- * blank — we render a locked placeholder (spec §4 / §5.2).
- */
-export const RESTRICTED_PLACEHOLDER = "🔒 Restricted";
-
-export function redactPricing<T extends Record<string, unknown>>(
-  row: T,
-  role: Role,
-  priceKeys: (keyof T)[] = ["unit_price", "total_price", "material_cost", "labour_cost", "margin"],
-): T {
-  if (can(role, "pricing.view")) return row;
-  const clone = { ...row };
-  for (const k of priceKeys) {
-    if (k in clone) (clone as Record<string, unknown>)[k as string] = null;
-  }
-  return clone;
-}
+export const HOME_PATH = "/dashboard/orders";

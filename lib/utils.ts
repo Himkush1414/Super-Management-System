@@ -27,6 +27,17 @@ export function formatDate(value: string | null | undefined): string {
   });
 }
 
+export function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  return new Date(value).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function formatRelativeTime(value: string): string {
   const then = new Date(value).getTime();
   const diff = Date.now() - then;

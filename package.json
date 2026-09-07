@@ -10,7 +10,6 @@
     "types": "supabase gen types typescript --project-id ywzwzrzlittjiosskmcy --schema public > types/database.types.ts"
   },
   "dependencies": {
-    "@react-pdf/renderer": "^4.9.0",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
     "framer-motion": "^13.1.1",

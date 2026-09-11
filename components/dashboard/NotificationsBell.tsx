@@ -66,7 +66,7 @@ export function NotificationsBell({
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-80 overflow-hidden rounded-xl border border-border bg-panel shadow-2xl">
+        <div className="fixed inset-x-3 top-[3.75rem] z-50 w-auto overflow-hidden rounded-xl border border-border bg-panel shadow-2xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80">
           <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
             <span className="text-[13px] font-semibold">Notifications</span>
             <button

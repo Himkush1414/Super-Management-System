@@ -9,8 +9,9 @@ import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { OrderStatusBadge, WhatsAppBadge } from "@/components/shared/Badge";
 import { StageTracker } from "@/components/dashboard/StageTracker";
 import { StageControl } from "@/components/dashboard/StageControl";
+import { StageTimerBar } from "@/components/dashboard/StageTimerBar";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
-import { stageName } from "@/lib/orders";
+import { MAX_STAGE, stageName } from "@/lib/orders";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 
 export async function generateMetadata({
@@ -60,6 +61,10 @@ export default async function OrderDetailPage({
       >
         <ArrowLeft size={14} /> Orders
       </Link>
+
+      {isAssignedProduction && order.status === "active" && order.stage < MAX_STAGE && (
+        <StageTimerBar stageReadyAt={order.stage_ready_at} nextStage={order.stage + 1} />
+      )}
 
       <PageHeader
         title={order.product_name}
@@ -119,6 +124,7 @@ export default async function OrderDetailPage({
                     orderId={order.id}
                     stage={order.stage}
                     waiting={order.status === "waiting_on_production_phone"}
+                    stageReadyAt={order.stage_ready_at}
                   />
                 </div>
               )}

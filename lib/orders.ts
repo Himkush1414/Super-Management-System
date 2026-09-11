@@ -13,6 +13,9 @@ export const STAGES = [
 
 export const MAX_STAGE = 5;
 
+/** How long production must wait after a stage change before advancing again. */
+export const STAGE_TIMER_MS = 3 * 60 * 1000;
+
 export function stageName(n: number): string {
   return STAGES.find((s) => s.n === n)?.name ?? `Stage ${n}`;
 }

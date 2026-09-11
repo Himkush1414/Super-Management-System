@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSession, requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/server";
-import { MAX_STAGE, stageName } from "@/lib/orders";
+import { MAX_STAGE, STAGE_TIMER_MS, stageName } from "@/lib/orders";
 import { createOrderGroup, postStageUpdate } from "@/lib/whatsapp";
 
 export type Result = { error?: string; ok?: string; id?: string };
@@ -129,7 +129,9 @@ export async function advanceStage(orderId: string): Promise<Result> {
 
   const { data: order } = await svc
     .from("orders")
-    .select("id, assigned_to, created_by, stage, status, product_name, whatsapp_group_id, production_phone")
+    .select(
+      "id, assigned_to, created_by, stage, status, product_name, whatsapp_group_id, production_phone, stage_ready_at",
+    )
     .eq("id", orderId)
     .single();
 
@@ -140,10 +142,21 @@ export async function advanceStage(orderId: string): Promise<Result> {
     return { error: "This order is waiting on a production phone number." };
   if (order.stage >= MAX_STAGE) return { error: "This order is already delivered." };
 
+  // Server-authoritative: reject an early advance even if a client is
+  // tampered with or a stale page re-submits before its own timer shows zero.
+  if (order.stage_ready_at && new Date(order.stage_ready_at).getTime() > Date.now()) {
+    return { error: "The timer for this stage hasn't finished yet." };
+  }
+
   const from = order.stage as number;
   const to = from + 1;
+  const stageReadyAt =
+    to < MAX_STAGE ? new Date(Date.now() + STAGE_TIMER_MS).toISOString() : null;
 
-  const { error } = await svc.from("orders").update({ stage: to }).eq("id", orderId);
+  const { error } = await svc
+    .from("orders")
+    .update({ stage: to, stage_ready_at: stageReadyAt })
+    .eq("id", orderId);
   if (error) return { error: error.message };
 
   await svc.from("order_stage_events").insert({

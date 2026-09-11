@@ -49,6 +49,8 @@ export interface Order {
   production_phone: string | null;
   created_at: string;
   updated_at: string;
+  /** When the assigned production account may advance to the next stage; null = may advance now. */
+  stage_ready_at: string | null;
 }
 
 export interface OrderStageEvent {

@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileDown } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getOrder } from "@/lib/data/orders";
 import { PageHeader } from "@/components/shared/Page";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 import { OrderStatusBadge, WhatsAppBadge } from "@/components/shared/Badge";
 import { StageTracker } from "@/components/dashboard/StageTracker";
 import { StageControl } from "@/components/dashboard/StageControl";
@@ -69,7 +70,16 @@ export default async function OrderDetailPage({
       <PageHeader
         title={order.product_name}
         description={order.power_type || undefined}
-        action={<OrderStatusBadge status={order.status} />}
+        action={
+          <div className="flex items-center gap-3">
+            <OrderStatusBadge status={order.status} />
+            <a href={`/dashboard/orders/${id}/pdf`} download>
+              <Button variant="secondary" size="sm">
+                <FileDown size={14} /> Download PDF
+              </Button>
+            </a>
+          </div>
+        }
       />
 
       <div className="grid gap-5 lg:grid-cols-3">

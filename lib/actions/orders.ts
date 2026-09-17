@@ -108,7 +108,7 @@ export async function dispatchOrder(
     });
   }
 
-  await notify(svc, await headAdminIds(svc), {
+  await notify(svc, [assigned_to, ...(await headAdminIds(svc))], {
     type: "order",
     title: "New order dispatched",
     body: `${ctx.name} dispatched "${product_name}" to ${prod.full_name}${

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Package, Plus, FileDown } from "lucide-react";
+import { Package, Plus, FileDown, FileSpreadsheet } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { getOrders, type OrderRow } from "@/lib/data/orders";
 import { PageHeader, EmptyState } from "@/components/shared/Page";
@@ -39,11 +39,18 @@ export default async function OrdersPage() {
         action={
           <div className="flex items-center gap-2">
             {orders.length > 0 && (
-              <a href="/dashboard/orders/pdf" download>
-                <Button variant="secondary" size="sm">
-                  <FileDown size={14} /> Export PDF
-                </Button>
-              </a>
+              <>
+                <a href="/dashboard/orders/csv" download>
+                  <Button variant="secondary" size="sm">
+                    <FileSpreadsheet size={14} /> Export CSV
+                  </Button>
+                </a>
+                <a href="/dashboard/orders/pdf" download>
+                  <Button variant="secondary" size="sm">
+                    <FileDown size={14} /> Export PDF
+                  </Button>
+                </a>
+              </>
             )}
             {isMarketing && (
               <Link href="/dashboard/orders/new">

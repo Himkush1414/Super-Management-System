@@ -45,6 +45,10 @@ export function Modal({
             className="fixed inset-0 bg-black/65 backdrop-blur-sm"
           />
           <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="nr-modal-title"
+            aria-describedby={description ? "nr-modal-description" : undefined}
             initial={{ opacity: 0, y: 12, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.98 }}
@@ -55,9 +59,11 @@ export function Modal({
           >
             <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
               <div>
-                <h2 className="text-sm font-semibold">{title}</h2>
+                <h2 id="nr-modal-title" className="text-sm font-semibold">
+                  {title}
+                </h2>
                 {description && (
-                  <p className="mt-0.5 text-[13px] text-text-secondary">
+                  <p id="nr-modal-description" className="mt-0.5 text-[13px] text-text-secondary">
                     {description}
                   </p>
                 )}

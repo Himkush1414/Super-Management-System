@@ -100,15 +100,36 @@ npm run dev              # http://localhost:3000
 
 Then sign in as any account above.
 
-## 6. Layout
+`supabase start` requires Docker (Docker Desktop with WSL2 integration
+enabled, if you're on Windows/WSL). If it's not running, every Auth call
+degrades to "signed out" after a 5s timeout instead of hanging — you'll be
+stuck on the login screen with no visible error until Docker is up.
+
+## 6. PDF export
+
+- Order detail page → **Download PDF**: a spec sheet (details, description,
+  stage history). Price and dispatcher/production names follow the same
+  visibility rule as the page itself.
+- Orders list → **Export PDF**: the caller's visible orders as a report.
+
+Both are plain GET routes (`/dashboard/orders/[id]/pdf`,
+`/dashboard/orders/pdf`) rendered server-side with `@react-pdf/renderer`, so
+they require no client JS and respect the same session/RLS scoping as the
+pages they sit on.
+
+## 7. Layout
 
 ```
 app/(auth)/login/        username + password, the only way in
 app/dashboard/orders/     list · new (dispatch) · [id] (detail + stage control)
+app/dashboard/orders/*/pdf/  PDF export route handlers
 app/dashboard/settings/   production phone registration
 lib/auth/                 login/logout actions · requireSession/requireRole
 lib/actions/orders.ts     dispatchOrder · advanceStage  (service-role, session-checked)
 lib/actions/production.ts saveProductionPhone
 lib/whatsapp.ts           the stub
 lib/permissions.ts        role → capability matrix
+lib/pdf/                  react-pdf document components for the exports above
+lib/env.ts                requireEnv() — fail fast on missing config instead
+                           of a cryptic error deep inside supabase-js
 ```

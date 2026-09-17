@@ -45,9 +45,15 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
+  // The Auth server call has no built-in timeout and will retry internally
+  // for ~25s if it's unreachable, hanging every navigation. Cap it so a
+  // down/slow Auth server degrades to "signed out" instead of stalling.
   let user = null;
   try {
-    user = (await supabase.auth.getUser()).data.user;
+    user = await Promise.race([
+      supabase.auth.getUser().then((r) => r.data.user),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+    ]);
   } catch {
     user = null;
   }

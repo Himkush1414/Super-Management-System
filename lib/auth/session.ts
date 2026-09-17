@@ -22,9 +22,12 @@ export interface SessionContext {
  */
 export async function requireSession(): Promise<SessionContext> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // See lib/supabase/middleware.ts — cap the Auth server round trip so a
+  // slow/unreachable Auth server can't hang every dashboard render.
+  const user = await Promise.race([
+    supabase.auth.getUser().then((r) => r.data.user),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+  ]).catch(() => null);
 
   if (!user) redirect("/login");
 

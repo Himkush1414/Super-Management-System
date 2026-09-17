@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Bell, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useUnreadCount } from "@/lib/realtime";
@@ -47,6 +48,15 @@ export function NotificationsBell({
     load();
   }
 
+  async function markOneRead(n: NotificationRow) {
+    if (n.read_at) return;
+    const now = new Date().toISOString();
+    setItems((prev) => prev.map((i) => (i.id === n.id ? { ...i, read_at: now } : i)));
+    setUnread((c) => Math.max(0, c - 1));
+    const supabase = createClient();
+    await supabase.from("notifications").update({ read_at: now }).eq("id", n.id);
+  }
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -82,27 +92,59 @@ export function NotificationsBell({
                 Nothing yet.
               </p>
             ) : (
-              items.map((n) => (
-                <div
-                  key={n.id}
-                  className={cn(
-                    "border-b border-border px-4 py-3 last:border-0",
-                    !n.read_at && "bg-accent/[0.04]",
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[13px] font-medium">{n.title}</p>
-                    <span className="shrink-0 text-[11px] text-text-tertiary">
-                      {formatRelativeTime(n.created_at)}
-                    </span>
-                  </div>
-                  {n.body && (
-                    <p className="mt-0.5 line-clamp-2 text-[12px] text-text-secondary">
-                      {n.body}
-                    </p>
-                  )}
-                </div>
-              ))
+              items.map((n) => {
+                const href =
+                  n.entity_type === "order" && n.entity_id
+                    ? `/dashboard/orders/${n.entity_id}`
+                    : null;
+                const content = (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="flex items-center gap-1.5 text-[13px] font-medium">
+                        {!n.read_at && (
+                          <span className="size-1.5 shrink-0 rounded-full bg-accent" />
+                        )}
+                        {n.title}
+                      </p>
+                      <span className="shrink-0 text-[11px] text-text-tertiary">
+                        {formatRelativeTime(n.created_at)}
+                      </span>
+                    </div>
+                    {n.body && (
+                      <p className="mt-0.5 line-clamp-2 text-[12px] text-text-secondary">
+                        {n.body}
+                      </p>
+                    )}
+                  </>
+                );
+                const className = cn(
+                  "block border-b border-border px-4 py-3 text-left last:border-0",
+                  !n.read_at && "bg-accent/[0.04]",
+                  href && "nr-interactive hover:bg-white/[0.03]",
+                );
+                return href ? (
+                  <Link
+                    key={n.id}
+                    href={href}
+                    onClick={() => {
+                      markOneRead(n);
+                      setOpen(false);
+                    }}
+                    className={className}
+                  >
+                    {content}
+                  </Link>
+                ) : (
+                  <button
+                    key={n.id}
+                    type="button"
+                    onClick={() => markOneRead(n)}
+                    className={cn(className, "w-full")}
+                  >
+                    {content}
+                  </button>
+                );
+              })
             )}
           </div>
         </div>

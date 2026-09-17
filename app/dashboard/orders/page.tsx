@@ -1,15 +1,14 @@
 import Link from "next/link";
-import { Package, Plus } from "lucide-react";
+import { Package, Plus, FileDown } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { getOrders, type OrderRow } from "@/lib/data/orders";
 import { PageHeader, EmptyState } from "@/components/shared/Page";
 import { StatCard } from "@/components/ui/Card";
-import { Table, THead, TR, TH, TD } from "@/components/ui/Table";
-import { StageBadge, OrderStatusBadge } from "@/components/shared/Badge";
 import { Button } from "@/components/ui/Button";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
 import { StageTracker } from "@/components/dashboard/StageTracker";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { OrdersTable } from "@/components/dashboard/OrdersTable";
+import { OrderStatusBadge } from "@/components/shared/Badge";
 
 export const metadata = { title: "Orders" };
 
@@ -38,13 +37,22 @@ export default async function OrdersPage() {
             : "Every order dispatched by marketing and its production progress."
         }
         action={
-          isMarketing ? (
-            <Link href="/dashboard/orders/new">
-              <Button size="sm">
-                <Plus size={15} /> Dispatch order
-              </Button>
-            </Link>
-          ) : null
+          <div className="flex items-center gap-2">
+            {orders.length > 0 && (
+              <a href="/dashboard/orders/pdf" download>
+                <Button variant="secondary" size="sm">
+                  <FileDown size={14} /> Export PDF
+                </Button>
+              </a>
+            )}
+            {isMarketing && (
+              <Link href="/dashboard/orders/new">
+                <Button size="sm">
+                  <Plus size={15} /> Dispatch order
+                </Button>
+              </Link>
+            )}
+          </div>
         }
       />
 
@@ -75,58 +83,7 @@ export default async function OrdersPage() {
           }
         />
       ) : (
-        <Table>
-          <THead>
-            <TR>
-              <TH>Product</TH>
-              {!isMarketing && <TH>Dispatched by</TH>}
-              <TH>Production</TH>
-              <TH numeric>Qty</TH>
-              <TH>Stage</TH>
-              <TH numeric>Price</TH>
-              <TH>Status</TH>
-              <TH numeric>Date</TH>
-            </TR>
-          </THead>
-          <tbody>
-            {orders.map((o) => (
-              <TR key={o.id} className="cursor-pointer">
-                <TD>
-                  <Link
-                    href={`/dashboard/orders/${o.id}`}
-                    className="font-medium text-text hover:text-accent"
-                  >
-                    {o.product_name}
-                  </Link>
-                  {o.power_type && (
-                    <span className="block text-[12px] text-text-tertiary">
-                      {o.power_type}
-                    </span>
-                  )}
-                </TD>
-                {!isMarketing && (
-                  <TD className="text-text-secondary">
-                    {o.dispatcher?.full_name ?? "—"}
-                  </TD>
-                )}
-                <TD className="text-text-secondary">
-                  {o.assignee?.full_name ?? "—"}
-                </TD>
-                <TD numeric>{o.quantity}</TD>
-                <TD>
-                  <StageBadge stage={o.stage} />
-                </TD>
-                <TD numeric>{formatCurrency(o.price)}</TD>
-                <TD>
-                  <OrderStatusBadge status={o.status} />
-                </TD>
-                <TD numeric className="text-text-tertiary">
-                  {formatDate(o.created_at)}
-                </TD>
-              </TR>
-            ))}
-          </tbody>
-        </Table>
+        <OrdersTable orders={orders} showDispatcher={!isMarketing} />
       )}
     </>
   );

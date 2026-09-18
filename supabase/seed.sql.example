@@ -1,8 +1,12 @@
 -- ============================================================================
--- NR Industries — seed.sql   (runs automatically on `supabase db reset`)
+-- NR Industries — seed.sql.example
 --
--- The ONLY way accounts enter the system. There is no sign-up, no OTP, no
--- self-registration. Exactly these fixed accounts exist.
+-- Template for supabase/seed.sql, which is gitignored because it holds the
+-- real fixed-account login passwords. To set up local dev:
+--
+--   cp supabase/seed.sql.example supabase/seed.sql
+--   # then replace every <...-PASSWORD> placeholder below with a real value
+--   supabase db reset
 --
 -- Login field is the USERNAME. Supabase Auth needs an email internally, so
 -- each account is stored as <username>@nr.local in auth.users — that address
@@ -10,13 +14,6 @@
 --
 -- Passwords are bcrypt-hashed via crypt()/gen_salt('bf'), which is exactly
 -- the scheme Supabase Auth (GoTrue) verifies against on sign-in.
---
---   head_admin  / Manikrana1414
---   admin       / nrindustry1414
---   marketing1  / Mark@NR1        marketing2 / Mark@NR102
---   marketing3  / Mark@NR1003     marketing4 / Mark@NR1004
---   production1 / Pro@NR1         production2 / Pro@NR102
---   production3 / Pro@NR1003      production4 / Pro@NR1004
 -- ============================================================================
 
 do $$
@@ -26,16 +23,16 @@ declare
 begin
   for acct in
     select * from (values
-      ('head_admin',  'Manikrana1414',  'head_admin', 'Manik Rana'),
-      ('admin',       'nrindustry1414', 'admin',      'Administrator'),
-      ('marketing1',  'Mark@NR1',       'marketing',  'Marketing 1'),
-      ('marketing2',  'Mark@NR102',     'marketing',  'Marketing 2'),
-      ('marketing3',  'Mark@NR1003',    'marketing',  'Marketing 3'),
-      ('marketing4',  'Mark@NR1004',    'marketing',  'Marketing 4'),
-      ('production1', 'Pro@NR1',        'production',  'Production 1'),
-      ('production2', 'Pro@NR102',      'production',  'Production 2'),
-      ('production3', 'Pro@NR1003',     'production',  'Production 3'),
-      ('production4', 'Pro@NR1004',     'production',  'Production 4')
+      ('head_admin',  '<HEAD_ADMIN_PASSWORD>',  'head_admin', 'Manik Rana'),
+      ('admin',       '<ADMIN_PASSWORD>',       'admin',      'Administrator'),
+      ('marketing1',  '<MARKETING1_PASSWORD>',  'marketing',  'Marketing 1'),
+      ('marketing2',  '<MARKETING2_PASSWORD>',  'marketing',  'Marketing 2'),
+      ('marketing3',  '<MARKETING3_PASSWORD>',  'marketing',  'Marketing 3'),
+      ('marketing4',  '<MARKETING4_PASSWORD>',  'marketing',  'Marketing 4'),
+      ('production1', '<PRODUCTION1_PASSWORD>', 'production',  'Production 1'),
+      ('production2', '<PRODUCTION2_PASSWORD>', 'production',  'Production 2'),
+      ('production3', '<PRODUCTION3_PASSWORD>', 'production',  'Production 3'),
+      ('production4', '<PRODUCTION4_PASSWORD>', 'production',  'Production 4')
     ) as t(username, password, role, full_name)
   loop
     uid := gen_random_uuid();

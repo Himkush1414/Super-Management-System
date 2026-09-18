@@ -44,6 +44,9 @@ supabase/.temp
 supabase/.branches
 supabase/.env
 
+# contains real fixed-account login passwords — never commit (see seed.sql.example)
+supabase/seed.sql
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

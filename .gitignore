@@ -46,6 +46,7 @@ supabase/.env
 
 # contains real fixed-account login passwords — never commit (see seed.sql.example)
 supabase/seed.sql
+supabase/hosted-bootstrap.sql
 
 # typescript
 *.tsbuildinfo

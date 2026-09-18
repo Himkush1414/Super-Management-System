@@ -10,8 +10,7 @@ function csvField(value: string | number): string {
 }
 
 export async function GET() {
-  const ctx = await requireSession();
-  const orders = await getOrders();
+  const [ctx, orders] = await Promise.all([requireSession(), getOrders()]);
   const showDispatcher = ctx.role !== "marketing";
 
   const headers = [

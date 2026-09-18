@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "@/types/database.types";
@@ -19,8 +20,13 @@ export interface SessionContext {
  * Resolve the signed-in account for a dashboard route. No pending/suspended
  * states exist any more — an account either is one of the fixed seeded rows
  * or it isn't signed in.
+ *
+ * `cache()`-wrapped: the dashboard layout and every page under it each call
+ * this, and without deduping that's an extra auth + profile round trip per
+ * segment on every navigation. `cache()` reuses the one in-flight/resolved
+ * call for the lifetime of a single request.
  */
-export async function requireSession(): Promise<SessionContext> {
+export const requireSession = cache(async (): Promise<SessionContext> => {
   const supabase = await createClient();
   // See lib/supabase/middleware.ts — cap the Auth server round trip so a
   // slow/unreachable Auth server can't hang every dashboard render.
@@ -52,7 +58,7 @@ export async function requireSession(): Promise<SessionContext> {
     isAdminTier: isAdminTier(role),
     can: (perm) => can(role, perm),
   };
-}
+});
 
 export async function requireRole(...roles: Role[]): Promise<SessionContext> {
   const ctx = await requireSession();

@@ -13,8 +13,7 @@ import { OrderStatusBadge } from "@/components/shared/Badge";
 export const metadata = { title: "Orders" };
 
 export default async function OrdersPage() {
-  const ctx = await requireSession();
-  const orders = await getOrders();
+  const [ctx, orders] = await Promise.all([requireSession(), getOrders()]);
 
   if (ctx.role === "production") return <ProductionView orders={orders} />;
 

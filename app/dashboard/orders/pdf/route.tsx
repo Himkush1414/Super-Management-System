@@ -5,8 +5,7 @@ import { getOrders } from "@/lib/data/orders";
 import { OrdersReport } from "@/lib/pdf/OrdersReport";
 
 export async function GET() {
-  const ctx = await requireSession();
-  const orders = await getOrders();
+  const [ctx, orders] = await Promise.all([requireSession(), getOrders()]);
 
   const scopeLabel =
     ctx.role === "marketing"

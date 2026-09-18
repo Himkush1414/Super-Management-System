@@ -20,10 +20,6 @@ export function stageName(n: number): string {
   return STAGES.find((s) => s.n === n)?.name ?? `Stage ${n}`;
 }
 
-export function stageLabel(n: number): string {
-  return `Stage ${n} — ${stageName(n)}`;
-}
-
 export const ORDER_STATUS_LABEL: Record<string, string> = {
   active: "Active",
   waiting_on_production_phone: "Waiting on production phone number",

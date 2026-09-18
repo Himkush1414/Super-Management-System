@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { requireSession, requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/server";
 import { MAX_STAGE, STAGE_TIMER_MS, stageName } from "@/lib/orders";
@@ -56,19 +57,16 @@ export async function dispatchOrder(
     return { error: "Price must be a positive number, or left blank." };
   if (!assigned_to) return { error: "Choose which production account to send this to." };
 
-  const { data: prod } = await svc
-    .from("profiles")
-    .select("id, role, full_name, username")
-    .eq("id", assigned_to)
-    .single();
+  const [{ data: prod }, { data: settings }] = await Promise.all([
+    svc.from("profiles").select("id, role, full_name, username").eq("id", assigned_to).single(),
+    svc
+      .from("production_settings")
+      .select("phone, confirmed_at")
+      .eq("profile_id", assigned_to)
+      .maybeSingle(),
+  ]);
   if (!prod || prod.role !== "production")
     return { error: "That production account no longer exists." };
-
-  const { data: settings } = await svc
-    .from("production_settings")
-    .select("phone, confirmed_at")
-    .eq("profile_id", assigned_to)
-    .maybeSingle();
 
   const phoneReady = Boolean(settings?.phone && settings?.confirmed_at);
   const status = phoneReady ? "active" : "waiting_on_production_phone";
@@ -92,29 +90,35 @@ export async function dispatchOrder(
     .single();
   if (error || !order) return { error: error?.message ?? "Could not create the order." };
 
-  await svc.from("order_stage_events").insert({
-    order_id: order.id,
-    from_stage: null,
-    to_stage: 1,
-    changed_by: ctx.userId,
-  });
-
-  if (phoneReady) {
-    // WhatsApp is stubbed — this only logs the intended payload (spec §7).
-    await createOrderGroup({
-      orderId: order.id,
-      productName: product_name,
-      productionPhone: settings!.phone as string,
-    });
-  }
-
-  await notify(svc, [assigned_to, ...(await headAdminIds(svc))], {
-    type: "order",
-    title: "New order dispatched",
-    body: `${ctx.name} dispatched "${product_name}" to ${prod.full_name}${
-      phoneReady ? "" : " — waiting on their phone number"
-    }.`,
-    entity_id: order.id,
+  // None of this needs to finish before the user is redirected: the audit
+  // event, the (stubbed) WhatsApp call, and the notification insert are all
+  // side effects, not data the redirected page depends on.
+  after(async () => {
+    await Promise.all([
+      svc.from("order_stage_events").insert({
+        order_id: order.id,
+        from_stage: null,
+        to_stage: 1,
+        changed_by: ctx.userId,
+      }),
+      phoneReady
+        ? createOrderGroup({
+            orderId: order.id,
+            productName: product_name,
+            productionPhone: settings!.phone as string,
+          })
+        : Promise.resolve(),
+      (async () => {
+        await notify(svc, [assigned_to, ...(await headAdminIds(svc))], {
+          type: "order",
+          title: "New order dispatched",
+          body: `${ctx.name} dispatched "${product_name}" to ${prod.full_name}${
+            phoneReady ? "" : " — waiting on their phone number"
+          }.`,
+          entity_id: order.id,
+        });
+      })(),
+    ]);
   });
 
   revalidatePath("/dashboard/orders");
@@ -159,26 +163,31 @@ export async function advanceStage(orderId: string): Promise<Result> {
     .eq("id", orderId);
   if (error) return { error: error.message };
 
-  await svc.from("order_stage_events").insert({
-    order_id: orderId,
-    from_stage: from,
-    to_stage: to,
-    changed_by: ctx.userId,
-  });
-
-  // WhatsApp is stubbed — logs only (spec §7).
-  await postStageUpdate({
-    orderId,
-    groupId: order.whatsapp_group_id,
-    productionPhone: order.production_phone,
-    text: `Order "${order.product_name}" moved to Stage ${to} — ${stageName(to)}.`,
-  });
-
-  await notify(svc, [order.created_by, ...(await headAdminIds(svc))], {
-    type: "stage",
-    title: `Stage ${to} — ${stageName(to)}`,
-    body: `"${order.product_name}" is now at Stage ${to}: ${stageName(to)}.`,
-    entity_id: orderId,
+  // Same as dispatchOrder: audit log, the (stubbed) WhatsApp post, and the
+  // notification are side effects the caller doesn't need to wait on.
+  after(async () => {
+    await Promise.all([
+      svc.from("order_stage_events").insert({
+        order_id: orderId,
+        from_stage: from,
+        to_stage: to,
+        changed_by: ctx.userId,
+      }),
+      postStageUpdate({
+        orderId,
+        groupId: order.whatsapp_group_id,
+        productionPhone: order.production_phone,
+        text: `Order "${order.product_name}" moved to Stage ${to} — ${stageName(to)}.`,
+      }),
+      (async () => {
+        await notify(svc, [order.created_by, ...(await headAdminIds(svc))], {
+          type: "stage",
+          title: `Stage ${to} — ${stageName(to)}`,
+          body: `"${order.product_name}" is now at Stage ${to}: ${stageName(to)}.`,
+          entity_id: orderId,
+        });
+      })(),
+    ]);
   });
 
   revalidatePath(`/dashboard/orders/${orderId}`);

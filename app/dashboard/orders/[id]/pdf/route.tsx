@@ -11,16 +11,17 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const ctx = await requireSession();
-  const order = await getOrder(id);
-  if (!order) return new NextResponse("Not found", { status: 404 });
-
   const supabase = await createClient();
-  const { data: events } = await supabase
-    .from("order_stage_events")
-    .select("*")
-    .eq("order_id", id)
-    .order("created_at", { ascending: false });
+  const [ctx, order, { data: events }] = await Promise.all([
+    requireSession(),
+    getOrder(id),
+    supabase
+      .from("order_stage_events")
+      .select("*")
+      .eq("order_id", id)
+      .order("created_at", { ascending: false }),
+  ]);
+  if (!order) return new NextResponse("Not found", { status: 404 });
 
   const showPrice = order.price !== null || ctx.can("price.view");
   const showParties = ctx.isAdminTier;

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/server";
 import { createOrderGroup } from "@/lib/whatsapp";
@@ -41,38 +42,46 @@ export async function saveProductionPhone(
     .eq("assigned_to", ctx.userId)
     .eq("status", "waiting_on_production_phone");
 
-  for (const o of parked ?? []) {
+  if (parked?.length) {
+    const parkedIds = parked.map((o) => o.id);
+
+    // One update for every parked order instead of one per order.
     await svc
       .from("orders")
       .update({ status: "active", production_phone: phone })
-      .eq("id", o.id);
+      .in("id", parkedIds);
 
-    await createOrderGroup({
-      orderId: o.id,
-      productName: o.product_name,
-      productionPhone: phone,
+    // Side effects (WhatsApp stub + notifications) don't need to finish
+    // before the caller gets a response.
+    after(async () => {
+      const { data: heads } = await svc
+        .from("profiles")
+        .select("id")
+        .eq("role", "head_admin");
+      const headIds = (heads ?? []).map((h) => h.id as string);
+
+      await Promise.all([
+        ...parked.map((o) =>
+          createOrderGroup({
+            orderId: o.id,
+            productName: o.product_name,
+            productionPhone: phone,
+          }),
+        ),
+        svc.from("notifications").insert(
+          parked.flatMap((o) =>
+            [...new Set([o.created_by, ...headIds])].map((user_id) => ({
+              user_id,
+              type: "order",
+              title: "Order activated",
+              body: `"${o.product_name}" is now active — production phone number registered.`,
+              entity_type: "order",
+              entity_id: o.id,
+            })),
+          ),
+        ),
+      ]);
     });
-
-    const { data: heads } = await svc
-      .from("profiles")
-      .select("id")
-      .eq("role", "head_admin");
-
-    const recipients = [
-      ...new Set([o.created_by, ...(heads ?? []).map((h) => h.id as string)]),
-    ];
-    if (recipients.length) {
-      await svc.from("notifications").insert(
-        recipients.map((user_id) => ({
-          user_id,
-          type: "order",
-          title: "Order activated",
-          body: `"${o.product_name}" is now active — production phone number registered.`,
-          entity_type: "order",
-          entity_id: o.id,
-        })),
-      );
-    }
   }
 
   revalidatePath("/dashboard/settings");

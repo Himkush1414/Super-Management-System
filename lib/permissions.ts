@@ -57,9 +57,3 @@ export function can(role: Role | null | undefined, perm: Permission): boolean {
 
 export const isAdminTier = (role: Role | null | undefined): boolean =>
   role === "head_admin" || role === "admin";
-
-/**
- * Where a role lands after login / when it hits a route it can't use.
- * Everyone goes to the orders list; it renders the right view per role.
- */
-export const HOME_PATH = "/dashboard/orders";

@@ -90,6 +90,8 @@ export async function resetAccount(_prev: Result | null, fd: FormData): Promise<
   const { data, error } = await supabase.rpc("admin_reset_account", {
     p_profile_id: profileId,
     ...scopes,
+    // recorded in the reset's audit row: was a copy downloaded first?
+    p_exported: fd.get("exported") === "on",
   });
   if (error) return { error: "Could not reset the account. Nothing was deleted." };
 

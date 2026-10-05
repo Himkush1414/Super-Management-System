@@ -154,10 +154,14 @@ production accounts build up:
   order page), with its stage history and notifications;
 - delete an individual stage update made by a production account (history
   only — the order keeps its stage);
-- **reset** an account: choose what to delete (orders / stage updates /
-  notifications), then type the username to confirm. For production,
-  "orders assigned to this account" is opt-in, because it deletes those
-  orders for everyone involved.
+- **reset** an account in one step: choose what to delete (orders / stage
+  updates / notifications) and type the username. Only once it matches are
+  two choices offered — **Download this data** (a PDF archive of exactly what
+  will be deleted, `/dashboard/data/export`; deletion starts only after the
+  file is in hand, and a failed download deletes nothing) or **Delete this
+  data completely**. The audit row records whether a copy was downloaded.
+  For production, "orders assigned to this account" is opt-in, because it
+  deletes those orders for everyone involved.
 
 Every delete asks for confirmation first, and every delete — from any path,
 including the service role and the SQL console — writes an `audit_log` row

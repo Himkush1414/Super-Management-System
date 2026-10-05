@@ -2,18 +2,17 @@
 -- NR Industries — seed.sql.example
 --
 -- Template for supabase/seed.sql, which is gitignored because it holds the
--- real fixed-account login passwords. To set up local dev:
+-- real 6-digit login PINs. To set up local dev:
 --
 --   cp supabase/seed.sql.example supabase/seed.sql
---   # then replace every <...-PASSWORD> placeholder below with a real value
+--   # replace every <6-DIGIT-PIN> placeholder with a distinct 6-digit PIN
 --   supabase db reset
 --
--- Login field is the USERNAME. Supabase Auth needs an email internally, so
--- each account is stored as <username>@nr.local in auth.users — that address
--- is never shown or typed anywhere in the app.
---
--- Passwords are bcrypt-hashed via crypt()/gen_salt('bf'), which is exactly
--- the scheme Supabase Auth (GoTrue) verifies against on sign-in.
+-- Login is USERNAME + 6-digit PIN. The PIN is bcrypt-hashed in
+-- public.account_pins and checked by pin_login_attempt() with per-account /
+-- per-IP lockout (migration 0014). Each account's Supabase Auth password is
+-- a random value nobody knows, so GoTrue's password grant can't be used to
+-- brute-force PINs. Accounts are stored as <username>@nr.local in auth.users.
 -- ============================================================================
 
 do $$
@@ -23,20 +22,22 @@ declare
 begin
   for acct in
     select * from (values
-      ('head_admin',  '<HEAD_ADMIN_PASSWORD>',  'head_admin', 'Manik Rana'),
-      ('admin',       '<ADMIN_PASSWORD>',       'admin',      'Administrator'),
-      ('marketing1',  '<MARKETING1_PASSWORD>',  'marketing',  'Marketing 1'),
-      ('marketing2',  '<MARKETING2_PASSWORD>',  'marketing',  'Marketing 2'),
-      ('marketing3',  '<MARKETING3_PASSWORD>',  'marketing',  'Marketing 3'),
-      ('marketing4',  '<MARKETING4_PASSWORD>',  'marketing',  'Marketing 4'),
-      ('production1', '<PRODUCTION1_PASSWORD>', 'production',  'Production 1'),
-      ('production2', '<PRODUCTION2_PASSWORD>', 'production',  'Production 2'),
-      ('production3', '<PRODUCTION3_PASSWORD>', 'production',  'Production 3'),
-      ('production4', '<PRODUCTION4_PASSWORD>', 'production',  'Production 4')
-    ) as t(username, password, role, full_name)
+      ('head_admin',  '<6-DIGIT-PIN>', 'head_admin', 'Manik Rana'),
+      ('admin',       '<6-DIGIT-PIN>', 'admin',      'Administrator'),
+      ('marketing1',  '<6-DIGIT-PIN>', 'marketing',  'Marketing 1'),
+      ('marketing2',  '<6-DIGIT-PIN>', 'marketing',  'Marketing 2'),
+      ('marketing3',  '<6-DIGIT-PIN>', 'marketing',  'Marketing 3'),
+      ('marketing4',  '<6-DIGIT-PIN>', 'marketing',  'Marketing 4'),
+      ('production1', '<6-DIGIT-PIN>', 'production', 'Production 1'),
+      ('production2', '<6-DIGIT-PIN>', 'production', 'Production 2'),
+      ('production3', '<6-DIGIT-PIN>', 'production', 'Production 3'),
+      ('production4', '<6-DIGIT-PIN>', 'production', 'Production 4')
+    ) as t(username, pin, role, full_name)
   loop
     uid := gen_random_uuid();
 
+    -- The GoTrue password is a random value nobody knows: sign-in is by PIN
+    -- only, checked in Postgres with lockout (migration 0014).
     insert into auth.users (
       id, instance_id, aud, role, email, encrypted_password,
       email_confirmed_at, last_sign_in_at,
@@ -49,7 +50,7 @@ begin
       '00000000-0000-0000-0000-000000000000',
       'authenticated', 'authenticated',
       acct.username || '@nr.local',
-      crypt(acct.password, gen_salt('bf')),
+      crypt(encode(gen_random_bytes(32), 'hex'), gen_salt('bf')),
       now(), now(),
       '{"provider":"email","providers":["email"]}'::jsonb,
       jsonb_build_object(
@@ -81,5 +82,7 @@ begin
            full_name = acct.full_name,
            role      = acct.role::user_role
      where id = uid;
+
+    perform public.set_account_pin(acct.username, acct.pin);
   end loop;
 end $$;

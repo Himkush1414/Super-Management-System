@@ -1,39 +1,87 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 
 export type ActionState = { error?: string } | null;
 
-/** Internal: every account is <username>@nr.local in Supabase Auth. */
-const INTERNAL_DOMAIN = "nr.local";
-const toInternalEmail = (username: string) =>
-  `${username.trim().toLowerCase()}@${INTERNAL_DOMAIN}`;
+function clientIp(h: Headers): string {
+  // Set by the hosting platform (Vercel overwrites client-supplied values).
+  return (
+    h.get("x-real-ip") ??
+    h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "unknown"
+  );
+}
+
+function lockMessage(seconds: number) {
+  const mins = Math.max(1, Math.ceil(seconds / 60));
+  return `Too many incorrect PINs. Sign-in for this account is locked — try again in ${mins} minute${mins === 1 ? "" : "s"}.`;
+}
 
 /**
- * The only way into the app. Username + password, matched against the fixed
- * seeded accounts. No signup, no OTP, no recovery.
+ * The only way into the app: username + 6-digit PIN.
+ *
+ * The PIN is checked in Postgres by pin_login_attempt() — bcrypt, with
+ * per-account and per-IP lockout applied atomically (migration 0014). It is
+ * NOT the Supabase Auth password (that is a random value nobody knows), so
+ * GoTrue's public password endpoint can't be used to brute-force PINs around
+ * this lockout. On success the server mints the session with a single-use
+ * token (admin generateLink -> verifyOtp), which sets the auth cookies.
  */
 export async function loginAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const username = String(formData.get("username") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
+  const username = String(formData.get("username") ?? "").trim().toLowerCase();
+  const pin = String(formData.get("pin") ?? "").trim();
 
-  if (!username || !password) {
-    return { error: "Enter your username and password." };
-  }
-  if (!/^[a-z0-9_]{2,32}$/i.test(username)) {
-    return { error: "Incorrect username or password." };
+  if (!username || !pin) return { error: "Enter your username and PIN." };
+  if (!/^\d{6}$/.test(pin)) return { error: "Your PIN is exactly 6 digits." };
+  if (!/^[a-z0-9_]{2,32}$/.test(username)) {
+    return { error: "Incorrect username or PIN." };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({
-    email: toInternalEmail(username),
-    password,
+  const svc = createServiceClient();
+  const { data, error } = await svc
+    .rpc("pin_login_attempt", {
+      p_username: username,
+      p_pin: pin,
+      p_ip: clientIp(await headers()),
+    })
+    .single<{
+      ok: boolean;
+      user_id: string | null;
+      email: string | null;
+      retry_after_seconds: number;
+      attempts_left: number;
+    }>();
+  if (error || !data) return { error: "Sign-in is unavailable right now. Please try again." };
+
+  if (!data.ok) {
+    if (data.retry_after_seconds > 0) return { error: lockMessage(data.retry_after_seconds) };
+    return {
+      error:
+        data.attempts_left <= 3
+          ? `Incorrect username or PIN. ${data.attempts_left} attempt${data.attempts_left === 1 ? "" : "s"} left before a 15-minute lock.`
+          : "Incorrect username or PIN.",
+    };
+  }
+
+  const { data: link, error: linkErr } = await svc.auth.admin.generateLink({
+    type: "magiclink",
+    email: data.email!,
   });
-  if (error) return { error: "Incorrect username or password." };
+  if (linkErr || !link?.properties?.hashed_token) {
+    return { error: "Sign-in is unavailable right now. Please try again." };
+  }
+  const supabase = await createClient();
+  const { error: otpErr } = await supabase.auth.verifyOtp({
+    type: "magiclink",
+    token_hash: link.properties.hashed_token,
+  });
+  if (otpErr) return { error: "Sign-in is unavailable right now. Please try again." };
 
   redirect("/dashboard/orders");
 }

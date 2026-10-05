@@ -9,8 +9,10 @@ Supabase (Postgres + Auth + RLS).
 ## 1. Accounts — fixed, no self-registration
 
 There is **no sign-up, no OTP, no password recovery, no landing page.** The app
-opens directly on a username + password screen. Ten accounts exist, seeded by
-`supabase/seed.sql` and nothing else:
+opens directly on a **username + 6-digit PIN** screen. Ten accounts exist,
+seeded by `supabase/seed.sql` (gitignored; template `seed.sql.example`) and
+nothing else — Supabase Auth sign-ups are refused in the database
+(`handle_new_user()`, migration 0014), whatever the project's sign-up setting:
 
 | Username | Role | Sees |
 |---|---|---|
@@ -21,7 +23,28 @@ opens directly on a username + password screen. Ten accounts exist, seeded by
 
 Login field is the **username**. Supabase Auth needs an email internally, so
 each account is stored as `<username>@nr.local` in `auth.users` — that address is
-never shown or typed. Passwords are bcrypt-hashed the way GoTrue verifies them.
+never shown or typed.
+
+### PINs and lockout (migration 0014)
+
+A 6-digit PIN has only a million values, so it is deliberately **not** the
+Supabase Auth password (GoTrue's password endpoint is public via the anon key
+and would bypass any app-side limit). Instead:
+
+- PINs are bcrypt-hashed in `account_pins`, readable by no API role, and
+  checked only by `pin_login_attempt()` (service role) inside Postgres.
+- **Lockout:** 5 wrong PINs for a username within 15 min locks that username
+  for 15 min (even the right PIN is refused); 30 failures from one IP within
+  15 min locks the IP. Unknown usernames are tracked identically. Attempts
+  are serialised with row locks, so parallel guessing can't exceed the cap.
+- Each account's GoTrue password is 64 random hex chars nobody knows. After a
+  successful PIN check the server mints the session with a single-use token
+  (`auth.admin.generateLink` → `verifyOtp`).
+- `set_account_pin(username, pin)` (service role / SQL editor) sets a PIN,
+  re-randomises the GoTrue password and signs the account out everywhere.
+
+Real PINs live only in gitignored files: `supabase/seed.sql` (local) and
+`supabase/hosted-pins.sql` (live rollout).
 
 ### Head-admin invisibility (non-negotiable)
 
@@ -169,7 +192,7 @@ app/(auth)/login/        username + password, the only way in
 app/dashboard/orders/     list · new (dispatch) · [id] (detail + stage control)
 app/dashboard/orders/*/pdf/  PDF export route handlers
 app/dashboard/settings/   production phone registration
-lib/auth/                 login/logout actions · requireSession/requireRole
+lib/auth/                 PIN login/logout actions · requireSession/requireRole
 lib/actions/orders.ts     dispatchOrder · advanceStage  (service-role, session-checked)
 lib/actions/production.ts saveProductionPhone
 lib/actions/admin.ts      deleteOrder · deleteStageEvent · resetAccount  (admin's own session, RLS-gated)

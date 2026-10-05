@@ -95,11 +95,14 @@ members double-advancing):
 
 | # | Name |
 |---|---|
-| 1 | Starting |
-| 2 | Midway through production |
-| 3 | End of production |
-| 4 | Dispatched |
-| 5 | Delivered |
+| 1 | Start |
+| 2 | Mid |
+| 3 | Testing |
+| 4 | End of Production |
+| 5 | Dispatch and Deliver |
+
+Names are display labels (`lib/orders.ts`); the database tracks and enforces
+only the stage number.
 
 Every advance writes an `order_stage_events` row and notifies the marketing
 creator **and** head_admin. Admin sees the current stage on the list/detail.

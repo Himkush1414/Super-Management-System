@@ -51,7 +51,7 @@ export function StageControl({
   if (stage >= MAX_STAGE) {
     return (
       <p className="text-[13px] text-status-success">
-        Delivered — this order is complete.
+        Stage 5 — Dispatch and Deliver reached. This order is complete.
       </p>
     );
   }

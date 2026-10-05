@@ -173,7 +173,7 @@ export async function advanceStage(orderId: string, fromStage: number): Promise<
     case "waiting":
       return { error: "This order is waiting on a production phone number." };
     case "delivered":
-      return { error: "This order is already delivered." };
+      return { error: "This order is already at the final stage." };
     case "timer":
       return { error: "The timer for this stage hasn't finished yet." };
     case "stale":

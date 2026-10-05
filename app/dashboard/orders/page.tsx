@@ -83,7 +83,7 @@ export default async function OrdersPage() {
         <StatCard label="Total" value={stats.total} />
         <StatCard label="In production" value={stats.active} />
         <StatCard label="Awaiting phone" value={stats.waiting} />
-        <StatCard label="Delivered" value={stats.delivered} />
+        <StatCard label="Completed" value={stats.delivered} />
       </div>
 
       {orders.length === 0 ? (

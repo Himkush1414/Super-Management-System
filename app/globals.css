@@ -34,6 +34,10 @@
   --status-danger: #f87171;
   --status-info: #60a5fa;
   --status-neutral: #9ca3af;
+
+  /* solid destructive buttons (white text needs a darker red than --status-danger) */
+  --danger-solid: #dc2626;
+  --danger-solid-hover: #b91c1c;
 }
 
 /*
@@ -70,6 +74,8 @@
   --color-status-danger: var(--status-danger);
   --color-status-info: var(--status-info);
   --color-status-neutral: var(--status-neutral);
+  --color-danger-solid: var(--danger-solid);
+  --color-danger-solid-hover: var(--danger-solid-hover);
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;

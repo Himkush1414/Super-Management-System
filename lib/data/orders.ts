@@ -66,6 +66,7 @@ async function attachProfiles(
     dispatcher: byId.get(o.created_by) ?? null,
     assignees: (o.assignee_ids ?? [])
       .map((id) => byId.get(id))
-      .filter((p): p is Party => Boolean(p)),
+      .filter((p): p is Party => Boolean(p))
+      .sort((a, b) => a.full_name.localeCompare(b.full_name, "en", { numeric: true })),
   }));
 }

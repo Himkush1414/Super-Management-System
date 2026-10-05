@@ -108,6 +108,33 @@ drops the old auth/messaging/projects system and rebuilds around orders.
 
 ---
 
+## 4a. Data management & activity log (admin tier)
+
+`/dashboard/data` lets admin and head_admin remove data that marketing and
+production accounts build up:
+
+- delete an individual order dispatched by a marketing account (also from the
+  order page), with its stage history and notifications;
+- delete an individual stage update made by a production account (history
+  only — the order keeps its stage);
+- **reset** an account: choose what to delete (orders / stage updates /
+  notifications), then type the username to confirm. For production,
+  "orders assigned to this account" is opt-in, because it deletes those
+  orders for everyone involved.
+
+Every delete asks for confirmation first, and every delete — from any path,
+including the service role and the SQL console — writes an `audit_log` row
+with a snapshot of what was removed, who removed it and when (BEFORE DELETE
+triggers, migration 0013). `audit_log` is append-only (updates, deletes and
+TRUNCATE are rejected by trigger). `/dashboard/activity` shows it; rows made
+by head_admin are visible only to head_admin.
+
+Enforcement is in Postgres, mirrored by `data.delete` / `audit.view` in
+`lib/permissions.ts`: only admin-tier sessions have DELETE policies on
+`orders` / `order_stage_events`; `admin_reset_account()` re-checks the caller
+and refuses admin / head_admin targets. The app's delete actions run under
+the admin's own session, so RLS is the actual gate.
+
 ## 5. Run it
 
 ```bash
@@ -145,6 +172,9 @@ app/dashboard/settings/   production phone registration
 lib/auth/                 login/logout actions · requireSession/requireRole
 lib/actions/orders.ts     dispatchOrder · advanceStage  (service-role, session-checked)
 lib/actions/production.ts saveProductionPhone
+lib/actions/admin.ts      deleteOrder · deleteStageEvent · resetAccount  (admin's own session, RLS-gated)
+app/dashboard/data/       data management (admin tier)
+app/dashboard/activity/   audit log viewer (admin tier)
 lib/whatsapp.ts           the stub
 lib/permissions.ts        role → capability matrix
 lib/pdf/                  react-pdf document components for the exports above

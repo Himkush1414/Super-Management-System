@@ -6,6 +6,12 @@
  * only sees its own orders) is enforced by RLS on `orders.created_by` /
  * `order_assignees`, not by the role.
  *
+ * The database enforces the same rules independently (RLS + SECURITY DEFINER
+ * checks) — this matrix decides what the UI offers and is re-checked in every
+ * server action; it is never the only gate. `data.delete` ↔ the
+ * orders_admin_delete / ose_admin_delete policies and admin_reset_account()
+ * (migration 0013); `audit.view` ↔ the audit_log_select policy.
+ *
  * head_admin invisibility (original spec §2): the role exists, but nothing
  * user-facing — no label, badge, dropdown, nav item, or audit row — ever
  * reveals it to another role. `admin` believes it is the top level.
@@ -22,7 +28,9 @@ export type Permission =
   | "orders.advanceStage" // move an assigned order to the next stage (production)
   | "price.view" // see the price field
   | "production.settings" // register a production phone number
-  | "roster.viewAll"; // resolve every account's name (admin tier)
+  | "roster.viewAll" // resolve every account's name (admin tier)
+  | "data.delete" // delete orders / stage updates / reset a marketing or production account's data (admin tier)
+  | "audit.view"; // read the deletion audit trail (admin tier; head_admin's own rows only to head_admin)
 
 const T = true;
 type Caps = Partial<Record<Permission, boolean>>;
@@ -32,11 +40,15 @@ const MATRIX: Record<Role, Caps> = {
     "orders.viewAll": T,
     "price.view": T,
     "roster.viewAll": T,
+    "data.delete": T,
+    "audit.view": T,
   },
   admin: {
     "orders.viewAll": T,
     "price.view": T,
     "roster.viewAll": T,
+    "data.delete": T,
+    "audit.view": T,
   },
   marketing: {
     "orders.dispatch": T,

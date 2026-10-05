@@ -12,6 +12,7 @@ import { StageTracker } from "@/components/dashboard/StageTracker";
 import { StageControl } from "@/components/dashboard/StageControl";
 import { StageTimerBar } from "@/components/dashboard/StageTimerBar";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
+import { DeleteButton } from "@/components/dashboard/DeleteButton";
 import { MAX_STAGE, stageName } from "@/lib/orders";
 import { formatCurrency, formatDateTime, formatDay } from "@/lib/utils";
 
@@ -205,6 +206,27 @@ export default async function OrderDetailPage({
               )}
             </CardBody>
           </Card>
+
+          {ctx.can("data.delete") && (
+            <Card className="border-status-danger/25">
+              <CardHeader
+                title="Delete order"
+                description="Removes the order, its stage history and its notifications. Recorded in the activity log."
+              />
+              <CardBody>
+                <DeleteButton
+                  kind="order"
+                  id={order.id}
+                  title={order.product_name}
+                  redirectTo="/dashboard/orders"
+                  lines={[
+                    [order.client_name, order.transformer_rating, `Qty ${order.quantity}`].filter(Boolean).join(" · "),
+                    `Dispatched by ${order.dispatcher?.full_name ?? "—"} · Stage ${order.stage} — ${stageName(order.stage)}`,
+                  ]}
+                />
+              </CardBody>
+            </Card>
+          )}
         </div>
       </div>
     </>

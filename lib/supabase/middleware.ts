@@ -8,6 +8,8 @@ const DASHBOARD_PREFIX = "/dashboard";
 const ROUTE_GUARDS: { prefix: string; perm: Parameters<typeof can>[1] }[] = [
   { prefix: "/dashboard/orders/new", perm: "orders.dispatch" },
   { prefix: "/dashboard/settings", perm: "production.settings" },
+  { prefix: "/dashboard/data", perm: "data.delete" },
+  { prefix: "/dashboard/activity", perm: "audit.view" },
 ];
 
 export async function updateSession(request: NextRequest) {

@@ -14,6 +14,8 @@ const CRUMB_LABELS: Record<string, string> = {
   orders: "Orders",
   new: "Dispatch order",
   settings: "Settings",
+  data: "Data management",
+  activity: "Activity log",
 };
 
 function Breadcrumbs() {

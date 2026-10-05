@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger" | "outline";
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "destructive" | "outline";
 type Size = "sm" | "md" | "lg";
 
 const variants: Record<Variant, string> = {
@@ -15,6 +15,9 @@ const variants: Record<Variant, string> = {
     "bg-transparent text-text-secondary hover:text-text hover:bg-elevated border border-transparent",
   danger:
     "bg-transparent text-status-danger hover:bg-status-danger/10 border border-status-danger/40",
+  /** solid — the final "yes, delete" in a confirmation step */
+  destructive:
+    "bg-danger-solid text-white hover:bg-danger-solid-hover border border-transparent focus-visible:ring-status-danger/60",
 };
 
 const sizes: Record<Size, string> = {

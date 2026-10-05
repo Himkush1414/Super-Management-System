@@ -1,4 +1,11 @@
-import { Package, Settings, PlusCircle, type LucideIcon } from "lucide-react";
+import {
+  Package,
+  Settings,
+  PlusCircle,
+  DatabaseZap,
+  ScrollText,
+  type LucideIcon,
+} from "lucide-react";
 import type { Permission, Role } from "@/lib/permissions";
 
 export interface NavItem {
@@ -16,6 +23,18 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Dispatch order",
     icon: PlusCircle,
     perm: "orders.dispatch",
+  },
+  {
+    href: "/dashboard/data",
+    label: "Data management",
+    icon: DatabaseZap,
+    perm: "data.delete",
+  },
+  {
+    href: "/dashboard/activity",
+    label: "Activity log",
+    icon: ScrollText,
+    perm: "audit.view",
   },
   {
     href: "/dashboard/settings",

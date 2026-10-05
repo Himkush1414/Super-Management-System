@@ -2,6 +2,9 @@ export function cn(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
+/** The business runs on Indian time; never format in the server's zone (UTC on Vercel). */
+export const TZ = "Asia/Kolkata";
+
 const inr = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
@@ -19,6 +22,7 @@ export function formatDate(value: string | null | undefined): string {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    timeZone: TZ,
   });
 }
 
@@ -43,6 +47,7 @@ export function formatDateTime(value: string | null | undefined): string {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: TZ,
   });
 }
 
@@ -66,4 +71,34 @@ export function initials(name: string): string {
     .slice(0, 2)
     .map((p) => p[0]?.toUpperCase())
     .join("");
+}
+
+/** "05 Oct 2026 12:09 pm" in IST — the PDF footer stamp. */
+export function formatStamp(d: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: TZ,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("day")} ${get("month")} ${get("year")} ${get("hour")}:${get("minute")} ${get("dayPeriod").toLowerCase()}`;
+}
+
+/** Machine-friendly IST timestamp for CSV: "2026-10-05 12:09". */
+export function formatIsoLocal(value: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: TZ,
+  }).formatToParts(new Date(value));
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour").replace(/^24$/, "00")}:${get("minute")}`;
 }

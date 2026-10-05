@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
-import { getOrders } from "@/lib/data/orders";
-import { stageName, ORDER_STATUS_LABEL } from "@/lib/orders";
-import { formatDateTime } from "@/lib/utils";
+import { getOrders, type OrderRow } from "@/lib/data/orders";
+import { MAX_STAGE, stageName, ORDER_STATUS_LABEL } from "@/lib/orders";
+import { formatIsoLocal } from "@/lib/utils";
 
 function csvField(value: string | number | null): string {
   if (value === null) return "";
@@ -13,30 +13,37 @@ function csvField(value: string | number | null): string {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+type Column = { header: string; value: (o: OrderRow) => string | number | null };
+
+/**
+ * One row per order, one field per column — headers match the order form's
+ * labels, nothing is combined into one cell. Dates are unambiguous
+ * (YYYY-MM-DD; timestamps in IST as YYYY-MM-DD HH:MM). Production gets no
+ * order-value column at all.
+ */
 export async function GET() {
   const [ctx, orders] = await Promise.all([requireSession(), getOrders()]);
-  const showDispatcher = ctx.isAdminTier;
-  const showAssignees = ctx.role !== "production";
-  // Production never gets an order-value column — not even an empty one.
-  const showPrice = ctx.can("price.view");
 
-  const columns: { header: string; value: (o: (typeof orders)[number]) => string | number | null }[] = [
-    { header: "Order ID", value: (o) => o.id.slice(0, 8) },
-    { header: "Product", value: (o) => o.product_name },
-    { header: "Client", value: (o) => o.client_name },
+  const columns: Column[] = [
+    { header: "Order ID", value: (o) => o.id },
+    { header: "Product name", value: (o) => o.product_name },
+    { header: "Client name", value: (o) => o.client_name },
     { header: "Transformer rating", value: (o) => o.transformer_rating },
     { header: "Quantity", value: (o) => o.quantity },
-    ...(showPrice ? [{ header: "Order value (INR)", value: (o: (typeof orders)[number]) => o.price }] : []),
-    { header: "Expected delivery", value: (o) => o.expected_delivery },
-    { header: "Stage", value: (o) => `${o.stage} — ${stageName(o.stage)}` },
+    ...(ctx.can("price.view")
+      ? [{ header: "Order value (INR)", value: (o: OrderRow) => o.price } satisfies Column]
+      : []),
+    { header: "Expected delivery date", value: (o) => o.expected_delivery },
+    { header: "Current stage", value: (o) => `${o.stage} of ${MAX_STAGE}` },
+    { header: "Stage name", value: (o) => stageName(o.stage) },
     { header: "Status", value: (o) => ORDER_STATUS_LABEL[o.status] ?? o.status },
-    ...(showDispatcher
-      ? [{ header: "Dispatched by", value: (o: (typeof orders)[number]) => o.dispatcher?.label ?? "" }]
+    ...(ctx.role !== "production"
+      ? [{ header: "Production", value: (o: OrderRow) => o.assignees.map((a) => a.label).join("; ") } satisfies Column]
       : []),
-    ...(showAssignees
-      ? [{ header: "Production", value: (o: (typeof orders)[number]) => o.assignees.map((a) => a.label).join("; ") }]
+    ...(ctx.isAdminTier
+      ? [{ header: "Dispatched by", value: (o: OrderRow) => o.dispatcher?.label ?? "" } satisfies Column]
       : []),
-    { header: "Dispatched at", value: (o) => formatDateTime(o.created_at) },
+    { header: "Dispatched at (IST)", value: (o) => formatIsoLocal(o.created_at) },
     { header: "Description", value: (o) => o.description },
   ];
 
@@ -44,7 +51,7 @@ export async function GET() {
     columns.map((c) => csvField(c.header)).join(","),
     ...orders.map((o) => columns.map((c) => csvField(c.value(o))).join(",")),
   ];
-  // BOM so Excel opens the ₹ / non-ASCII text as UTF-8.
+  // BOM so Excel opens the non-ASCII text as UTF-8.
   const csv = "﻿" + lines.join("\r\n") + "\r\n";
   const filename = `nr-orders-${new Date().toISOString().slice(0, 10)}.csv`;
 

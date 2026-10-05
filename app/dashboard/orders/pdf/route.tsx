@@ -21,8 +21,8 @@ export async function GET() {
       showAssignees={ctx.role !== "production"}
       // Production never gets a value column, not even an empty one.
       showPrice={ctx.can("price.view")}
-      generatedBy={ctx.name}
       scopeLabel={scopeLabel}
+      generatedAt={new Date()}
     />,
   );
 

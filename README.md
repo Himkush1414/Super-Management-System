@@ -221,12 +221,21 @@ What was causing the lag, and the fix:
   list never updated live after a hard reload. Channels now join only after
   the session token is set (`lib/realtime.ts`).
 
-## 6. PDF export
+## 6. PDF and CSV export
 
-- Order detail page → **Download PDF**: a spec sheet (details, description,
-  stage history). Price and dispatcher/production names follow the same
-  visibility rule as the page itself.
-- Orders list → **Export PDF**: the caller's visible orders as a report.
+- Order detail page → **Download PDF**: an order specification — a ruled
+  Field | Value table, one field per row (product, client, rating, quantity,
+  order value, expected delivery date, current stage "Stage 2 of 5", status,
+  production, dispatched by/on, description). Current stage only, no history.
+- Orders list → **Export PDF**: one ruled table row per order, one field per
+  column, header repeated on every page.
+- Every PDF: the NR Industries logo at the top of each page (`lib/pdf/logo.ts`,
+  embedded) and a footer of only "Generated: <date> <time>" (IST) — no names.
+- Orders list → **Export CSV**: one field per column with the form's labels;
+  stage number and stage name in separate columns; dates `YYYY-MM-DD`,
+  timestamps IST `YYYY-MM-DD HH:MM`; formula-injection safe.
+- Production never gets an order-value row/column in any of them. Names are
+  "Real Name (Production 1)".
 
 Both are plain GET routes (`/dashboard/orders/[id]/pdf`,
 `/dashboard/orders/pdf`) rendered server-side with `@react-pdf/renderer`, so

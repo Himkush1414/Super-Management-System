@@ -239,8 +239,13 @@ What was causing the lag, and the fix:
 - Every PDF: the NR Industries logo at the top of each page (`lib/pdf/logo.ts`,
   embedded) and a footer of only "Generated: <date> <time>" (IST) — no names.
 - Orders list → **Export CSV**: one field per column with the form's labels;
-  stage number and stage name in separate columns; dates `YYYY-MM-DD`,
-  timestamps IST `YYYY-MM-DD HH:MM`; formula-injection safe.
+  stage number and stage name in separate columns; dates `DD/MM/YYYY`,
+  timestamps IST `DD/MM/YYYY HH:MM`; formula-injection safe.
+
+**Dates** are DD/MM/YYYY everywhere (pages, PDFs, CSV, activity log), times
+in IST — all through `lib/utils.ts`. The dispatch form's date field is our
+own (`components/ui/DateField.tsx`): the browser's date input follows the
+device locale (often MM/DD/YYYY) and can't be forced to DD/MM/YYYY.
 - Production never gets an order-value row/column in any of them. Names are
   "Real Name (Production 1)".
 

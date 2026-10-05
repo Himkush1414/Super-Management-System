@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { Check, Phone, PhoneOff } from "lucide-react";
 import { dispatchOrder, type Result } from "@/lib/actions/orders";
 import { FormAlert } from "@/components/shared/FormAlert";
 import { Input, Textarea, Label, FormRow } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
+import { DateField } from "@/components/ui/DateField";
 import { cn } from "@/lib/utils";
 
 type Prod = { id: string; label: string; ready: boolean };
@@ -35,7 +36,17 @@ export function DispatchForm({
   const notReady = production.filter((p) => picked.has(p.id) && !p.ready);
 
   return (
-    <form action={action} className="space-y-6">
+    <form
+      // Submit via onSubmit, not <form action>: React resets a form after a
+      // form action completes, which wiped everything typed whenever the
+      // server rejected the input. Dispatching the action ourselves keeps it.
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        startTransition(() => action(fd));
+      }}
+      className="space-y-6"
+    >
       <FormAlert state={state} />
 
       <fieldset className="space-y-4">
@@ -103,7 +114,7 @@ export function DispatchForm({
           </FormRow>
           <FormRow>
             <Label htmlFor="expected_delivery">Expected delivery</Label>
-            <Input id="expected_delivery" name="expected_delivery" type="date" min={today} />
+            <DateField id="expected_delivery" name="expected_delivery" min={today} />
           </FormRow>
         </div>
         <FormRow>

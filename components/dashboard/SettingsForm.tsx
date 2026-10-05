@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { startTransition, useActionState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { saveSettings, type Result } from "@/lib/actions/settings";
 import { FormAlert } from "@/components/shared/FormAlert";
@@ -25,7 +25,17 @@ export function SettingsForm({
   const complete = Boolean(realName) && (!isProduction || phoneConfirmed);
 
   return (
-    <form action={action} className="space-y-5">
+    <form
+      // Submit via onSubmit, not <form action>: React resets a form after a
+      // form action completes, which wiped everything typed whenever the
+      // server rejected the input. Dispatching the action ourselves keeps it.
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        startTransition(() => action(fd));
+      }}
+      className="space-y-5"
+    >
       <FormAlert state={state} />
 
       {complete && !state && (

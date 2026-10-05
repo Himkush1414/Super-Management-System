@@ -69,7 +69,7 @@ export async function dispatchOrder(
   if (price !== null && (!Number.isFinite(price) || price < 0))
     return { error: "Order value must be a positive number, or left blank." };
   if (expected_delivery && (!ISO_DATE.test(expected_delivery) || !isRealDate(expected_delivery)))
-    return { error: "Expected delivery must be a valid date." };
+    return { error: "Expected delivery must be a real date, entered as DD/MM/YYYY." };
   if (assignees.length === 0)
     return { error: "Choose at least one production member to send this to." };
   if (!assignees.every((id) => UUID.test(id)))

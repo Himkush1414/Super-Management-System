@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { getOrders, type OrderRow } from "@/lib/data/orders";
 import { MAX_STAGE, stageName, ORDER_STATUS_LABEL } from "@/lib/orders";
-import { formatIsoLocal } from "@/lib/utils";
+import { formatCsvDateTime, formatDay } from "@/lib/utils";
 
 function csvField(value: string | number | null): string {
   if (value === null) return "";
@@ -17,8 +17,8 @@ type Column = { header: string; value: (o: OrderRow) => string | number | null }
 
 /**
  * One row per order, one field per column — headers match the order form's
- * labels, nothing is combined into one cell. Dates are unambiguous
- * (YYYY-MM-DD; timestamps in IST as YYYY-MM-DD HH:MM). Production gets no
+ * labels, nothing is combined into one cell. Dates are DD/MM/YYYY like the
+ * rest of the system (timestamps in IST as DD/MM/YYYY HH:MM). Production gets no
  * order-value column at all.
  */
 export async function GET() {
@@ -33,7 +33,7 @@ export async function GET() {
     ...(ctx.can("price.view")
       ? [{ header: "Order value (INR)", value: (o: OrderRow) => o.price } satisfies Column]
       : []),
-    { header: "Expected delivery date", value: (o) => o.expected_delivery },
+    { header: "Expected delivery date", value: (o) => (o.expected_delivery ? formatDay(o.expected_delivery) : "") },
     { header: "Current stage", value: (o) => `${o.stage} of ${MAX_STAGE}` },
     { header: "Stage name", value: (o) => stageName(o.stage) },
     { header: "Status", value: (o) => ORDER_STATUS_LABEL[o.status] ?? o.status },
@@ -43,7 +43,7 @@ export async function GET() {
     ...(ctx.isAdminTier
       ? [{ header: "Dispatched by", value: (o: OrderRow) => o.dispatcher?.label ?? "" } satisfies Column]
       : []),
-    { header: "Dispatched at (IST)", value: (o) => formatIsoLocal(o.created_at) },
+    { header: "Dispatched at (IST)", value: (o) => formatCsvDateTime(o.created_at) },
     { header: "Description", value: (o) => o.description },
   ];
 

@@ -234,8 +234,13 @@ What was causing the lag, and the fix:
   Field | Value table, one field per row (product, client, rating, quantity,
   order value, expected delivery date, current stage "Stage 2 of 5", status,
   production, dispatched by/on, description). Current stage only, no history.
-- Orders list → **Export PDF**: one ruled table row per order, one field per
-  column, header repeated on every page.
+- Orders list → **Download All Orders** (admin and marketing): one PDF with
+  a ruled table of every order the viewer can see, for **this / an earlier
+  week, month or year** (by dispatch date, IST, Monday–Sunday weeks) or all
+  time. Rows are grouped — year → months, month → weeks, week → days, all
+  time → months — each heading with its count (and value subtotal where the
+  viewer may see prices). `/dashboard/orders/pdf?period=month&at=YYYY-MM-DD`;
+  period logic in `lib/periods.ts`.
 - Every PDF: the NR Industries logo at the top of each page (`lib/pdf/logo.ts`,
   embedded) and a footer of only "Generated: <date> <time>" (IST) — no names.
 - Orders list → **Export CSV**: one field per column with the form's labels;

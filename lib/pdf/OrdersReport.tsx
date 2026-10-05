@@ -7,6 +7,15 @@ import { PdfHeader, PdfFooter } from "./Chrome";
 
 const s = StyleSheet.create({
   summary: { flexDirection: "row", marginBottom: 10, fontSize: 9, color: C.body },
+  group: {
+    width: "100%",
+    paddingVertical: 5,
+    paddingHorizontal: 6,
+    backgroundColor: C.navy,
+    color: "#FFFFFF",
+    fontFamily: "Helvetica-Bold",
+    fontSize: 8,
+  },
   summaryItem: { marginRight: 18 },
   bold: { fontFamily: "Helvetica-Bold", color: C.ink },
   // Outer rules live on the cells (first column / header row), not the table
@@ -51,17 +60,23 @@ type Col = {
  */
 export function OrdersReport({
   orders,
+  groups,
   showDispatcher,
   showAssignees,
   showPrice,
   scopeLabel,
+  periodLabel,
   generatedAt,
 }: {
   orders: OrderRow[];
+  /** sections in display order; each order belongs to exactly one */
+  groups?: { heading: string; orders: OrderRow[] }[];
   showDispatcher: boolean;
   showAssignees: boolean;
   showPrice: boolean;
   scopeLabel: string;
+  /** "All time", "October 2026", "Week 05/10/2026 – 11/10/2026", "2026" */
+  periodLabel?: string;
   generatedAt: Date;
 }) {
   const cols: Col[] = [
@@ -99,7 +114,10 @@ export function OrdersReport({
   return (
     <Document title="Orders report" author="NR Industries">
       <Page size="A4" orientation="landscape" style={base.page}>
-        <PdfHeader title="Orders Report" subtitle={scopeLabel} />
+        <PdfHeader
+          title="Orders Report"
+          subtitle={periodLabel ? `${periodLabel} · ${scopeLabel}` : scopeLabel}
+        />
 
         <View style={s.summary}>
           <Text style={s.summaryItem}>
@@ -122,21 +140,40 @@ export function OrdersReport({
           </View>
           {orders.length === 0 ? (
             <View style={s.row}>
-              <Text style={[s.cell, s.first, { width: "100%", color: C.muted }]}>No orders.</Text>
+              <Text style={[s.cell, s.first, { width: "100%", color: C.muted }]}>
+                No orders in this period.
+              </Text>
             </View>
           ) : (
-            orders.map((o, i) => (
-              <View
-                key={o.id}
-                style={[s.row, i % 2 === 1 ? { backgroundColor: C.zebra } : {}]}
-                wrap={false}
-              >
-                {cols.map((c) => (
-                  <View key={c.key} style={[s.cell, w(c), c.key === "n" ? s.first : {}]}>
-                    <Text style={align(c)}>{c.key === "n" ? String(i + 1) : c.cell(o)}</Text>
-                    {c.sub ? <Text style={s.sub}>{c.sub(o)}</Text> : null}
+            (groups ?? [{ heading: "", orders }]).map((g) => (
+              <View key={g.heading || "all"}>
+                {g.heading ? (
+                  <View style={s.row} wrap={false}>
+                    <Text style={s.group}>
+                      {g.heading} — {g.orders.length} order{g.orders.length === 1 ? "" : "s"}
+                      {showPrice
+                        ? ` · ${inr(g.orders.reduce((n, o) => n + (o.price ?? 0), 0))}`
+                        : ""}
+                    </Text>
                   </View>
-                ))}
+                ) : null}
+                {g.orders.map((o) => {
+                  const i = orders.indexOf(o);
+                  return (
+                    <View
+                      key={o.id}
+                      style={[s.row, i % 2 === 1 ? { backgroundColor: C.zebra } : {}]}
+                      wrap={false}
+                    >
+                      {cols.map((c) => (
+                        <View key={c.key} style={[s.cell, w(c), c.key === "n" ? s.first : {}]}>
+                          <Text style={align(c)}>{c.key === "n" ? String(i + 1) : c.cell(o)}</Text>
+                          {c.sub ? <Text style={s.sub}>{c.sub(o)}</Text> : null}
+                        </View>
+                      ))}
+                    </View>
+                  );
+                })}
               </View>
             ))
           )}

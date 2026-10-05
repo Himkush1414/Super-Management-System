@@ -21,10 +21,15 @@ export type OrderRow = Order & {
  * it) and resolves the dispatcher / assignee names within whatever the
  * viewer's profile RLS allows (unresolvable names are simply left out).
  */
-export async function getOrders(): Promise<OrderRow[]> {
+export async function getOrders(
+  /** only orders dispatched in [from, to) — UTC instants (see lib/periods.ts) */
+  range?: { from: string; to: string } | null,
+): Promise<OrderRow[]> {
   const supabase = await createClient();
+  let q = supabase.from("order_feed").select("*");
+  if (range) q = q.gte("created_at", range.from).lt("created_at", range.to);
   const [{ data: orders }, parties] = await Promise.all([
-    supabase.from("order_feed").select("*").order("created_at", { ascending: false }),
+    q.order("created_at", { ascending: false }),
     visibleParties(supabase),
   ]);
   return attach((orders ?? []) as Order[], parties);

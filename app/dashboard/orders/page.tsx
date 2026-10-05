@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Package, Plus, FileDown, FileSpreadsheet } from "lucide-react";
+import { Package, Plus, FileSpreadsheet } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { getOrders, type OrderRow } from "@/lib/data/orders";
 import { PageHeader, EmptyState } from "@/components/shared/Page";
@@ -7,6 +7,8 @@ import { StatCard } from "@/components/ui/Card";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
 import { StageTracker } from "@/components/dashboard/StageTracker";
 import { OrdersTable } from "@/components/dashboard/OrdersTable";
+import { BulkExport } from "@/components/dashboard/BulkExport";
+import { istDay } from "@/lib/periods";
 import { OrderStatusBadge } from "@/components/shared/Badge";
 import { formatDay } from "@/lib/utils";
 import { stageName } from "@/lib/orders";
@@ -54,17 +56,7 @@ export default async function OrdersPage() {
                   <span className="hidden sm:inline">Export CSV</span>
                   <span className="sm:hidden">CSV</span>
                 </a>
-                <a
-                  href="/dashboard/orders/pdf"
-                  download
-                  className={exportLink}
-                  aria-label="Export PDF"
-                  title="Export PDF"
-                >
-                  <FileDown size={14} />
-                  <span className="hidden sm:inline">Export PDF</span>
-                  <span className="sm:hidden">PDF</span>
-                </a>
+                <BulkExport dispatchedAt={orders.map((o) => o.created_at)} today={istDay(new Date())} />
               </>
             )}
             {isMarketing && (

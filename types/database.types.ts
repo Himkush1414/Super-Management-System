@@ -19,6 +19,8 @@ export interface Profile {
   id: string;
   username: string;
   full_name: string;
+  /** Marketing / production only; required before they can use the app (0016). */
+  real_name: string | null;
   role: UserRole;
   created_at: string;
   updated_at: string;

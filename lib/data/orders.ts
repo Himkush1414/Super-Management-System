@@ -3,8 +3,12 @@ import "server-only";
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { Order, Profile } from "@/types/database.types";
+import { displayName } from "@/lib/names";
 
-type Party = Pick<Profile, "id" | "username" | "full_name">;
+type Party = Pick<Profile, "id" | "username" | "full_name" | "real_name" | "role"> & {
+  /** "Real Name (Production 1)" / account label — see lib/names.ts */
+  label: string;
+};
 
 export type OrderRow = Order & {
   dispatcher: Party | null;
@@ -47,8 +51,10 @@ export const getOrder = cache(async (id: string): Promise<OrderRow | null> => {
 async function visibleParties(
   supabase: Awaited<ReturnType<typeof createClient>>,
 ): Promise<Map<string, Party>> {
-  const { data } = await supabase.from("profiles").select("id, username, full_name");
-  return new Map((data ?? []).map((p) => [p.id as string, p as Party]));
+  const { data } = await supabase.from("profiles").select("id, username, full_name, real_name, role");
+  return new Map(
+    (data ?? []).map((p) => [p.id as string, { ...(p as Omit<Party, "label">), label: displayName(p as Profile) }]),
+  );
 }
 
 function attach(orders: Order[], byId: Map<string, Party>): OrderRow[] {
@@ -59,6 +65,6 @@ function attach(orders: Order[], byId: Map<string, Party>): OrderRow[] {
     assignees: (o.assignee_ids ?? [])
       .map((id) => byId.get(id))
       .filter((p): p is Party => Boolean(p))
-      .sort((a, b) => a.full_name.localeCompare(b.full_name, "en", { numeric: true })),
+      .sort((a, b) => a.full_name.localeCompare(b.full_name, "en", { numeric: true })), // by account, stable
   }));
 }

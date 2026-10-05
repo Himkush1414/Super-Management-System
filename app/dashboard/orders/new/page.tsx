@@ -3,6 +3,8 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/shared/Page";
 import { Card, CardBody } from "@/components/ui/Card";
 import { DispatchForm } from "@/components/dashboard/DispatchForm";
+import { displayName } from "@/lib/names";
+import type { Profile } from "@/types/database.types";
 
 export const metadata = { title: "Dispatch order" };
 
@@ -19,7 +21,7 @@ export default async function NewOrderPage() {
   // client — only a boolean.
   const svc = createServiceClient();
   const [{ data: profiles }, { data: settings }] = await Promise.all([
-    svc.from("profiles").select("id, full_name").eq("role", "production").order("full_name"),
+    svc.from("profiles").select("id, full_name, real_name, role").eq("role", "production").order("full_name"),
     svc.from("production_settings").select("profile_id, phone, confirmed_at"),
   ]);
 
@@ -31,8 +33,9 @@ export default async function NewOrderPage() {
 
   const production = (profiles ?? []).map((p) => ({
     id: p.id as string,
-    full_name: p.full_name as string,
-    hasPhone: ready.has(p.id as string),
+    label: displayName(p as Profile),
+    // ready = real name + confirmed phone; otherwise the order waits (0016)
+    ready: ready.has(p.id as string) && Boolean(p.real_name),
   }));
 
   return (

@@ -69,10 +69,17 @@ export async function loginAction(
     };
   }
 
-  const { data: link, error: linkErr } = await svc.auth.admin.generateLink({
-    type: "magiclink",
-    email: data.email!,
-  });
+  // In parallel: the one-time session token, and whether this account still
+  // has to finish setup (real name; production also phone) — if so it goes
+  // straight to Settings instead of bouncing off the orders page.
+  const [{ data: link, error: linkErr }, { data: me }] = await Promise.all([
+    svc.auth.admin.generateLink({ type: "magiclink", email: data.email! }),
+    svc
+      .from("profiles")
+      .select("role, real_name, production_settings(phone, confirmed_at)")
+      .eq("id", data.user_id!)
+      .maybeSingle(),
+  ]);
   if (linkErr || !link?.properties?.hashed_token) {
     return { error: "Sign-in is unavailable right now. Please try again." };
   }
@@ -83,7 +90,14 @@ export async function loginAction(
   });
   if (otpErr) return { error: "Sign-in is unavailable right now. Please try again." };
 
-  redirect("/dashboard/orders");
+  const ps = (Array.isArray(me?.production_settings) ? me.production_settings[0] : me?.production_settings) as
+    | { phone: string | null; confirmed_at: string | null }
+    | null
+    | undefined;
+  const needsSetup =
+    (me?.role === "marketing" || me?.role === "production") &&
+    (!me.real_name || (me.role === "production" && !(ps?.phone && ps.confirmed_at)));
+  redirect(needsSetup ? "/dashboard/settings" : "/dashboard/orders");
 }
 
 export async function logoutAction() {

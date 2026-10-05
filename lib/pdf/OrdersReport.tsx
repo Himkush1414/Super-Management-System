@@ -102,7 +102,7 @@ export function OrdersReport({
       }),
     },
     ...(showDispatcher
-      ? [{ key: "by", label: "Dispatched by", width: 10, cell: (o: OrderRow) => ({ main: o.dispatcher?.full_name ?? "—" }) }]
+      ? [{ key: "by", label: "Dispatched by", width: 10, cell: (o: OrderRow) => ({ main: o.dispatcher?.label ?? "—" }) }]
       : []),
     ...(showAssignees
       ? [
@@ -110,7 +110,7 @@ export function OrdersReport({
             key: "prod",
             label: "Production",
             width: 12,
-            cell: (o: OrderRow) => ({ main: o.assignees.map((a) => a.full_name).join(", ") || "—" }),
+            cell: (o: OrderRow) => ({ main: o.assignees.map((a) => a.label).join(", ") || "—" }),
           },
         ]
       : []),

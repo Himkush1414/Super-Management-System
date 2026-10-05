@@ -8,7 +8,7 @@ import { Input, Textarea, Label, FormRow } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
-type Prod = { id: string; full_name: string; hasPhone: boolean };
+type Prod = { id: string; label: string; ready: boolean };
 
 export function DispatchForm({
   production,
@@ -32,7 +32,7 @@ export function DispatchForm({
       return next;
     });
 
-  const missingPhone = production.filter((p) => picked.has(p.id) && !p.hasPhone);
+  const notReady = production.filter((p) => picked.has(p.id) && !p.ready);
 
   return (
     <form action={action} className="space-y-6">
@@ -158,24 +158,24 @@ export function DispatchForm({
                     {on && <Check size={11} strokeWidth={3} />}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                    {p.full_name}
+                    {p.label}
                   </span>
-                  {p.hasPhone ? (
-                    <Phone size={13} className="shrink-0 text-status-success" aria-label="Phone registered" />
+                  {p.ready ? (
+                    <Phone size={13} className="shrink-0 text-status-success" aria-label="Ready: name and phone on file" />
                   ) : (
-                    <PhoneOff size={13} className="shrink-0 text-status-warning" aria-label="No phone yet" />
+                    <PhoneOff size={13} className="shrink-0 text-status-warning" aria-label="Setup not finished" />
                   )}
                 </label>
               );
             })}
           </div>
         )}
-        {missingPhone.length > 0 && (
+        {notReady.length > 0 && (
           <p className="text-[12px] text-status-warning">
-            {missingPhone.map((p) => p.full_name).join(", ")}{" "}
-            {missingPhone.length === 1 ? "hasn't" : "haven't"} registered a phone number yet.
-            The order is still created and starts automatically once every selected
-            member has one.
+            {notReady.map((p) => p.label).join(", ")}{" "}
+            {notReady.length === 1 ? "hasn't" : "haven't"} finished account setup (real name and
+            phone number). The order is still created but can&apos;t start until every selected
+            member has done so.
           </p>
         )}
       </fieldset>

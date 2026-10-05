@@ -13,7 +13,7 @@ import { formatCurrency, formatDate, formatDay } from "@/lib/utils";
 
 const STAGE_FILTER_ALL = "all";
 
-const names = (o: OrderRow) => o.assignees.map((a) => a.full_name).join(", ");
+const names = (o: OrderRow) => o.assignees.map((a) => a.label).join(", ");
 
 export function OrdersTable({
   orders,
@@ -40,7 +40,7 @@ export function OrdersTable({
         o.product_name,
         o.client_name,
         o.transformer_rating,
-        o.dispatcher?.full_name,
+        o.dispatcher?.label,
         names(o),
         o.status,
       ]
@@ -164,7 +164,7 @@ export function OrdersTable({
                     </TD>
                     {showDispatcher && (
                       <TD className="whitespace-nowrap text-text-secondary">
-                        {o.dispatcher?.full_name ?? "—"}
+                        {o.dispatcher?.label ?? "—"}
                       </TD>
                     )}
                     {showAssignees && (

@@ -18,6 +18,8 @@ type Account = {
   profile_id: string;
   username: string;
   full_name: string;
+  real_name: string | null;
+  display_name: string;
   role: "marketing" | "production";
   orders_dispatched: number;
   orders_assigned: number;
@@ -81,8 +83,11 @@ export default async function DataPage({
                           )}
                         >
                           <span className="min-w-0">
-                            <span className="block truncate text-[13px] font-medium">{a.full_name}</span>
-                            <span className="block font-mono text-[11px] text-text-tertiary">{a.username}</span>
+                            <span className="block truncate text-[13px] font-medium">{a.real_name ?? a.full_name}</span>
+                            <span className="block truncate text-[11px] text-text-tertiary">
+                              {a.real_name ? `${a.full_name} · ` : ""}
+                              <span className="font-mono">{a.username}</span>
+                            </span>
                           </span>
                           <span className="shrink-0 text-right text-[11px] text-text-tertiary">
                             <span className="block font-medium text-text-secondary tnum">{items}</span>
@@ -128,7 +133,7 @@ async function AccountPanel({
         <CardBody className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-[17px] font-semibold tracking-tight">{account.full_name}</h2>
+              <h2 className="text-[17px] font-semibold tracking-tight">{account.display_name}</h2>
               <Badge tone={isMarketing ? "info" : "accent"}>{account.role}</Badge>
             </div>
             <p className="mt-0.5 font-mono text-[12px] text-text-tertiary">{account.username}</p>
@@ -153,7 +158,7 @@ async function AccountPanel({
             key={account.profile_id}
             profileId={account.profile_id}
             username={account.username}
-            fullName={account.full_name}
+            fullName={account.display_name}
             role={account.role}
             counts={account}
           />
@@ -308,7 +313,7 @@ async function ProductionUpdates({
                       title={`Stage ${e.from_stage} → ${e.to_stage} (${stageName(e.to_stage)})`}
                       lines={[
                         `On "${e.orders?.product_name ?? "?"}" — ${e.orders?.client_name ?? ""}`,
-                        `Made by ${account.full_name} · ${formatDateTime(e.created_at)}`,
+                        `Made by ${account.display_name} · ${formatDateTime(e.created_at)}`,
                       ]}
                     />
                   </TD>

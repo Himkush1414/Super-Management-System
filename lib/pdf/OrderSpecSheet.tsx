@@ -96,10 +96,10 @@ export function OrderSpecSheet({
     ["Expected delivery", formatDay(order.expected_delivery)],
     ["Dispatched", formatDateTime(order.created_at)],
     ...(showDispatcher
-      ? ([["Dispatched by", order.dispatcher?.full_name ?? "—"]] as [string, string][])
+      ? ([["Dispatched by", order.dispatcher?.label ?? "—"]] as [string, string][])
       : []),
     ...(showAssignees
-      ? ([["Production", order.assignees.map((a) => a.full_name).join(", ") || "—"]] as [
+      ? ([["Production", order.assignees.map((a) => a.label).join(", ") || "—"]] as [
           string,
           string,
         ][])

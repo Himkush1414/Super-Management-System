@@ -112,12 +112,12 @@ export default async function OrderDetailPage({
                 <Field label="Expected delivery" value={formatDay(order.expected_delivery)} />
                 <Field label="Dispatched" value={formatDateTime(order.created_at)} />
                 {showDispatcher && (
-                  <Field label="Dispatched by" value={order.dispatcher?.full_name ?? "—"} />
+                  <Field label="Dispatched by" value={order.dispatcher?.label ?? "—"} />
                 )}
                 {showAssignees && (
                   <Field
                     label="Production"
-                    value={order.assignees.map((a) => a.full_name).join(", ") || "—"}
+                    value={order.assignees.map((a) => a.label).join(", ") || "—"}
                   />
                 )}
               </dl>
@@ -169,7 +169,7 @@ export default async function OrderDetailPage({
                 <ul className="space-y-1 pt-1 text-[12px]">
                   {order.assignees.map((a) => (
                     <li key={a.id} className="flex items-center justify-between gap-3">
-                      <span className="text-text-secondary">{a.full_name}</span>
+                      <span className="text-text-secondary">{a.label}</span>
                       <span className={phoneOf.has(a.id) ? "tnum text-text-tertiary" : "text-status-warning"}>
                         {phoneOf.get(a.id) ?? "no number yet"}
                       </span>
@@ -219,7 +219,7 @@ export default async function OrderDetailPage({
                   redirectTo="/dashboard/orders"
                   lines={[
                     [order.client_name, order.transformer_rating, `Qty ${order.quantity}`].filter(Boolean).join(" · "),
-                    `Dispatched by ${order.dispatcher?.full_name ?? "—"} · Stage ${order.stage} — ${stageName(order.stage)}`,
+                    `Dispatched by ${order.dispatcher?.label ?? "—"} · Stage ${order.stage} — ${stageName(order.stage)}`,
                   ]}
                 />
               </CardBody>

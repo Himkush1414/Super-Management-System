@@ -93,7 +93,9 @@ export async function dispatchOrder(
     return {
       error: error?.message.includes("production accounts")
         ? "One of the selected production members no longer exists."
-        : "Could not create the order. Please try again.",
+        : error?.message.includes("real name")
+          ? "Add your real name in Settings before dispatching orders."
+          : "Could not create the order. Please try again.",
     };
   }
   const orderId = data.order_id;

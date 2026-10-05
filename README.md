@@ -46,6 +46,20 @@ and would bypass any app-side limit). Instead:
 Real PINs live only in gitignored files: `supabase/seed.sql` (local) and
 `supabase/hosted-pins.sql` (live rollout).
 
+### Real names (migration 0016)
+
+Marketing and production accounts must give their real name; production also
+its WhatsApp number. Until they have, every page, export and action sends
+them to **Settings** (enforced in `requireSession()`, not just the UI), and
+login takes them straight there. Wherever such an account appears as an actor
+— pages, PDFs, CSV, the activity log — it is shown as
+**"Real Name (Production 1)"**; admin / head_admin keep their labels.
+
+Hard gates in the database: `create_order()` refuses a marketing account with
+no real name, and an order only becomes `active` once every assigned
+production member has both a real name and a confirmed phone (it waits
+otherwise and can't advance).
+
 ### Head-admin invisibility (non-negotiable)
 
 No label, badge, nav item, dropdown, or query result anywhere reveals that a

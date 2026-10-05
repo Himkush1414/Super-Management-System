@@ -67,7 +67,7 @@ const ROLE_CAPTION: Partial<Record<Role, string>> = {
   production: "Production",
 };
 
-function UserFooter({ name, role }: { name: string; role: Role }) {
+function UserFooter({ name, role, caption }: { name: string; role: Role; caption?: string }) {
   return (
     <div className="flex items-center gap-2.5 border-t border-border px-4 py-3.5">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border-strong bg-elevated text-[12px] font-medium">
@@ -75,8 +75,8 @@ function UserFooter({ name, role }: { name: string; role: Role }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium leading-tight">{name}</p>
-        {ROLE_CAPTION[role] && (
-          <p className="truncate text-[11px] leading-tight text-text-tertiary">{ROLE_CAPTION[role]}</p>
+        {(caption ?? ROLE_CAPTION[role]) && (
+          <p className="truncate text-[11px] leading-tight text-text-tertiary">{caption ?? ROLE_CAPTION[role]}</p>
         )}
       </div>
     </div>
@@ -86,11 +86,13 @@ function UserFooter({ name, role }: { name: string; role: Role }) {
 export function Sidebar({
   role,
   name,
+  caption,
   mobileOpen,
   onClose,
 }: {
   role: Role;
   name: string;
+  caption?: string;
   mobileOpen: boolean;
   onClose: () => void;
 }) {
@@ -101,7 +103,7 @@ export function Sidebar({
           <Logo />
         </div>
         <NavList role={role} />
-        <UserFooter name={name} role={role} />
+        <UserFooter name={name} role={role} caption={caption} />
       </aside>
 
       <AnimatePresence>
@@ -132,7 +134,7 @@ export function Sidebar({
                 </button>
               </div>
               <NavList role={role} onNavigate={onClose} />
-              <UserFooter name={name} role={role} />
+              <UserFooter name={name} role={role} caption={caption} />
             </motion.aside>
           </>
         )}

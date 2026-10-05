@@ -10,7 +10,8 @@ export default async function DashboardLayout({
   const supabase = await createClient();
   // In parallel: the unread count is RLS-scoped to the caller already.
   const [ctx, { count }] = await Promise.all([
-    requireSession(),
+    // The shell renders even mid-setup; each page enforces the setup gate.
+    requireSession({ allowIncompleteSetup: true }),
     supabase
       .from("notifications")
       .select("id", { count: "exact", head: true })
@@ -20,7 +21,8 @@ export default async function DashboardLayout({
   return (
     <Shell
       role={ctx.role}
-      name={ctx.name}
+      name={ctx.profile.real_name ?? ctx.name}
+      caption={ctx.profile.real_name ? ctx.profile.full_name : undefined}
       userId={ctx.userId}
       initialUnread={count ?? 0}
     >

@@ -50,12 +50,14 @@ function Breadcrumbs() {
 export function Shell({
   role,
   name,
+  caption,
   userId,
   initialUnread,
   children,
 }: {
   role: Role;
   name: string;
+  caption?: string;
   userId: string;
   initialUnread: number;
   children: React.ReactNode;
@@ -67,6 +69,7 @@ export function Shell({
       <Sidebar
         role={role}
         name={name}
+        caption={caption}
         mobileOpen={mobileOpen}
         onClose={() => setMobileOpen(false)}
       />

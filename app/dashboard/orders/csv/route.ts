@@ -31,10 +31,10 @@ export async function GET() {
     { header: "Stage", value: (o) => `${o.stage} — ${stageName(o.stage)}` },
     { header: "Status", value: (o) => ORDER_STATUS_LABEL[o.status] ?? o.status },
     ...(showDispatcher
-      ? [{ header: "Dispatched by", value: (o: (typeof orders)[number]) => o.dispatcher?.full_name ?? "" }]
+      ? [{ header: "Dispatched by", value: (o: (typeof orders)[number]) => o.dispatcher?.label ?? "" }]
       : []),
     ...(showAssignees
-      ? [{ header: "Production", value: (o: (typeof orders)[number]) => o.assignees.map((a) => a.full_name).join("; ") }]
+      ? [{ header: "Production", value: (o: (typeof orders)[number]) => o.assignees.map((a) => a.label).join("; ") }]
       : []),
     { header: "Dispatched at", value: (o) => formatDateTime(o.created_at) },
     { header: "Description", value: (o) => o.description },

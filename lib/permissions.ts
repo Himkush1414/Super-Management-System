@@ -28,6 +28,7 @@ export type Permission =
   | "orders.advanceStage" // move an assigned order to the next stage (production)
   | "price.view" // see the price field
   | "production.settings" // register a production phone number
+  | "profile.edit" // set your real name (marketing, production)
   | "roster.viewAll" // resolve every account's name (admin tier)
   | "data.delete" // delete orders / stage updates / reset a marketing or production account's data (admin tier)
   | "audit.view"; // read the deletion audit trail (admin tier; head_admin's own rows only to head_admin)
@@ -54,11 +55,13 @@ const MATRIX: Record<Role, Caps> = {
     "orders.dispatch": T,
     "orders.viewOwn": T,
     "price.view": T, // their own orders only — enforced by RLS/order_feed
+    "profile.edit": T,
   },
   production: {
     "orders.viewAssigned": T,
     "orders.advanceStage": T,
     "production.settings": T,
+    "profile.edit": T,
   },
 };
 

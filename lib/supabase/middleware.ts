@@ -1,17 +1,33 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { type Role, can } from "@/lib/permissions";
 
 const DASHBOARD_PREFIX = "/dashboard";
 
-/** Per-path minimum permission, checked after auth. */
-const ROUTE_GUARDS: { prefix: string; perm: Parameters<typeof can>[1] }[] = [
-  { prefix: "/dashboard/orders/new", perm: "orders.dispatch" },
-  { prefix: "/dashboard/settings", perm: "production.settings" },
-  { prefix: "/dashboard/data", perm: "data.delete" },
-  { prefix: "/dashboard/activity", perm: "audit.view" },
-];
+/** Cap an Auth call so a slow/unreachable Auth server degrades to "signed out". */
+function withTimeout<T>(p: Promise<T>, ms = 5000): Promise<T | null> {
+  return Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms))]).catch(
+    () => null,
+  );
+}
 
+/**
+ * Runs before every matched request (proxy.ts). Its jobs are only:
+ *   1. keep the session cookie fresh (refresh an expired access token), and
+ *   2. send signed-out visitors to /login and signed-in ones away from it.
+ *
+ * It deliberately does NOT verify the user against the Auth server or load
+ * the profile on dashboard requests any more. It used to do both — two
+ * sequential round trips — and then every page did them again in
+ * requireSession(): four round trips before any data was read, on every
+ * navigation, prefetch and server action. Authorization happens once, in
+ * requireSession() (verified with the Auth server + PostgREST), in every
+ * server action, and in RLS; role checks for /orders/new, /settings, /data
+ * and /activity live in those pages (requireRole / ctx.can).
+ *
+ * The one place it still verifies is /login (and /): redirecting a
+ * signed-in visitor away from the login page must not trust an unverified
+ * cookie, or a revoked session would bounce between /login and /dashboard.
+ */
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -19,16 +35,16 @@ export async function updateSession(request: NextRequest) {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const path = request.nextUrl.pathname;
   const isDashboard = path.startsWith(DASHBOARD_PREFIX);
-  const isLogin = path === "/login";
+  const isEntry = path === "/login" || path === "/";
 
-  if (!url || !key) {
-    if (isDashboard) {
-      const u = request.nextUrl.clone();
-      u.pathname = "/login";
-      return NextResponse.redirect(u);
-    }
-    return response;
-  }
+  const to = (pathname: string) => {
+    const u = request.nextUrl.clone();
+    u.pathname = pathname;
+    u.search = "";
+    return NextResponse.redirect(u);
+  };
+
+  if (!url || !key) return isDashboard ? to("/login") : response;
 
   const supabase = createServerClient(url, key, {
     cookies: {
@@ -36,9 +52,7 @@ export async function updateSession(request: NextRequest) {
         return request.cookies.getAll();
       },
       setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) =>
-          request.cookies.set(name, value),
-        );
+        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         response = NextResponse.next({ request });
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options),
@@ -47,50 +61,16 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // The Auth server call has no built-in timeout and will retry internally
-  // for ~25s if it's unreachable, hanging every navigation. Cap it so a
-  // down/slow Auth server degrades to "signed out" instead of stalling.
-  let user = null;
-  try {
-    user = await Promise.race([
-      supabase.auth.getUser().then((r) => r.data.user),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-    ]);
-  } catch {
-    user = null;
-  }
-
-  if (!user) {
-    if (isDashboard) {
-      const u = request.nextUrl.clone();
-      u.pathname = "/login";
-      return NextResponse.redirect(u);
-    }
-    return response;
-  }
-
-  // Signed in.
-  if (isLogin || path === "/") {
-    const u = request.nextUrl.clone();
-    u.pathname = "/dashboard/orders";
-    return NextResponse.redirect(u);
+  if (isEntry) {
+    const user = await withTimeout(supabase.auth.getUser().then((r) => r.data.user));
+    return user ? to("/dashboard/orders") : response;
   }
 
   if (isDashboard) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-    const role = profile?.role as Role | undefined;
-
-    for (const guard of ROUTE_GUARDS) {
-      if (path.startsWith(guard.prefix) && !can(role ?? null, guard.perm)) {
-        const u = request.nextUrl.clone();
-        u.pathname = "/dashboard/orders";
-        return NextResponse.redirect(u);
-      }
-    }
+    // Local cookie read; only touches the network when the access token has
+    // expired and needs refreshing (the new cookies are written above).
+    const session = await withTimeout(supabase.auth.getSession().then((r) => r.data.session));
+    if (!session) return to("/login");
   }
 
   return response;

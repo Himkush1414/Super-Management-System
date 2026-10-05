@@ -10,7 +10,6 @@ import { logoutAction } from "@/lib/auth/actions";
 import type { Role } from "@/lib/permissions";
 
 const CRUMB_LABELS: Record<string, string> = {
-  dashboard: "Dashboard",
   orders: "Orders",
   new: "Dispatch order",
   settings: "Settings",
@@ -18,29 +17,33 @@ const CRUMB_LABELS: Record<string, string> = {
   activity: "Activity log",
 };
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;
+
 function Breadcrumbs() {
-  const parts = usePathname().split("/").filter(Boolean);
+  // "/dashboard" itself only redirects to /dashboard/orders, so it isn't a crumb.
+  const parts = usePathname().split("/").filter(Boolean).slice(1);
   return (
-    <div className="flex min-w-0 items-center gap-1.5 text-[13px]">
+    <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[13px]">
       {parts.map((p, i) => {
-        const href = "/" + parts.slice(0, i + 1).join("/");
+        const href = "/dashboard/" + parts.slice(0, i + 1).join("/");
         const isLast = i === parts.length - 1;
-        const label =
-          CRUMB_LABELS[p] ?? (p.length > 12 ? p.slice(0, 8) + "…" : p);
+        const label = CRUMB_LABELS[p] ?? (UUID.test(p) ? "Order" : p);
         return (
-          <span key={href} className="flex items-center gap-1.5">
-            {i > 0 && <ChevronRight size={13} className="text-text-tertiary" />}
+          <span key={href} className="flex min-w-0 items-center gap-1.5">
+            {i > 0 && <ChevronRight size={13} className="shrink-0 text-text-tertiary" />}
             {isLast ? (
-              <span className="truncate font-medium text-text">{label}</span>
+              <span aria-current="page" className="truncate font-medium text-text">
+                {label}
+              </span>
             ) : (
-              <Link href={href} className="text-text-secondary hover:text-text">
+              <Link href={href} prefetch={false} className="text-text-secondary hover:text-text">
                 {label}
               </Link>
             )}
           </span>
         );
       })}
-    </div>
+    </nav>
   );
 }
 

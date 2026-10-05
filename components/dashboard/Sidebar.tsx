@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
@@ -8,6 +8,20 @@ import { Logo } from "@/components/shared/Logo";
 import { NAV_ITEMS } from "./nav-items";
 import { can, type Role } from "@/lib/permissions";
 import { cn, initials } from "@/lib/utils";
+
+/** Thin shimmer under the label while the clicked route is still loading. */
+function PendingHint() {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "ml-auto size-1.5 rounded-full bg-accent transition-opacity",
+        pending ? "animate-pulse opacity-100" : "opacity-0",
+      )}
+    />
+  );
+}
 
 function NavList({ role, onNavigate }: { role: Role; onNavigate?: () => void }) {
   const pathname = usePathname();
@@ -38,6 +52,7 @@ function NavList({ role, onNavigate }: { role: Role; onNavigate?: () => void }) 
           >
             <item.icon size={16} strokeWidth={1.75} />
             {item.label}
+            <PendingHint />
           </Link>
         );
       })}
@@ -45,13 +60,25 @@ function NavList({ role, onNavigate }: { role: Role; onNavigate?: () => void }) 
   );
 }
 
-function UserFooter({ name }: { name: string }) {
+// Admin-tier accounts get no role caption: nothing user-facing may hint
+// that a level above "admin" exists (head_admin invisibility).
+const ROLE_CAPTION: Partial<Record<Role, string>> = {
+  marketing: "Marketing",
+  production: "Production",
+};
+
+function UserFooter({ name, role }: { name: string; role: Role }) {
   return (
     <div className="flex items-center gap-2.5 border-t border-border px-4 py-3.5">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-elevated text-[12px] font-medium">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border-strong bg-elevated text-[12px] font-medium">
         {initials(name)}
       </span>
-      <p className="min-w-0 flex-1 truncate text-[13px] font-medium">{name}</p>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[13px] font-medium leading-tight">{name}</p>
+        {ROLE_CAPTION[role] && (
+          <p className="truncate text-[11px] leading-tight text-text-tertiary">{ROLE_CAPTION[role]}</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -74,7 +101,7 @@ export function Sidebar({
           <Logo />
         </div>
         <NavList role={role} />
-        <UserFooter name={name} />
+        <UserFooter name={name} role={role} />
       </aside>
 
       <AnimatePresence>
@@ -105,7 +132,7 @@ export function Sidebar({
                 </button>
               </div>
               <NavList role={role} onNavigate={onClose} />
-              <UserFooter name={name} />
+              <UserFooter name={name} role={role} />
             </motion.aside>
           </>
         )}

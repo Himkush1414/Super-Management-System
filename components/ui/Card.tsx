@@ -13,8 +13,8 @@ export function Card({
   return (
     <div
       className={cn(
-        "nr-interactive rounded-xl border border-border bg-panel/60 backdrop-blur-sm hover:border-border-strong",
-        interactive && "nr-lift cursor-pointer",
+        "rounded-xl border border-border bg-panel/60",
+        interactive && "nr-interactive nr-lift cursor-pointer hover:border-border-strong",
         className,
       )}
     >
@@ -71,14 +71,14 @@ export function StatCard({
   icon?: React.ReactNode;
 }) {
   return (
-    <Card className="p-[18px]">
-      <div className="flex items-center justify-between">
-        <span className="text-[12px] font-medium uppercase tracking-[0.04em] text-text-tertiary">
+    <Card className="px-4 py-3.5 sm:px-[18px] sm:py-4">
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-[11px] font-medium uppercase tracking-[0.06em] text-text-tertiary">
           {label}
         </span>
-        {icon && <span className="text-text-tertiary">{icon}</span>}
+        {icon && <span className="shrink-0 text-text-tertiary">{icon}</span>}
       </div>
-      <div className="mt-2.5 text-[1.7rem] font-semibold leading-none tracking-[-0.02em] tnum">
+      <div className="mt-2 text-[1.6rem] font-semibold leading-none tracking-[-0.025em] tnum">
         {value}
       </div>
       {sub && <div className="mt-1.5 text-[12px] text-text-tertiary">{sub}</div>}

@@ -19,13 +19,11 @@ export type OrderRow = Order & {
  */
 export async function getOrders(): Promise<OrderRow[]> {
   const supabase = await createClient();
-
-  const { data: orders } = await supabase
-    .from("order_feed")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  return attachProfiles(supabase, (orders ?? []) as Order[]);
+  const [{ data: orders }, parties] = await Promise.all([
+    supabase.from("order_feed").select("*").order("created_at", { ascending: false }),
+    visibleParties(supabase),
+  ]);
+  return attach((orders ?? []) as Order[], parties);
 }
 
 /**
@@ -34,32 +32,26 @@ export async function getOrders(): Promise<OrderRow[]> {
  */
 export const getOrder = cache(async (id: string): Promise<OrderRow | null> => {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("order_feed")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+  const [{ data }, parties] = await Promise.all([
+    supabase.from("order_feed").select("*").eq("id", id).maybeSingle(),
+    visibleParties(supabase),
+  ]);
   if (!data) return null;
-  const [row] = await attachProfiles(supabase, [data as Order]);
-  return row ?? null;
+  return attach([data as Order], parties)[0] ?? null;
 });
 
-async function attachProfiles(
+/**
+ * Every profile the viewer may resolve (RLS-scoped; ten fixed accounts at
+ * most), fetched in PARALLEL with the orders instead of after them.
+ */
+async function visibleParties(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  orders: Order[],
-): Promise<OrderRow[]> {
-  const ids = [
-    ...new Set(orders.flatMap((o) => [o.created_by, ...(o.assignee_ids ?? [])])),
-  ];
-  const { data: profiles } = ids.length
-    ? await supabase
-        .from("profiles")
-        .select("id, username, full_name")
-        .in("id", ids)
-    : { data: [] };
+): Promise<Map<string, Party>> {
+  const { data } = await supabase.from("profiles").select("id, username, full_name");
+  return new Map((data ?? []).map((p) => [p.id as string, p as Party]));
+}
 
-  const byId = new Map((profiles ?? []).map((p) => [p.id, p as Party]));
-
+function attach(orders: Order[], byId: Map<string, Party>): OrderRow[] {
   return orders.map((o) => ({
     ...o,
     assignee_ids: o.assignee_ids ?? [],

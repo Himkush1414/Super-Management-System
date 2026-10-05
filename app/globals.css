@@ -118,10 +118,10 @@ p {
   background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
-/* tabular numerals everywhere data is shown */
+/* tabular numerals everywhere data is shown (stays in the UI typeface) */
 .tnum {
   font-variant-numeric: tabular-nums;
-  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1;
 }
 
 /* small uppercase label that heads a group of form fields / a card section */

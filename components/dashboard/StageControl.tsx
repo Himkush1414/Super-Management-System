@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { advanceStage } from "@/lib/actions/orders";
 import { MAX_STAGE, stageName } from "@/lib/orders";
@@ -21,7 +20,6 @@ export function StageControl({
   /** Null once the post-confirmation timer has elapsed (or never started). */
   stageReadyAt: string | null;
 }) {
-  const router = useRouter();
   const [pending, start] = useTransition();
   const [state, setState] = useState<{ error?: string; ok?: string } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -70,10 +68,11 @@ export function StageControl({
 
   function confirmAdvance() {
     setConfirmOpen(false);
+    // No router.refresh(): the action's response already carries the
+    // re-rendered page. Refreshing on top of it re-rendered the whole route a
+    // second time and held this transition open until that finished too.
     start(async () => {
-      const r = await advanceStage(orderId);
-      setState(r);
-      router.refresh();
+      setState(await advanceStage(orderId, stage));
     });
   }
 

@@ -4,19 +4,22 @@ import { requireSession } from "@/lib/auth/session";
 import { getOrders, type OrderRow } from "@/lib/data/orders";
 import { PageHeader, EmptyState } from "@/components/shared/Page";
 import { StatCard } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
 import { StageTracker } from "@/components/dashboard/StageTracker";
 import { OrdersTable } from "@/components/dashboard/OrdersTable";
 import { OrderStatusBadge } from "@/components/shared/Badge";
 import { formatDay } from "@/lib/utils";
+import { stageName } from "@/lib/orders";
 
 export const metadata = { title: "Orders" };
+
+const exportLink =
+  "nr-interactive inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-elevated px-3 text-[13px] font-medium text-text hover:border-border-strong hover:bg-panel-2";
 
 export default async function OrdersPage() {
   const [ctx, orders] = await Promise.all([requireSession(), getOrders()]);
 
-  if (ctx.role === "production") return <ProductionView orders={orders} />;
+  if (ctx.role === "production") return <ProductionView orders={orders} userId={ctx.userId} />;
 
   const isMarketing = ctx.role === "marketing";
   const stats = {
@@ -28,7 +31,7 @@ export default async function OrdersPage() {
 
   return (
     <>
-      <LiveRefresh channel="orders-list" table="orders" />
+      <LiveRefresh channel="orders-list" tables={[{ table: "orders" }]} />
       <PageHeader
         title={isMarketing ? "Your orders" : "Orders"}
         description={
@@ -40,23 +43,36 @@ export default async function OrdersPage() {
           <div className="flex items-center gap-2">
             {orders.length > 0 && (
               <>
-                <a href="/dashboard/orders/csv" download>
-                  <Button variant="secondary" size="sm">
-                    <FileSpreadsheet size={14} /> Export CSV
-                  </Button>
+                <a
+                  href="/dashboard/orders/csv"
+                  download
+                  className={exportLink}
+                  aria-label="Export CSV"
+                  title="Export CSV"
+                >
+                  <FileSpreadsheet size={14} />
+                  <span className="hidden sm:inline">Export CSV</span>
+                  <span className="sm:hidden">CSV</span>
                 </a>
-                <a href="/dashboard/orders/pdf" download>
-                  <Button variant="secondary" size="sm">
-                    <FileDown size={14} /> Export PDF
-                  </Button>
+                <a
+                  href="/dashboard/orders/pdf"
+                  download
+                  className={exportLink}
+                  aria-label="Export PDF"
+                  title="Export PDF"
+                >
+                  <FileDown size={14} />
+                  <span className="hidden sm:inline">Export PDF</span>
+                  <span className="sm:hidden">PDF</span>
                 </a>
               </>
             )}
             {isMarketing && (
-              <Link href="/dashboard/orders/new">
-                <Button size="sm">
-                  <Plus size={15} /> Dispatch order
-                </Button>
+              <Link
+                href="/dashboard/orders/new"
+                className="nr-interactive nr-press ml-auto inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-fg hover:bg-accent-hover sm:ml-0"
+              >
+                <Plus size={15} /> Dispatch order
               </Link>
             )}
           </div>
@@ -81,10 +97,11 @@ export default async function OrdersPage() {
           }
           action={
             isMarketing ? (
-              <Link href="/dashboard/orders/new">
-                <Button size="sm">
-                  <Plus size={15} /> Dispatch order
-                </Button>
+              <Link
+                href="/dashboard/orders/new"
+                className="nr-interactive nr-press inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-fg hover:bg-accent-hover"
+              >
+                <Plus size={15} /> Dispatch order
               </Link>
             ) : null
           }
@@ -101,10 +118,17 @@ export default async function OrdersPage() {
 }
 
 /* ── production: deliberately minimal (they mostly work via WhatsApp) ── */
-function ProductionView({ orders }: { orders: OrderRow[] }) {
+function ProductionView({ orders, userId }: { orders: OrderRow[]; userId: string }) {
   return (
     <>
-      <LiveRefresh channel="orders-list-prod" table="orders" />
+      <LiveRefresh
+        channel="orders-list-prod"
+        tables={[
+          { table: "orders" },
+          // a new assignment is what makes a new order visible to production
+          { table: "order_assignees", filter: `profile_id=eq.${userId}` },
+        ]}
+      />
       <PageHeader
         title="Assigned orders"
         description="Orders sent to you. Open one to advance its stage."
@@ -139,7 +163,12 @@ function ProductionView({ orders }: { orders: OrderRow[] }) {
                 </div>
                 <OrderStatusBadge status={o.status} />
               </div>
-              <div className="mt-3">
+              <div className="mt-3.5 flex items-center justify-between gap-3 text-[12px]">
+                <span className="text-text-secondary">
+                  Stage {o.stage} of 5 · <span className="text-text">{stageName(o.stage)}</span>
+                </span>
+              </div>
+              <div className="mt-2">
                 <StageTracker stage={o.stage} compact />
               </div>
             </Link>

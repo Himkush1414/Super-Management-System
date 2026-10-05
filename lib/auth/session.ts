@@ -16,37 +16,50 @@ export interface SessionContext {
   can: (perm: Permission) => boolean;
 }
 
+/** `sub` claim of a JWT (no verification here — see requireSession). */
+function tokenSubject(jwt: string | undefined): string | null {
+  try {
+    const payload = jwt?.split(".")[1];
+    if (!payload) return null;
+    const json = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return typeof json.sub === "string" ? json.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Resolve the signed-in account for a dashboard route. No pending/suspended
- * states exist any more — an account either is one of the fixed seeded rows
- * or it isn't signed in.
+ * Resolve the signed-in account for a dashboard route, route handler or
+ * server action. An account either is one of the fixed seeded rows or it
+ * isn't signed in.
  *
- * `cache()`-wrapped: the dashboard layout and every page under it each call
- * this, and without deduping that's an extra auth + profile round trip per
- * segment on every navigation. `cache()` reuses the one in-flight/resolved
- * call for the lifetime of a single request.
+ * One round trip: the Auth-server check (getUser — catches revoked
+ * sessions) and the profile read run in PARALLEL instead of one after the
+ * other. The profile is fetched for the `sub` of the same access token
+ * PostgREST verifies, and must match the user the Auth server returns.
+ *
+ * `cache()`-wrapped: the layout and the page both call this; one request
+ * resolves it once.
  */
 export const requireSession = cache(async (): Promise<SessionContext> => {
   const supabase = await createClient();
-  // See lib/supabase/middleware.ts — cap the Auth server round trip so a
-  // slow/unreachable Auth server can't hang every dashboard render.
-  const user = await Promise.race([
-    supabase.auth.getUser().then((r) => r.data.user),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-  ]).catch(() => null);
+  const {
+    data: { session },
+  } = await supabase.auth.getSession(); // local cookie read (the proxy keeps it fresh)
+  const sub = tokenSubject(session?.access_token);
+  if (!sub) redirect("/login");
 
-  if (!user) redirect("/login");
+  const [user, { data: profile }] = await Promise.all([
+    // Cap the Auth round trip so a slow/unreachable Auth server can't hang
+    // every dashboard render (see lib/supabase/middleware.ts).
+    Promise.race([
+      supabase.auth.getUser().then((r) => r.data.user),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+    ]).catch(() => null),
+    supabase.from("profiles").select("*").eq("id", sub).maybeSingle<Profile>(),
+  ]);
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single<Profile>();
-
-  if (!profile) {
-    await supabase.auth.signOut();
-    redirect("/login");
-  }
+  if (!user || user.id !== sub || !profile) redirect("/login");
 
   const role = profile.role as Role;
   return {

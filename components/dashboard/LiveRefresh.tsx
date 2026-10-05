@@ -1,17 +1,9 @@
 "use client";
 
-import { useLiveRefresh } from "@/lib/realtime";
+import { useLiveRefresh, type LiveTable } from "@/lib/realtime";
 
-/** Drop-in: refreshes the server component tree when `table` changes. */
-export function LiveRefresh({
-  channel,
-  table,
-  filter,
-}: {
-  channel: string;
-  table: string;
-  filter?: string;
-}) {
-  useLiveRefresh(channel, table, filter);
+/** Drop-in: refreshes the server component tree when any of `tables` changes. */
+export function LiveRefresh({ channel, tables }: { channel: string; tables: LiveTable[] }) {
+  useLiveRefresh(channel, tables);
   return null;
 }

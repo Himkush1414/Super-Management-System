@@ -33,7 +33,9 @@ export default async function OrderDetailPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
-  const [ctx, order, { data: events }] = await Promise.all([
+  // Everything in one parallel round. production_settings is RLS-scoped
+  // (admin tier sees all, production only itself) and only shown to admins.
+  const [ctx, order, { data: events }, { data: phones }] = await Promise.all([
     requireSession(),
     getOrder(id),
     supabase
@@ -41,6 +43,7 @@ export default async function OrderDetailPage({
       .select("*")
       .eq("order_id", id)
       .order("created_at", { ascending: false }),
+    supabase.from("production_settings").select("profile_id, phone, confirmed_at"),
   ]);
   if (!order) notFound();
 
@@ -52,12 +55,6 @@ export default async function OrderDetailPage({
   const showAssignees = ctx.role !== "production";
 
   // Admin tier: which assigned members have a WhatsApp number on file.
-  const { data: phones } = ctx.isAdminTier && order.assignee_ids.length
-    ? await supabase
-        .from("production_settings")
-        .select("profile_id, phone, confirmed_at")
-        .in("profile_id", order.assignee_ids)
-    : { data: null };
   const phoneOf = new Map(
     (phones ?? [])
       .filter((p) => p.phone && p.confirmed_at)
@@ -66,11 +63,12 @@ export default async function OrderDetailPage({
 
   return (
     <>
-      <LiveRefresh channel={`order-${id}`} table="orders" filter={`id=eq.${id}`} />
       <LiveRefresh
-        channel={`order-events-${id}`}
-        table="order_stage_events"
-        filter={`order_id=eq.${id}`}
+        channel={`order-${id}`}
+        tables={[
+          { table: "orders", filter: `id=eq.${id}` },
+          { table: "order_stage_events", filter: `order_id=eq.${id}` },
+        ]}
       />
 
       <Link

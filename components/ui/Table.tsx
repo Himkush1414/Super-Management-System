@@ -63,13 +63,16 @@ export function TD({
   children,
   className,
   numeric,
+  title,
 }: {
   children?: React.ReactNode;
   className?: string;
   numeric?: boolean;
+  title?: string;
 }) {
   return (
     <td
+      title={title}
       className={cn(
         "px-4 py-3 align-middle",
         numeric && "text-right tnum",

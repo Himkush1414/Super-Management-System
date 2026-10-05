@@ -137,8 +137,7 @@ export function OrdersTable({
               <THead>
                 <TR>
                   <TH>Product</TH>
-                  <TH>Rating</TH>
-                  {showDispatcher && <TH>Dispatched by</TH>}
+                  {showDispatcher && <TH className="whitespace-nowrap">Dispatched by</TH>}
                   {showAssignees && <TH>Production</TH>}
                   <TH numeric>Qty</TH>
                   <TH>Stage</TH>
@@ -149,7 +148,7 @@ export function OrdersTable({
               <tbody>
                 {filtered.map((o) => (
                   <TR key={o.id} className="group relative cursor-pointer">
-                    <TD>
+                    <TD className="min-w-[220px]">
                       <Link
                         href={`/dashboard/orders/${o.id}`}
                         className="font-medium text-text group-hover:text-accent after:absolute after:inset-0"
@@ -157,20 +156,19 @@ export function OrdersTable({
                         {o.product_name}
                       </Link>
                       <span className="block text-[12px] text-text-tertiary">
-                        {o.client_name}
+                        {[o.client_name, o.transformer_rating].filter(Boolean).join(" · ")}
                         {o.status !== "active" && (
-                          <span className="ml-2 text-status-warning">· waiting on phone</span>
+                          <span className="ml-1 text-status-warning">· waiting on phone</span>
                         )}
                       </span>
                     </TD>
-                    <TD className="text-text-secondary">{o.transformer_rating || "—"}</TD>
                     {showDispatcher && (
-                      <TD className="text-text-secondary">
+                      <TD className="whitespace-nowrap text-text-secondary">
                         {o.dispatcher?.full_name ?? "—"}
                       </TD>
                     )}
                     {showAssignees && (
-                      <TD className="max-w-[180px] truncate text-text-secondary">
+                      <TD className="max-w-[170px] truncate text-text-secondary" title={names(o)}>
                         {names(o) || "—"}
                       </TD>
                     )}
@@ -178,12 +176,12 @@ export function OrdersTable({
                     <TD>
                       <StageBadge stage={o.stage} />
                     </TD>
-                    {showPrice && <TD numeric>{formatCurrency(o.price)}</TD>}
-                    <TD numeric className="text-text-tertiary">
-                      {o.expected_delivery ? formatDay(o.expected_delivery) : formatDate(o.created_at)}
-                      {!o.expected_delivery && (
-                        <span className="block text-[11px]">dispatched</span>
-                      )}
+                    {showPrice && <TD numeric className="whitespace-nowrap font-medium">{formatCurrency(o.price)}</TD>}
+                    <TD numeric className="whitespace-nowrap text-text-secondary">
+                      {formatDay(o.expected_delivery)}
+                      <span className="block text-[11px] text-text-tertiary">
+                        sent {formatDate(o.created_at)}
+                      </span>
                     </TD>
                   </TR>
                 ))}

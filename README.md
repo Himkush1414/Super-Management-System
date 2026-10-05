@@ -173,6 +173,40 @@ enabled, if you're on Windows/WSL). If it's not running, every Auth call
 degrades to "signed out" after a 5s timeout instead of hanging — you'll be
 stuck on the login screen with no visible error until Docker is up.
 
+## 5a. Performance notes
+
+Measured with a headless browser against a local stack with a 200 ms delay
+injected on every server→Supabase call (the old Vercel iad1 → Supabase
+ap-south-1 hop):
+
+| Action | Before | After | DB calls |
+|---|---|---|---|
+| Advance stage (click → UI updated) | 4.2 s | 1.1 s | 85 → 26 |
+| Dispatch order | 2.6 s | 0.8 s | 51 → 13 |
+| Open an order from the list | 1.0 s | 0.4 s | 7 → 6 (parallel) |
+
+What was causing the lag, and the fix:
+
+- **Region.** Functions ran in Vercel `iad1` (Washington) while the
+  database is in Mumbai — every query crossed the globe. `vercel.json` pins
+  functions to `bom1`.
+- **Duplicate auth round trips.** The proxy verified the user and loaded the
+  profile on every request, then every page did both again. The proxy now
+  only refreshes the cookie; `requireSession()` does one parallel check.
+- **Sequential reads.** Layout, list and detail reads now run in one
+  parallel round.
+- **Refresh storm after an action.** `StageControl` called `router.refresh()`
+  even though the action response already carries the new page, and each of
+  the two realtime events then refreshed again (and re-ran every prefetch) —
+  the UI waited for all of it. Now: no manual refresh, realtime events are
+  coalesced into one debounced refresh, hidden tabs defer it.
+- **Stage advance** is one atomic RPC (`advance_order_stage`, 0015) instead
+  of read + update + background insert.
+- **Realtime auth race.** On a fresh page load the browser subscribed before
+  its session loaded, joining as anon — the notification bell and production
+  list never updated live after a hard reload. Channels now join only after
+  the session token is set (`lib/realtime.ts`).
+
 ## 6. PDF export
 
 - Order detail page → **Download PDF**: a spec sheet (details, description,
@@ -201,6 +235,8 @@ app/dashboard/activity/   audit log viewer (admin tier)
 lib/whatsapp.ts           the stub
 lib/permissions.ts        role → capability matrix
 lib/pdf/                  react-pdf document components for the exports above
+lib/realtime.ts           realtime hooks (join as the signed-in user; debounced live refresh)
+vercel.json               functions pinned to bom1 (next to the Mumbai database)
 lib/env.ts                requireEnv() — fail fast on missing config instead
                            of a cryptic error deep inside supabase-js
 ```

@@ -7,13 +7,15 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const ctx = await requireSession();
   const supabase = await createClient();
-
-  const { count } = await supabase
-    .from("notifications")
-    .select("id", { count: "exact", head: true })
-    .is("read_at", null);
+  // In parallel: the unread count is RLS-scoped to the caller already.
+  const [ctx, { count }] = await Promise.all([
+    requireSession(),
+    supabase
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .is("read_at", null),
+  ]);
 
   return (
     <Shell

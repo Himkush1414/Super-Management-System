@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { requireSession, requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/server";
-import { MAX_STAGE, STAGE_TIMER_MS, stageName } from "@/lib/orders";
+import { STAGE_TIMER_MS, stageName } from "@/lib/orders";
 import { createOrderGroup, postStageUpdate } from "@/lib/whatsapp";
 
 export type Result = { error?: string; ok?: string; id?: string };
@@ -131,87 +131,82 @@ export async function dispatchOrder(
   redirect(`/dashboard/orders/${orderId}`);
 }
 
-/** Any production member assigned to the order advances it one stage. */
-export async function advanceStage(orderId: string): Promise<Result> {
+/**
+ * Any production member assigned to the order advances it one stage.
+ * `fromStage` is the stage the member was looking at: if the order has moved
+ * since (another assignee, a stale tab), nothing happens.
+ */
+export async function advanceStage(orderId: string, fromStage: number): Promise<Result> {
   const ctx = await requireSession();
   if (ctx.role !== "production") return { error: "Not permitted." };
-  if (!UUID.test(orderId)) return { error: "Order not found." };
+  if (!UUID.test(orderId) || !Number.isInteger(fromStage)) return { error: "Order not found." };
   const svc = createServiceClient();
 
-  const { data: order } = await svc
-    .from("orders")
-    .select(
-      "id, created_by, stage, status, product_name, whatsapp_group_id, stage_ready_at, order_assignees(profile_id)",
-    )
-    .eq("id", orderId)
-    .maybeSingle();
+  // One round trip: checks, stage move and history row in one transaction
+  // under a row lock (advance_order_stage, migration 0015).
+  const { data: r, error } = await svc
+    .rpc("advance_order_stage", {
+      p_order_id: orderId,
+      p_actor: ctx.userId,
+      p_from_stage: fromStage,
+      p_timer_seconds: Math.round(STAGE_TIMER_MS / 1000),
+    })
+    .single<{
+      outcome: string;
+      stage: number | null;
+      created_by: string;
+      product_name: string;
+      whatsapp_group_id: string | null;
+      assignee_ids: string[] | null;
+    }>();
+  if (error || !r) return { error: "Could not advance the order. Please try again." };
 
-  if (!order) return { error: "Order not found." };
-  const assigneeIds = (order.order_assignees as { profile_id: string }[]).map(
-    (a) => a.profile_id,
-  );
-  if (!assigneeIds.includes(ctx.userId))
-    return { error: "This order isn't assigned to you." };
-  if (order.status !== "active")
-    return { error: "This order is waiting on a production phone number." };
-  if (order.stage >= MAX_STAGE) return { error: "This order is already delivered." };
-
-  // Server-authoritative: reject an early advance even if a client is
-  // tampered with or a stale page re-submits before its own timer shows zero.
-  if (order.stage_ready_at && new Date(order.stage_ready_at).getTime() > Date.now()) {
-    return { error: "The timer for this stage hasn't finished yet." };
+  switch (r.outcome) {
+    case "ok":
+      break;
+    case "not_found":
+      return { error: "Order not found." };
+    case "not_assigned":
+      return { error: "This order isn't assigned to you." };
+    case "waiting":
+      return { error: "This order is waiting on a production phone number." };
+    case "delivered":
+      return { error: "This order is already delivered." };
+    case "timer":
+      return { error: "The timer for this stage hasn't finished yet." };
+    case "stale":
+      revalidatePath(`/dashboard/orders/${orderId}`);
+      return { error: `This order was already moved to Stage ${r.stage} — ${stageName(r.stage ?? 1)}.` };
+    default:
+      return { error: "Could not advance the order. Please try again." };
   }
 
-  const from = order.stage as number;
-  const to = from + 1;
-  const stageReadyAt =
-    to < MAX_STAGE ? new Date(Date.now() + STAGE_TIMER_MS).toISOString() : null;
-
-  // Conditional on the stage we read: two assignees confirming at the same
-  // moment can't both advance (one would otherwise skip a stage).
-  const { data: updated, error } = await svc
-    .from("orders")
-    .update({ stage: to, stage_ready_at: stageReadyAt })
-    .eq("id", orderId)
-    .eq("stage", from)
-    .select("id");
-  if (error) return { error: "Could not advance the order. Please try again." };
-  if (!updated?.length) {
-    revalidatePath(`/dashboard/orders/${orderId}`);
-    return { error: "Someone else just advanced this order." };
-  }
-
-  // The audit row, the (stubbed) WhatsApp post and the notifications are
-  // side effects the caller doesn't need to wait on.
+  const to = r.stage as number;
+  // The (stubbed) WhatsApp post and the notifications are side effects the
+  // caller doesn't need to wait on.
   after(async () => {
     await Promise.all([
-      svc.from("order_stage_events").insert({
-        order_id: orderId,
-        from_stage: from,
-        to_stage: to,
-        changed_by: ctx.userId,
-      }),
       postStageUpdate({
         orderId,
-        groupId: order.whatsapp_group_id,
-        text: `Order "${order.product_name}" moved to Stage ${to} — ${stageName(to)}.`,
+        groupId: r.whatsapp_group_id,
+        text: `Order "${r.product_name}" moved to Stage ${to} — ${stageName(to)}.`,
       }),
       (async () => {
-        const recipients = [
-          order.created_by as string,
-          ...(await headAdminIds(svc)),
-          ...assigneeIds,
-        ].filter((id) => id !== ctx.userId);
+        const recipients = [r.created_by, ...(await headAdminIds(svc)), ...(r.assignee_ids ?? [])].filter(
+          (id) => id !== ctx.userId,
+        );
         await notify(svc, recipients, {
           type: "stage",
           title: `Stage ${to} — ${stageName(to)}`,
-          body: `"${order.product_name}" is now at Stage ${to}: ${stageName(to)}.`,
+          body: `"${r.product_name}" is now at Stage ${to}: ${stageName(to)}.`,
           entity_id: orderId,
         });
       })(),
     ]);
   });
 
+  // The action's response carries the re-rendered page (revalidatePath), so
+  // the client must NOT router.refresh() on top of it.
   revalidatePath(`/dashboard/orders/${orderId}`);
   revalidatePath("/dashboard/orders");
   return { ok: `Advanced to Stage ${to} — ${stageName(to)}.` };

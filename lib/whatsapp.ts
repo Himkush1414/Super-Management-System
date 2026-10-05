@@ -20,18 +20,18 @@ export type WhatsAppResult =
   | { ok: true; groupId: string }
   | { ok: false; reason: "not_configured" };
 
-/** Would create a WhatsApp group for an order with the production account's phone. */
+/** Would create a WhatsApp group for an order with every assigned member's phone. */
 export async function createOrderGroup(input: {
   orderId: string;
   productName: string;
-  productionPhone: string;
+  productionPhones: string[];
 }): Promise<WhatsAppResult> {
-  // TODO(whatsapp): call WhatsApp Business API — create group, add productionPhone,
-  // return the real group id.
+  // TODO(whatsapp): call WhatsApp Business API — create group, add every
+  // number in productionPhones, return the real group id.
   console.warn(
     "[whatsapp:STUB] would create group for order %s → invite %s (%s). Not sent — no WhatsApp API configured.",
     input.orderId,
-    input.productionPhone,
+    input.productionPhones.join(", "),
     input.productName,
   );
   return { ok: false, reason: "not_configured" };
@@ -41,15 +41,13 @@ export async function createOrderGroup(input: {
 export async function postStageUpdate(input: {
   orderId: string;
   groupId: string | null;
-  productionPhone: string | null;
   text: string;
 }): Promise<WhatsAppResult> {
   // TODO(whatsapp): call WhatsApp Business API — send `text` to `groupId`.
   console.warn(
-    "[whatsapp:STUB] would post to group %s (order %s, %s): %j. Not sent — no WhatsApp API configured.",
+    "[whatsapp:STUB] would post to group %s (order %s): %j. Not sent — no WhatsApp API configured.",
     input.groupId ?? "—",
     input.orderId,
-    input.productionPhone ?? "—",
     input.text,
   );
   return { ok: false, reason: "not_configured" };

@@ -22,6 +22,19 @@ export function formatDate(value: string | null | undefined): string {
   });
 }
 
+/** A calendar date stored as YYYY-MM-DD — formatted without any timezone shift. */
+export function formatDay(value: string | null | undefined): string {
+  if (!value) return "—";
+  const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return value;
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "—";
   return new Date(value).toLocaleString("en-IN", {

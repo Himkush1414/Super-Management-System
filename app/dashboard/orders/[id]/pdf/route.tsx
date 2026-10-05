@@ -23,25 +23,26 @@ export async function GET(
   ]);
   if (!order) return new NextResponse("Not found", { status: 404 });
 
-  const showPrice = order.price !== null || ctx.can("price.view");
-  const showParties = ctx.isAdminTier;
 
   const buffer = await renderToBuffer(
     <OrderSpecSheet
       order={order}
       events={(events ?? []) as OrderStageEvent[]}
-      showPrice={showPrice}
-      showParties={showParties}
+      showPrice={ctx.can("price.view")}
+      showDispatcher={ctx.isAdminTier}
+      showAssignees={ctx.role !== "production"}
       generatedBy={ctx.name}
     />,
   );
 
-  const filename = `${order.product_name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-spec-sheet.pdf`;
+  const slug = order.product_name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+  const filename = `${slug || "order"}-${order.id.slice(0, 8)}.pdf`;
 
   return new NextResponse(buffer as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${filename}"`,
+      "Cache-Control": "private, no-store",
     },
   });
 }

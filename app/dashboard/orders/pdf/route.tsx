@@ -17,19 +17,22 @@ export async function GET() {
   const buffer = await renderToBuffer(
     <OrdersReport
       orders={orders}
-      showParties={ctx.role !== "marketing"}
-      showPrice
+      showDispatcher={ctx.isAdminTier}
+      showAssignees={ctx.role !== "production"}
+      // Production never gets a value column, not even an empty one.
+      showPrice={ctx.can("price.view")}
       generatedBy={ctx.name}
       scopeLabel={scopeLabel}
     />,
   );
 
-  const filename = `orders-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+  const filename = `nr-orders-report-${new Date().toISOString().slice(0, 10)}.pdf`;
 
   return new NextResponse(buffer as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${filename}"`,
+      "Cache-Control": "private, no-store",
     },
   });
 }

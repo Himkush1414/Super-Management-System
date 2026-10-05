@@ -3,8 +3,8 @@
  *
  * Four roles. `marketing` and `production` are each held by several fixed
  * accounts (marketing1..4, production1..4); individual scoping (an account
- * only sees its own orders) is enforced by RLS on `created_by` / `assigned_to`,
- * not by the role.
+ * only sees its own orders) is enforced by RLS on `orders.created_by` /
+ * `order_assignees`, not by the role.
  *
  * head_admin invisibility (original spec §2): the role exists, but nothing
  * user-facing — no label, badge, dropdown, nav item, or audit row — ever

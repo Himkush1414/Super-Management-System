@@ -34,22 +34,27 @@ returns every row *except* `head_admin` to admin; only `head_admin` sees
 
 ## 2. The order pipeline
 
-**Dispatch** (`/dashboard/orders/new`, marketing only) — product name, quality,
-quantity, power/type, description, price, and **Send to production** (pick one of
-production1–4). Button: *Proceed with product*.
+**Dispatch** (`/dashboard/orders/new`, marketing only) — product name, client
+name, transformer rating, quantity, order value, expected delivery date,
+description, and **Send to production**: one or more *specific* production
+members (never a broadcast). Button: *Proceed with product*. The order, its
+assignees and its first stage event are written in one transaction
+(`create_order()`).
 
-- If the chosen production account has a **saved + confirmed phone number**, the
-  order is `active`, assigned to them, and the WhatsApp group-creation stub fires.
+- If **every** selected member has a **saved + confirmed phone number**, the
+  order is `active` and the WhatsApp group-creation stub fires with all their
+  numbers.
 - If not, the order is created with status `waiting_on_production_phone`. It
-  becomes `active` automatically the moment that account saves its number.
+  becomes `active` automatically the moment the last of them saves a number.
 
 **Production settings** (`/dashboard/settings`, production only) — register the
 phone number for WhatsApp order groups. Saving sets `confirmed_at` (there is no
 way to actually verify a number without the WhatsApp API) and activates any
 parked orders.
 
-**Stages** (`orders.stage`, 1–5) — only the assigned production account can
-advance, one step at a time:
+**Stages** (`orders.stage`, 1–5) — any production member assigned to the
+order can advance it, one step at a time (a conditional update stops two
+members double-advancing):
 
 | # | Name |
 |---|---|
@@ -78,15 +83,28 @@ Replace the bodies marked `// TODO(whatsapp):` and set `WHATSAPP_ENABLED = true`
 
 ---
 
-## 4. Schema (`supabase/migrations/0008_orders_reset.sql`)
+## 4. Schema (`supabase/migrations/0008_orders_reset.sql` + later)
 
-`profiles` (id, username, full_name, role) · `orders` · `order_stage_events` ·
-`production_settings` · `notifications`. Reads go through the `order_feed` view,
-which nulls `price` for anyone who isn't admin-tier or the marketing account that
-created the order.
+`profiles` (id, username, full_name, role) · `orders` · `order_assignees` ·
+`order_stage_events` · `production_settings` · `notifications`. Reads go
+through the `order_feed` view, which nulls `price` (the order value) for
+anyone who isn't admin-tier or the marketing account that created the order,
+and lists `assignee_ids`. `orders.price` itself is not selectable by API
+roles at all (0010), and Realtime payloads omit it for the same reason.
+
+Production never sees the order value anywhere — page, CSV, list PDF or spec
+sheet PDF all drop the column for that role, not just blank it.
+
+Writes to orders / assignees / stage history go only through the server
+actions (service role, session-checked) — there are no direct-write RLS
+policies for those tables (0012).
 
 Migrations 0001–0005 build the original schema; **0008 is a hard reset** that
 drops the old auth/messaging/projects system and rebuilds around orders.
+0012 adds the current order fields and multi-member assignment.
+
+`supabase/scripts/` holds one-off data scripts (not migrations), e.g.
+`clear_test_orders.sql`.
 
 ---
 

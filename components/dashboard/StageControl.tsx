@@ -43,8 +43,9 @@ export function StageControl({
   if (waiting) {
     return (
       <p className="text-[13px] text-text-secondary">
-        This order can&apos;t start until a production phone number is registered.
-        Add yours in <span className="font-medium text-text">Settings</span>.
+        This order starts once every assigned production member has registered a
+        phone number. If you haven&apos;t yet, add yours in{" "}
+        <span className="font-medium text-text">Settings</span>.
       </p>
     );
   }

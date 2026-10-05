@@ -13,7 +13,7 @@ import { StageControl } from "@/components/dashboard/StageControl";
 import { StageTimerBar } from "@/components/dashboard/StageTimerBar";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
 import { MAX_STAGE, stageName } from "@/lib/orders";
-import { formatCurrency, formatDateTime } from "@/lib/utils";
+import { formatCurrency, formatDateTime, formatDay } from "@/lib/utils";
 
 export async function generateMetadata({
   params,
@@ -44,9 +44,24 @@ export default async function OrderDetailPage({
   if (!order) notFound();
 
   const isAssignedProduction =
-    ctx.role === "production" && order.assigned_to === ctx.userId;
-  const canSeePrice = order.price !== null || ctx.can("price.view");
-  const showParties = ctx.isAdminTier;
+    ctx.role === "production" && order.assignee_ids.includes(ctx.userId);
+  // Price follows the role rule, not "whatever the row happened to carry".
+  const canSeePrice = ctx.can("price.view");
+  const showDispatcher = ctx.isAdminTier;
+  const showAssignees = ctx.role !== "production";
+
+  // Admin tier: which assigned members have a WhatsApp number on file.
+  const { data: phones } = ctx.isAdminTier && order.assignee_ids.length
+    ? await supabase
+        .from("production_settings")
+        .select("profile_id, phone, confirmed_at")
+        .in("profile_id", order.assignee_ids)
+    : { data: null };
+  const phoneOf = new Map(
+    (phones ?? [])
+      .filter((p) => p.phone && p.confirmed_at)
+      .map((p) => [p.profile_id as string, p.phone as string]),
+  );
 
   return (
     <>
@@ -70,7 +85,7 @@ export default async function OrderDetailPage({
 
       <PageHeader
         title={order.product_name}
-        description={order.power_type || undefined}
+        description={[order.client_name, order.transformer_rating].filter(Boolean).join(" · ") || undefined}
         action={
           <div className="flex items-center gap-3">
             <OrderStatusBadge status={order.status} />
@@ -89,25 +104,23 @@ export default async function OrderDetailPage({
             <CardHeader title="Order details" />
             <CardBody>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-[13px] sm:grid-cols-3">
+                <Field label="Client" value={order.client_name || "—"} />
+                <Field label="Transformer rating" value={order.transformer_rating || "—"} />
                 <Field label="Quantity" value={String(order.quantity)} />
-                <Field label="Quality" value={order.quality || "—"} />
-                <Field label="Power / type" value={order.power_type || "—"} />
                 {canSeePrice && (
-                  <Field label="Price" value={formatCurrency(order.price)} />
+                  <Field label="Order value" value={formatCurrency(order.price)} />
                 )}
-                {showParties && (
-                  <>
-                    <Field
-                      label="Dispatched by"
-                      value={order.dispatcher?.full_name ?? "—"}
-                    />
-                    <Field
-                      label="Production"
-                      value={order.assignee?.full_name ?? "—"}
-                    />
-                  </>
-                )}
+                <Field label="Expected delivery" value={formatDay(order.expected_delivery)} />
                 <Field label="Dispatched" value={formatDateTime(order.created_at)} />
+                {showDispatcher && (
+                  <Field label="Dispatched by" value={order.dispatcher?.full_name ?? "—"} />
+                )}
+                {showAssignees && (
+                  <Field
+                    label="Production"
+                    value={order.assignees.map((a) => a.full_name).join(", ") || "—"}
+                  />
+                )}
               </dl>
               {order.description && (
                 <div className="mt-5 border-t border-border pt-4">
@@ -153,10 +166,17 @@ export default async function OrderDetailPage({
                   ? "Group created — updates are posted there."
                   : "No WhatsApp Business API is connected yet. Stage updates are recorded here; group creation and messaging are pending that setup."}
               </p>
-              {order.production_phone && ctx.isAdminTier && (
-                <p className="text-[12px] text-text-tertiary">
-                  Destination number on file: {order.production_phone}
-                </p>
+              {ctx.isAdminTier && order.assignees.length > 0 && (
+                <ul className="space-y-1 pt-1 text-[12px]">
+                  {order.assignees.map((a) => (
+                    <li key={a.id} className="flex items-center justify-between gap-3">
+                      <span className="text-text-secondary">{a.full_name}</span>
+                      <span className={phoneOf.has(a.id) ? "tnum text-text-tertiary" : "text-status-warning"}>
+                        {phoneOf.get(a.id) ?? "no number yet"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardBody>
           </Card>

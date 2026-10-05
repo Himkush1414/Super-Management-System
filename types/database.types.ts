@@ -34,23 +34,31 @@ export interface ProductionSettings {
 export interface Order {
   id: string;
   created_by: string;
-  assigned_to: string;
   product_name: string;
-  quality: string;
+  client_name: string;
+  transformer_rating: string;
   quantity: number;
-  power_type: string;
+  /** ISO date (YYYY-MM-DD), or null when not given. */
+  expected_delivery: string | null;
   description: string;
-  /** null when the viewer isn't allowed to see it (production). */
+  /** Order value. null when the viewer isn't allowed to see it (production). */
   price: number | null;
   stage: number;
   status: OrderStatus;
   whatsapp_group_created: boolean;
   whatsapp_group_id: string | null;
-  production_phone: string | null;
   created_at: string;
   updated_at: string;
   /** When the assigned production account may advance to the next stage; null = may advance now. */
   stage_ready_at: string | null;
+  /** Production members this order was sent to (order_feed only). */
+  assignee_ids: string[];
+}
+
+export interface OrderAssignee {
+  order_id: string;
+  profile_id: string;
+  created_at: string;
 }
 
 export interface OrderStageEvent {
@@ -82,6 +90,7 @@ export interface Database {
       profiles: Row<Profile>;
       production_settings: Row<ProductionSettings>;
       orders: Row<Order>;
+      order_assignees: Row<OrderAssignee>;
       order_stage_events: Row<OrderStageEvent>;
       notifications: Row<NotificationRow>;
     };

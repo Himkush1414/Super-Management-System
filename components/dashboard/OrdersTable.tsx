@@ -2,22 +2,29 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { Search, CalendarDays } from "lucide-react";
 import type { OrderRow } from "@/lib/data/orders";
 import { Table, THead, TR, TH, TD } from "@/components/ui/Table";
 import { Input, Select } from "@/components/ui/Field";
 import { StageBadge, OrderStatusBadge } from "@/components/shared/Badge";
+import { StageTracker } from "@/components/dashboard/StageTracker";
 import { STAGES } from "@/lib/orders";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, formatDay } from "@/lib/utils";
 
 const STAGE_FILTER_ALL = "all";
+
+const names = (o: OrderRow) => o.assignees.map((a) => a.full_name).join(", ");
 
 export function OrdersTable({
   orders,
   showDispatcher,
+  showAssignees = true,
+  showPrice,
 }: {
   orders: OrderRow[];
   showDispatcher: boolean;
+  showAssignees?: boolean;
+  showPrice: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState(STAGE_FILTER_ALL);
@@ -31,10 +38,10 @@ export function OrdersTable({
       if (!q) return true;
       return [
         o.product_name,
-        o.quality,
-        o.power_type,
+        o.client_name,
+        o.transformer_rating,
         o.dispatcher?.full_name,
-        o.assignee?.full_name,
+        names(o),
         o.status,
       ]
         .filter(Boolean)
@@ -44,16 +51,17 @@ export function OrdersTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative max-w-xs flex-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative sm:max-w-xs sm:flex-1">
           <Search
             size={14}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary"
           />
           <Input
+            type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search product, production, status…"
+            placeholder="Search product, client, rating…"
             className="pl-8"
             aria-label="Search orders"
           />
@@ -61,7 +69,7 @@ export function OrdersTable({
         <Select
           value={stageFilter}
           onChange={(e) => setStageFilter(e.target.value)}
-          className="w-auto max-w-[220px]"
+          className="sm:w-auto sm:max-w-[240px]"
           aria-label="Filter by stage"
         >
           <option value={STAGE_FILTER_ALL}>All stages</option>
@@ -71,6 +79,9 @@ export function OrdersTable({
             </option>
           ))}
         </Select>
+        <span className="text-[12px] text-text-tertiary sm:ml-auto tnum">
+          {filtered.length} of {orders.length}
+        </span>
       </div>
 
       {filtered.length === 0 ? (
@@ -78,58 +89,108 @@ export function OrdersTable({
           No orders match the current search/filter.
         </p>
       ) : (
-        <Table>
-          <THead>
-            <TR>
-              <TH>Product</TH>
-              {showDispatcher && <TH>Dispatched by</TH>}
-              <TH>Production</TH>
-              <TH numeric>Qty</TH>
-              <TH>Stage</TH>
-              <TH numeric>Price</TH>
-              <TH>Status</TH>
-              <TH numeric>Date</TH>
-            </TR>
-          </THead>
-          <tbody>
+        <>
+          {/* phones: stacked cards */}
+          <ul className="space-y-2 md:hidden">
             {filtered.map((o) => (
-              <TR key={o.id} className="cursor-pointer">
-                <TD>
-                  <Link
-                    href={`/dashboard/orders/${o.id}`}
-                    className="font-medium text-text hover:text-accent"
-                  >
-                    {o.product_name}
-                  </Link>
-                  {o.power_type && (
-                    <span className="block text-[12px] text-text-tertiary">
-                      {o.power_type}
-                    </span>
-                  )}
-                </TD>
-                {showDispatcher && (
-                  <TD className="text-text-secondary">
-                    {o.dispatcher?.full_name ?? "—"}
-                  </TD>
-                )}
-                <TD className="text-text-secondary">
-                  {o.assignee?.full_name ?? "—"}
-                </TD>
-                <TD numeric>{o.quantity}</TD>
-                <TD>
-                  <StageBadge stage={o.stage} />
-                </TD>
-                <TD numeric>{formatCurrency(o.price)}</TD>
-                <TD>
-                  <OrderStatusBadge status={o.status} />
-                </TD>
-                <TD numeric className="text-text-tertiary">
-                  {formatDate(o.created_at)}
-                </TD>
-              </TR>
+              <li key={o.id}>
+                <Link
+                  href={`/dashboard/orders/${o.id}`}
+                  className="nr-interactive block rounded-xl border border-border bg-panel/60 p-4 active:bg-white/[0.03]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{o.product_name}</p>
+                      <p className="mt-0.5 truncate text-[12px] text-text-secondary">
+                        {o.client_name}
+                        {o.transformer_rating ? ` · ${o.transformer_rating}` : ""}
+                      </p>
+                    </div>
+                    {showPrice && (
+                      <span className="shrink-0 text-[13px] font-medium tnum">
+                        {formatCurrency(o.price)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3">
+                    <StageTracker stage={o.stage} compact />
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-text-tertiary">
+                    <StageBadge stage={o.stage} />
+                    {o.status !== "active" && <OrderStatusBadge status={o.status} />}
+                    <span className="tnum">Qty {o.quantity}</span>
+                    {o.expected_delivery && (
+                      <span className="inline-flex items-center gap-1">
+                        <CalendarDays size={12} /> {formatDay(o.expected_delivery)}
+                      </span>
+                    )}
+                    {showAssignees && names(o) && <span>→ {names(o)}</span>}
+                  </div>
+                </Link>
+              </li>
             ))}
-          </tbody>
-        </Table>
+          </ul>
+
+          {/* tablet / desktop: table */}
+          <div className="hidden md:block">
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Product</TH>
+                  <TH>Rating</TH>
+                  {showDispatcher && <TH>Dispatched by</TH>}
+                  {showAssignees && <TH>Production</TH>}
+                  <TH numeric>Qty</TH>
+                  <TH>Stage</TH>
+                  {showPrice && <TH numeric>Value</TH>}
+                  <TH numeric>Delivery</TH>
+                </TR>
+              </THead>
+              <tbody>
+                {filtered.map((o) => (
+                  <TR key={o.id} className="group relative cursor-pointer">
+                    <TD>
+                      <Link
+                        href={`/dashboard/orders/${o.id}`}
+                        className="font-medium text-text group-hover:text-accent after:absolute after:inset-0"
+                      >
+                        {o.product_name}
+                      </Link>
+                      <span className="block text-[12px] text-text-tertiary">
+                        {o.client_name}
+                        {o.status !== "active" && (
+                          <span className="ml-2 text-status-warning">· waiting on phone</span>
+                        )}
+                      </span>
+                    </TD>
+                    <TD className="text-text-secondary">{o.transformer_rating || "—"}</TD>
+                    {showDispatcher && (
+                      <TD className="text-text-secondary">
+                        {o.dispatcher?.full_name ?? "—"}
+                      </TD>
+                    )}
+                    {showAssignees && (
+                      <TD className="max-w-[180px] truncate text-text-secondary">
+                        {names(o) || "—"}
+                      </TD>
+                    )}
+                    <TD numeric>{o.quantity}</TD>
+                    <TD>
+                      <StageBadge stage={o.stage} />
+                    </TD>
+                    {showPrice && <TD numeric>{formatCurrency(o.price)}</TD>}
+                    <TD numeric className="text-text-tertiary">
+                      {o.expected_delivery ? formatDay(o.expected_delivery) : formatDate(o.created_at)}
+                      {!o.expected_delivery && (
+                        <span className="block text-[11px]">dispatched</span>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+        </>
       )}
     </div>
   );

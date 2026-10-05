@@ -9,6 +9,7 @@ import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
 import { StageTracker } from "@/components/dashboard/StageTracker";
 import { OrdersTable } from "@/components/dashboard/OrdersTable";
 import { OrderStatusBadge } from "@/components/shared/Badge";
+import { formatDay } from "@/lib/utils";
 
 export const metadata = { title: "Orders" };
 
@@ -89,7 +90,11 @@ export default async function OrdersPage() {
           }
         />
       ) : (
-        <OrdersTable orders={orders} showDispatcher={!isMarketing} />
+        <OrdersTable
+          orders={orders}
+          showDispatcher={!isMarketing}
+          showPrice={ctx.can("price.view")}
+        />
       )}
     </>
   );
@@ -122,10 +127,15 @@ function ProductionView({ orders }: { orders: OrderRow[] }) {
                 <div className="min-w-0">
                   <p className="font-medium">{o.product_name}</p>
                   <p className="mt-0.5 text-[13px] text-text-secondary">
-                    Qty {o.quantity}
-                    {o.power_type ? ` · ${o.power_type}` : ""}
-                    {o.quality ? ` · ${o.quality}` : ""}
+                    {o.client_name}
+                    {o.transformer_rating ? ` · ${o.transformer_rating}` : ""}
+                    {` · Qty ${o.quantity}`}
                   </p>
+                  {o.expected_delivery && (
+                    <p className="mt-0.5 text-[12px] text-text-tertiary">
+                      Expected delivery {formatDay(o.expected_delivery)}
+                    </p>
+                  )}
                 </div>
                 <OrderStatusBadge status={o.status} />
               </div>

@@ -6,6 +6,11 @@ import { DispatchForm } from "@/components/dashboard/DispatchForm";
 
 export const metadata = { title: "Dispatch order" };
 
+/** Today's date in IST as YYYY-MM-DD (the business runs on Indian time). */
+function todayInIndia() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+}
+
 export default async function NewOrderPage() {
   await requireRole("marketing");
 
@@ -36,9 +41,9 @@ export default async function NewOrderPage() {
         title="Dispatch order"
         description="Create a production order and send it to a production team."
       />
-      <Card className="max-w-2xl">
+      <Card className="max-w-3xl">
         <CardBody>
-          <DispatchForm production={production} />
+          <DispatchForm production={production} today={todayInIndia()} />
         </CardBody>
       </Card>
     </>

@@ -99,7 +99,7 @@ export function AccountArchive({ data, generatedAt }: { data: AccountExport; gen
   return (
     <Document title={`Data archive — ${data.account.display_name}`} author="NR Industries">
       <Page size="A4" orientation="landscape" style={base.page}>
-        <PdfHeader title="Account Data Archive" subtitle={data.account.display_name} />
+        <PdfHeader title="Account Data Archive" subtitle={data.account.display_name} generatedAt={generatedAt} />
 
         <View style={s.section}>
           <Grid<[string, string]>
@@ -127,8 +127,8 @@ export function AccountArchive({ data, generatedAt }: { data: AccountExport; gen
                 { label: "Current stage", width: 9, cell: (o) => `Stage ${o.stage} of ${MAX_STAGE}` },
                 { label: "Status", width: 7, cell: (o) => (o.status === "active" ? "Active" : ORDER_STATUS_LABEL[o.status] ?? o.status) },
                 { label: "Production", width: 12, cell: (o) => o.production.join(", ") || "—" },
-                { label: "Dispatched by", width: 11, cell: (o) => o.dispatched_by || "—" },
-                { label: "Dispatched on", width: 10, cell: (o) => formatDateTime(o.created_at) },
+                { label: "Punched by", width: 11, cell: (o) => o.dispatched_by || "—" },
+                { label: "Punched on", width: 10, cell: (o) => formatDateTime(o.created_at) },
                 { label: "Description", width: 13, cell: (o) => o.description || "—" },
               ]}
               rows={data.orders}
@@ -172,8 +172,7 @@ export function AccountArchive({ data, generatedAt }: { data: AccountExport; gen
             />
           )}
         </View>
-
-        <PdfFooter generatedAt={generatedAt} />
+        <PdfFooter />
       </Page>
     </Document>
   );

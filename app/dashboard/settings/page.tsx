@@ -33,7 +33,7 @@ export default async function SettingsPage() {
           settingUp
             ? isProduction
               ? "Add your real name and WhatsApp number to start working on orders."
-              : "Add your real name to start dispatching orders."
+              : "Add your real name to start punching orders."
             : "Your details as they appear to the rest of the team."
         }
       />

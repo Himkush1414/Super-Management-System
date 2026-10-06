@@ -20,7 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard/orders", label: "Orders", icon: Package },
   {
     href: "/dashboard/orders/new",
-    label: "Dispatch order",
+    label: "Punch Order",
     icon: PlusCircle,
     perm: "orders.dispatch",
   },

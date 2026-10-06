@@ -3,7 +3,7 @@ import type { OrderRow } from "@/lib/data/orders";
 import { MAX_STAGE, stageName, ORDER_STATUS_LABEL } from "@/lib/orders";
 import { formatDate, formatDay } from "@/lib/utils";
 import { C, base, inr } from "./theme";
-import { PdfHeader, PdfFooter } from "./Chrome";
+import { PdfHeader, PdfFooter, PdfSignature } from "./Chrome";
 
 const s = StyleSheet.create({
   summary: { flexDirection: "row", marginBottom: 10, fontSize: 9, color: C.body },
@@ -101,9 +101,9 @@ export function OrdersReport({
       ? [{ key: "prod", label: "Production", width: 12, cell: (o: OrderRow) => o.assignees.map((a) => a.label).join(", ") || "—" }]
       : []),
     ...(showDispatcher
-      ? [{ key: "by", label: "Dispatched by", width: 11, cell: (o: OrderRow) => o.dispatcher?.label ?? "—" }]
+      ? [{ key: "by", label: "Punched by", width: 11, cell: (o: OrderRow) => o.dispatcher?.label ?? "—" }]
       : []),
-    { key: "date", label: "Dispatched on", width: 9, cell: (o) => formatDate(o.created_at) },
+    { key: "date", label: "Punched on", width: 9, cell: (o) => formatDate(o.created_at) },
     { key: "desc", label: "Description", width: 12, cell: (o) => o.description || "—" },
   ];
   const total = cols.reduce((n, c) => n + c.width, 0);
@@ -117,6 +117,7 @@ export function OrdersReport({
         <PdfHeader
           title="Orders Report"
           subtitle={periodLabel ? `${periodLabel} · ${scopeLabel}` : scopeLabel}
+          generatedAt={generatedAt}
         />
 
         <View style={s.summary}>
@@ -179,7 +180,8 @@ export function OrdersReport({
           )}
         </View>
 
-        <PdfFooter generatedAt={generatedAt} />
+        <PdfSignature />
+        <PdfFooter />
       </Page>
     </Document>
   );

@@ -1,6 +1,6 @@
 # NR Industries — internal order system
 
-Marketing dispatches production orders; production advances them through five
+Marketing punches production orders; production advances them through five
 stages; administrators oversee everything. Next.js 16 (App Router, Turbopack) +
 Supabase (Postgres + Auth + RLS).
 
@@ -16,9 +16,9 @@ nothing else — Supabase Auth sign-ups are refused in the database
 
 | Username | Role | Sees |
 |---|---|---|
-| `head_admin` | head_admin | everything, incl. which marketing account dispatched each order |
+| `head_admin` | head_admin | everything, incl. which marketing account punched each order |
 | `admin` | admin | every order + all production activity, incl. price. Believes it is the top level. |
-| `marketing1`…`marketing4` | marketing | **only their own** dispatched orders (incl. price) |
+| `marketing1`…`marketing4` | marketing | **only their own** punched orders (incl. price) |
 | `production1`…`production4` | production | **only orders assigned to them**. Never price. |
 
 Login field is the **username**. Supabase Auth needs an email internally, so
@@ -71,7 +71,7 @@ returns every row *except* `head_admin` to admin; only `head_admin` sees
 
 ## 2. The order pipeline
 
-**Dispatch** (`/dashboard/orders/new`, marketing only) — product name, client
+**Punch Order** (`/dashboard/orders/new`, marketing only) — product name, client
 name, transformer rating, quantity, order value, expected delivery date,
 description, and **Send to production**: one or more *specific* production
 members (never a broadcast). Button: *Proceed with product*. The order, its
@@ -153,7 +153,7 @@ drops the old auth/messaging/projects system and rebuilds around orders.
 `/dashboard/data` lets admin and head_admin remove data that marketing and
 production accounts build up:
 
-- delete an individual order dispatched by a marketing account (also from the
+- delete an individual order punched by a marketing account (also from the
   order page), with its stage history and notifications;
 - delete an individual stage update made by a production account (history
   only — the order keeps its stage);
@@ -203,7 +203,7 @@ ap-south-1 hop):
 | Action | Before | After | DB calls |
 |---|---|---|---|
 | Advance stage (click → UI updated) | 4.2 s | 1.1 s | 85 → 26 |
-| Dispatch order | 2.6 s | 0.8 s | 51 → 13 |
+| Punch order | 2.6 s | 0.8 s | 51 → 13 |
 | Open an order from the list | 1.0 s | 0.4 s | 7 → 6 (parallel) |
 
 What was causing the lag, and the fix:
@@ -233,7 +233,7 @@ What was causing the lag, and the fix:
 - Order detail page → **Download PDF**: an order specification — a ruled
   Field | Value table, one field per row (product, client, rating, quantity,
   order value, expected delivery date, current stage "Stage 2 of 5", status,
-  production, dispatched by/on, description). Current stage only, no history.
+  production, punched by/on, description). Current stage only, no history.
 - Orders list → **Download All Orders** (admin and marketing): one PDF with
   a ruled table of every order the viewer can see, for **this / an earlier
   week, month or year** (by dispatch date, IST, Monday–Sunday weeks) or all
@@ -241,14 +241,20 @@ What was causing the lag, and the fix:
   time → months — each heading with its count (and value subtotal where the
   viewer may see prices). `/dashboard/orders/pdf?period=month&at=YYYY-MM-DD`;
   period logic in `lib/periods.ts`.
-- Every PDF: the NR Industries logo at the top of each page (`lib/pdf/logo.ts`,
-  embedded) and a footer of only "Generated: <date> <time>" (IST) — no names.
+- Every PDF: a letterhead on each page — the NR Industries logo
+  (`lib/pdf/logo.ts`, embedded) and company address on the left, the
+  document title and "Generated: <date> <time>" (IST) on the right — and a
+  footer of only "NR Industries", no names. Company details live in one
+  place: `COMPANY` in `lib/pdf/Chrome.tsx`.
+- Both order PDFs end with a signature block (a line, "(Head)", "NR
+  Industries"); the spec sheet puts it at the foot of its last page. The
+  account archive has none.
 - Orders list → **Export CSV**: one field per column with the form's labels;
   stage number and stage name in separate columns; dates `DD/MM/YYYY`,
   timestamps IST `DD/MM/YYYY HH:MM`; formula-injection safe.
 
 **Dates** are DD/MM/YYYY everywhere (pages, PDFs, CSV, activity log), times
-in IST — all through `lib/utils.ts`. The dispatch form's date field is our
+in IST — all through `lib/utils.ts`. The Punch Order form's date field is our
 own (`components/ui/DateField.tsx`): the browser's date input follows the
 device locale (often MM/DD/YYYY) and can't be forced to DD/MM/YYYY.
 - Production never gets an order-value row/column in any of them. Names are
@@ -263,7 +269,7 @@ pages they sit on.
 
 ```
 app/(auth)/login/        username + password, the only way in
-app/dashboard/orders/     list · new (dispatch) · [id] (detail + stage control)
+app/dashboard/orders/     list · new (punch order) · [id] (detail + stage control)
 app/dashboard/orders/*/pdf/  PDF export route handlers
 app/dashboard/settings/   production phone registration
 lib/auth/                 PIN login/logout actions · requireSession/requireRole

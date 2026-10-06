@@ -11,7 +11,7 @@ import type { Role } from "@/lib/permissions";
 
 const CRUMB_LABELS: Record<string, string> = {
   orders: "Orders",
-  new: "Dispatch order",
+  new: "Punch Order",
   settings: "Settings",
   data: "Data management",
   activity: "Activity log",

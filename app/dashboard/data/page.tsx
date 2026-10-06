@@ -194,7 +194,7 @@ async function MarketingOrders({
   return (
     <Card>
       <CardHeader
-        title="Orders dispatched"
+        title="Orders punched"
         description="Deleting an order also removes its stage history and the notifications about it."
       />
       {orders.length === 0 ? (
@@ -208,7 +208,7 @@ async function MarketingOrders({
               <TR>
                 <TH>Product</TH>
                 <TH>Stage</TH>
-                <TH numeric>Dispatched</TH>
+                <TH numeric>Punched</TH>
                 <TH className="w-12"><span className="sr-only">Delete</span></TH>
               </TR>
             </THead>
@@ -233,7 +233,7 @@ async function MarketingOrders({
                       title={o.product_name}
                       lines={[
                         `${o.client_name} · ${o.transformer_rating} · Qty ${o.quantity}`,
-                        `Stage ${o.stage} — ${stageName(o.stage)} · dispatched ${formatDateTime(o.created_at)}`,
+                        `Stage ${o.stage} — ${stageName(o.stage)} · punched ${formatDateTime(o.created_at)}`,
                         ...(o.expected_delivery ? [`Expected delivery ${formatDay(o.expected_delivery)}`] : []),
                       ]}
                     />

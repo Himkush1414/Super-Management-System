@@ -156,7 +156,7 @@ function Snapshot({ entry }: { entry: Entry }) {
       ["Order value", formatCurrency(o.price === null ? null : Number(o.price))],
       ["Expected delivery", formatDay(o.expected_delivery ?? null)],
       ["Stage at deletion", `${o.stage} — ${stageName(Number(o.stage))}`],
-      ["Dispatched by", String(d.dispatched_by ?? "—")],
+      ["Punched by", String(d.dispatched_by ?? "—")],
       ["Production", ((d.assignees as unknown as string[]) ?? []).join(", ") || "—"],
       ["Stage history removed", String(((d.stage_events as unknown as unknown[]) ?? []).length)],
     ];

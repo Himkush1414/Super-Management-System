@@ -3,7 +3,7 @@ import type { OrderRow } from "@/lib/data/orders";
 import { MAX_STAGE, stageName, ORDER_STATUS_LABEL } from "@/lib/orders";
 import { formatDateTime, formatDay } from "@/lib/utils";
 import { C, base, inr } from "./theme";
-import { PdfHeader, PdfFooter } from "./Chrome";
+import { PdfHeader, PdfFooter, PdfSignature } from "./Chrome";
 
 const s = StyleSheet.create({
   table: { borderTop: `0.75 solid ${C.rule}`, borderLeft: `0.75 solid ${C.rule}` },
@@ -29,6 +29,8 @@ const s = StyleSheet.create({
     color: C.ink,
   },
   long: { lineHeight: 1.5, fontSize: 9.5 },
+  // pushes the signature to the foot of the (last) page
+  fill: { flexGrow: 1 },
 });
 
 /**
@@ -62,9 +64,9 @@ export function OrderSpecSheet({
       ? ([["Production", order.assignees.map((a) => a.label).join(", ") || "—"]] as [string, string][])
       : []),
     ...(showDispatcher
-      ? ([["Dispatched by", order.dispatcher?.label ?? "—"]] as [string, string][])
+      ? ([["Punched by", order.dispatcher?.label ?? "—"]] as [string, string][])
       : []),
-    ["Dispatched on", formatDateTime(order.created_at)],
+    ["Punched on", formatDateTime(order.created_at)],
     ["Description", order.description || "—"],
   ];
 
@@ -74,6 +76,7 @@ export function OrderSpecSheet({
         <PdfHeader
           title="Order Specification"
           subtitle={`Ref ${order.id.slice(0, 8).toUpperCase()}`}
+          generatedAt={generatedAt}
         />
         <View style={s.table}>
           {rows.map(([label, value]) => (
@@ -83,7 +86,9 @@ export function OrderSpecSheet({
             </View>
           ))}
         </View>
-        <PdfFooter generatedAt={generatedAt} />
+        <View style={s.fill} />
+        <PdfSignature />
+        <PdfFooter />
       </Page>
     </Document>
   );

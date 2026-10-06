@@ -38,8 +38,8 @@ export default async function OrdersPage() {
         title={isMarketing ? "Your orders" : "Orders"}
         description={
           isMarketing
-            ? "Everything you've dispatched. Only you and administrators can see these."
-            : "Every order dispatched by marketing and its production progress."
+            ? "Everything you've punched. Only you and administrators can see these."
+            : "Every order punched by marketing and its production progress."
         }
         action={
           <div className="flex items-center gap-2">
@@ -64,7 +64,7 @@ export default async function OrdersPage() {
                 href="/dashboard/orders/new"
                 className="nr-interactive nr-press ml-auto inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-fg hover:bg-accent-hover sm:ml-0"
               >
-                <Plus size={15} /> Dispatch order
+                <Plus size={15} /> Punch Order
               </Link>
             )}
           </div>
@@ -84,8 +84,8 @@ export default async function OrdersPage() {
           title="No orders yet"
           description={
             isMarketing
-              ? "Dispatch your first order to send it to a production team."
-              : "Marketing hasn't dispatched anything yet."
+              ? "Punch your first order to send it to a production team."
+              : "Marketing hasn't punched anything yet."
           }
           action={
             isMarketing ? (
@@ -93,7 +93,7 @@ export default async function OrdersPage() {
                 href="/dashboard/orders/new"
                 className="nr-interactive nr-press inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-fg hover:bg-accent-hover"
               >
-                <Plus size={15} /> Dispatch order
+                <Plus size={15} /> Punch Order
               </Link>
             ) : null
           }

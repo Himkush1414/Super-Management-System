@@ -40,7 +40,7 @@ export function ResetAccount({
   const scopes: Scope[] =
     role === "marketing"
       ? [
-          { name: "orders", label: "Orders dispatched", note: "With their stage history and assignments.", count: counts.orders_dispatched, defaultOn: true },
+          { name: "orders", label: "Orders punched", note: "With their stage history and assignments.", count: counts.orders_dispatched, defaultOn: true },
           { name: "notifications", label: "Notifications", count: counts.notifications, defaultOn: true },
         ]
       : [

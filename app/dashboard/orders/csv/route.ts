@@ -41,9 +41,9 @@ export async function GET() {
       ? [{ header: "Production", value: (o: OrderRow) => o.assignees.map((a) => a.label).join("; ") } satisfies Column]
       : []),
     ...(ctx.isAdminTier
-      ? [{ header: "Dispatched by", value: (o: OrderRow) => o.dispatcher?.label ?? "" } satisfies Column]
+      ? [{ header: "Punched by", value: (o: OrderRow) => o.dispatcher?.label ?? "" } satisfies Column]
       : []),
-    { header: "Dispatched at (IST)", value: (o) => formatCsvDateTime(o.created_at) },
+    { header: "Punched at (IST)", value: (o) => formatCsvDateTime(o.created_at) },
     { header: "Description", value: (o) => o.description },
   ];
 

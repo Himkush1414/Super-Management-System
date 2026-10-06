@@ -94,7 +94,7 @@ export async function dispatchOrder(
       error: error?.message.includes("production accounts")
         ? "One of the selected production members no longer exists."
         : error?.message.includes("real name")
-          ? "Add your real name in Settings before dispatching orders."
+          ? "Add your real name in Settings before punching orders."
           : "Could not create the order. Please try again.",
     };
   }
@@ -120,8 +120,8 @@ export async function dispatchOrder(
         : Promise.resolve(),
       notify(svc, [...assignees, ...heads], {
         type: "order",
-        title: "New order dispatched",
-        body: `${ctx.name} dispatched "${product_name}" for ${client_name}${
+        title: "New order punched",
+        body: `${ctx.name} punched "${product_name}" for ${client_name}${
           active ? "" : " — waiting on a production phone number"
         }.`,
         entity_id: orderId,

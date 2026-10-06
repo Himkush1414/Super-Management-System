@@ -110,9 +110,9 @@ export default async function OrderDetailPage({
                   <Field label="Order value" value={formatCurrency(order.price)} />
                 )}
                 <Field label="Expected delivery" value={formatDay(order.expected_delivery)} />
-                <Field label="Dispatched" value={formatDateTime(order.created_at)} />
+                <Field label="Punched" value={formatDateTime(order.created_at)} />
                 {showDispatcher && (
-                  <Field label="Dispatched by" value={order.dispatcher?.label ?? "—"} />
+                  <Field label="Punched by" value={order.dispatcher?.label ?? "—"} />
                 )}
                 {showAssignees && (
                   <Field
@@ -192,7 +192,7 @@ export default async function OrderDetailPage({
                     <div>
                       <p className="text-text">
                         {e.from_stage === null
-                          ? "Order dispatched"
+                          ? "Order punched"
                           : `Stage ${e.to_stage} — ${stageName(e.to_stage)}`}
                       </p>
                       <p className="text-[12px] text-text-tertiary">
@@ -219,7 +219,7 @@ export default async function OrderDetailPage({
                   redirectTo="/dashboard/orders"
                   lines={[
                     [order.client_name, order.transformer_rating, `Qty ${order.quantity}`].filter(Boolean).join(" · "),
-                    `Dispatched by ${order.dispatcher?.label ?? "—"} · Stage ${order.stage} — ${stageName(order.stage)}`,
+                    `Punched by ${order.dispatcher?.label ?? "—"} · Stage ${order.stage} — ${stageName(order.stage)}`,
                   ]}
                 />
               </CardBody>

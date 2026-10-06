@@ -137,7 +137,7 @@ export function OrdersTable({
               <THead>
                 <TR>
                   <TH>Product</TH>
-                  {showDispatcher && <TH className="whitespace-nowrap">Dispatched by</TH>}
+                  {showDispatcher && <TH className="whitespace-nowrap">Punched by</TH>}
                   {showAssignees && <TH>Production</TH>}
                   <TH numeric>Qty</TH>
                   <TH>Stage</TH>

@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
 
   const scopeLabel =
     ctx.role === "marketing"
-      ? "Your dispatched orders"
+      ? "Your punched orders"
       : ctx.role === "production"
         ? "Orders assigned to you"
         : "All orders";

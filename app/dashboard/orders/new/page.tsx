@@ -6,7 +6,7 @@ import { DispatchForm } from "@/components/dashboard/DispatchForm";
 import { displayName } from "@/lib/names";
 import type { Profile } from "@/types/database.types";
 
-export const metadata = { title: "Dispatch order" };
+export const metadata = { title: "Punch Order" };
 
 /** Today's date in IST as YYYY-MM-DD (the business runs on Indian time). */
 function todayInIndia() {
@@ -41,7 +41,7 @@ export default async function NewOrderPage() {
   return (
     <>
       <PageHeader
-        title="Dispatch order"
+        title="Punch Order"
         description="Create a production order and send it to a production team."
       />
       <Card className="max-w-3xl">

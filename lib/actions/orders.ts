@@ -49,6 +49,7 @@ type ItemInput = {
   transformer_rating: string;
   quantity: number;
   price: number | null;
+  feat: number | null;
   description: string;
 };
 
@@ -70,13 +71,14 @@ export async function dispatchOrder(
   const ratings = all("transformer_rating[]");
   const quantities = all("quantity[]");
   const prices = all("price[]");
+  const feats = all("feat[]");
   const descriptions = all("description[]");
   const n = names.length;
 
   if (!client_name) return { error: "Client name is required." };
   if (n === 0) return { error: "Add at least one product." };
   if (n > MAX_ORDER_ITEMS) return { error: `An order can have at most ${MAX_ORDER_ITEMS} products.` };
-  if ([ratings, quantities, prices, descriptions].some((a) => a.length !== n))
+  if ([ratings, quantities, prices, feats, descriptions].some((a) => a.length !== n))
     return { error: "The form was incomplete. Please reload the page and try again." };
 
   const items: ItemInput[] = [];
@@ -85,17 +87,21 @@ export async function dispatchOrder(
     const p = n > 1 ? `Product ${i + 1}: ` : "";
     const quantity = Number(quantities[i] || "1");
     const price = prices[i] === "" ? null : Number(prices[i]);
+    const feat = feats[i] === "" ? null : Number(feats[i]);
     if (!names[i]) return { error: `${p}Product name is required.` };
     if (!ratings[i]) return { error: `${p}Transformer rating is required.` };
     if (!Number.isInteger(quantity) || quantity < 1)
       return { error: `${p}Quantity must be a whole number of at least 1.` };
     if (price !== null && (!Number.isFinite(price) || price < 0))
-      return { error: `${p}Value must be a positive number, or left blank.` };
+      return { error: `${p}Price must be a positive number, or left blank.` };
+    if (feat !== null && (!Number.isFinite(feat) || feat < 0))
+      return { error: `${p}FEAT must be a positive number, or left blank.` };
     items.push({
       product_name: names[i],
       transformer_rating: ratings[i],
       quantity,
       price,
+      feat,
       description: descriptions[i],
     });
   }

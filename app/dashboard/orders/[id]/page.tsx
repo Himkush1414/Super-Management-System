@@ -13,7 +13,7 @@ import { StageControl } from "@/components/dashboard/StageControl";
 import { StageTimerBar } from "@/components/dashboard/StageTimerBar";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
 import { DeleteButton } from "@/components/dashboard/DeleteButton";
-import { MAX_STAGE, orderTitle, stageName, totalQuantity } from "@/lib/orders";
+import { MAX_STAGE, itemValue, orderTitle, stageName, totalQuantity } from "@/lib/orders";
 import { formatCurrency, formatDateTime, formatDay } from "@/lib/utils";
 
 export async function generateMetadata({
@@ -143,12 +143,7 @@ export default async function OrderDetailPage({
                 <li key={it.id} className="flex gap-3 px-5 py-4 text-[13px]">
                   <span className="mt-px w-5 shrink-0 text-text-tertiary tnum">{it.position}.</span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                      <p className="font-medium text-text">{it.product_name}</p>
-                      {canSeePrice && (
-                        <p className="font-medium tnum">{formatCurrency(it.price)}</p>
-                      )}
-                    </div>
+                    <p className="font-medium text-text">{it.product_name}</p>
                     <p className="mt-0.5 text-text-secondary">
                       {[it.transformer_rating, `Qty ${it.quantity}`].filter(Boolean).join(" · ")}
                     </p>
@@ -156,6 +151,16 @@ export default async function OrderDetailPage({
                       <p className="mt-1.5 whitespace-pre-wrap text-text-tertiary">{it.description}</p>
                     )}
                   </div>
+                  {canSeePrice && (
+                    <div className="shrink-0 text-right">
+                      <p className="font-medium tnum">{formatCurrency(itemValue(it))}</p>
+                      {it.feat !== null && (
+                        <p className="mt-0.5 text-[12px] text-text-tertiary tnum">
+                          Price {formatCurrency(it.price ?? 0)} + FEAT {formatCurrency(it.feat)}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </li>
               ))}
               {canSeePrice && order.items.length > 1 && (

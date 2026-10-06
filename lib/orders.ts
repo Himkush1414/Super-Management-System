@@ -32,6 +32,11 @@ export function orderTitle(o: { product_name: string; items?: { product_name: st
   return items.length > 1 ? `${first} +${items.length - 1} more` : first;
 }
 
+/** A product's value = price + FEAT; null when neither was given (or hidden). */
+export function itemValue(i: { price: number | null; feat: number | null }): number | null {
+  return i.price === null && i.feat === null ? null : (i.price ?? 0) + (i.feat ?? 0);
+}
+
 /** Total units across the order's products. */
 export function totalQuantity(o: { quantity: number; items?: { quantity: number }[] }): number {
   return o.items?.length ? o.items.reduce((n, i) => n + i.quantity, 0) : o.quantity;

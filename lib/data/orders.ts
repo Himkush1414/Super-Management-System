@@ -65,7 +65,12 @@ async function visibleParties(
 /** jsonb numerics can arrive as strings; prices are numbers or null. */
 function items(o: Order): OrderItem[] {
   return (o.items ?? [])
-    .map((i) => ({ ...i, quantity: Number(i.quantity), price: i.price === null ? null : Number(i.price) }))
+    .map((i) => ({
+      ...i,
+      quantity: Number(i.quantity),
+      price: i.price === null || i.price === undefined ? null : Number(i.price),
+      feat: i.feat === null || i.feat === undefined ? null : Number(i.feat),
+    }))
     .sort((a, b) => a.position - b.position);
 }
 

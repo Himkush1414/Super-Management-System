@@ -61,9 +61,10 @@ type ItemCol = { key: string; label: string; width: number; align?: "right"; cel
  * (react-pdf can't forbid wrapping). Every order is one table row, every field
  * in its own ruled column — no two values ever share a cell. The product
  * columns form a block inside the row with one ruled line per product, so a
- * product's name, rating, quantity and description always line up. Stage =
- * current stage only. The order-value column (the order's total) exists only
- * when `showPrice` (never for production).
+ * product's name, rating and quantity always line up (no descriptions in
+ * the PDF — they stay on the order page). Stage = current stage only. The
+ * order-value column (the order's total: every product's price + FEAT)
+ * exists only when `showPrice` (never for production).
  */
 export function OrdersReport({
   orders,
@@ -94,7 +95,6 @@ export function OrdersReport({
     { key: "product", label: "Product name", width: 12, cell: (i) => i.product_name },
     { key: "rating", label: "Transformer rating", width: 10, cell: (i) => i.transformer_rating || "—" },
     { key: "qty", label: "Qty", width: 4, align: "right", cell: (i) => String(i.quantity) },
-    { key: "desc", label: "Description", width: 12, cell: (i) => i.description || "—" },
   ];
   const tail: Col[] = [
     ...(showPrice
@@ -190,7 +190,7 @@ export function OrdersReport({
                       key={o.id}
                       style={[s.row, i % 2 === 1 ? { backgroundColor: C.zebra } : {}]}
                       // kept on one page unless it may be taller than a page
-                      wrap={o.items.length > 4 || o.items.some((it) => it.description.length > 400)}
+                      wrap={o.items.length > 8}
                     >
                       {lead.map((c) => orderCell(o, c, i))}
                       <View style={[s.block, w(blockWidth)]}>

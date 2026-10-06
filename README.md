@@ -74,9 +74,11 @@ returns every row *except* `head_admin` to admin; only `head_admin` sees
 **Punch Order** (`/dashboard/orders/new`, marketing only) — client name and
 expected delivery date once per order, then **one or more products** (up to
 20; *+ Add product* / *Remove*), each with product name, transformer rating,
-quantity, value and description; and **Send to production**: one or more
+quantity, price, **FEAT** (an extra amount on that product — additional cost,
+freight or similar) and description; a product's value = price + FEAT; and **Send to production**: one or more
 *specific* production members (never a broadcast). The order's value is the
-sum of its products' values (a running total shows while typing). Button:
+sum of its products' values, FEAT included (a running total shows while
+typing). Button:
 *Proceed with product* / *Proceed with N products*. The order, its products,
 its assignees and its first stage event are written in one transaction
 (`create_order()`, which re-validates every product). The whole order moves
@@ -136,8 +138,9 @@ Replace the bodies marked `// TODO(whatsapp):` and set `WHATSAPP_ENABLED = true`
 `notifications`. Reads go through the `order_feed` view, which nulls `price`
 (the order value = sum of its products) for anyone who isn't admin-tier or the
 marketing account that created the order, lists `assignee_ids`, and carries
-`items` (the products, each price nulled by the same rule). `orders.price` and
-`order_items.price` are not selectable by API roles at all (0010, 0019), and
+`items` (the products, each price and FEAT nulled by the same rule).
+`orders.price`, `order_items.price` and `order_items.feat` are not selectable
+by API roles at all (0010, 0019, 0020), and
 Realtime payloads omit them for the same reason. Since 0019,
 `orders.product_name / transformer_rating / quantity / description` mirror the
 first product (DB functions use product_name as the order's title) and
@@ -155,7 +158,7 @@ drops the old auth/messaging/projects system and rebuilds around orders.
 0012 adds the current order fields and multi-member assignment. 0019 adds
 products per order (`order_items`, every existing order backfilled as a
 one-product order) and keeps the pre-0019 `create_order` signature as a
-one-product wrapper for the deploy window.
+one-product wrapper for the deploy window. 0020 adds `order_items.feat`.
 
 `supabase/scripts/` holds one-off data scripts (not migrations), e.g.
 `clear_test_orders.sql`.
@@ -248,7 +251,8 @@ What was causing the lag, and the fix:
   Field | Value table, one field per row (client, products, order value,
   expected delivery date, current stage "Stage 2 of 5", status, production,
   punched by/on), then a ruled **Products** table (#, product name, rating,
-  qty, value, description) with an order-total row. Current stage only, no
+  qty, price, FEAT, value) with an order-total row. No descriptions in any
+  order PDF — they stay on the order page. Current stage only, no
   history.
 - Orders list → **Download All Orders** (admin and marketing): one PDF with
   a ruled table of every order the viewer can see, for **this / an earlier
@@ -256,8 +260,8 @@ What was causing the lag, and the fix:
   time. Rows are grouped — year → months, month → weeks, week → days, all
   time → months — each heading with its count (and value subtotal where the
   viewer may see prices). One row per order; its products sit in a block of
-  ruled lines inside the row (name, rating, qty, description), the order
-  value column is the order's total. `/dashboard/orders/pdf?period=month&at=YYYY-MM-DD`;
+  ruled lines inside the row (name, rating, qty), the order value column is
+  the order's total (prices + FEATs). `/dashboard/orders/pdf?period=month&at=YYYY-MM-DD`;
   period logic in `lib/periods.ts`.
 - Every PDF: a letterhead on each page — the NR Industries logo
   (`lib/pdf/logo.ts`, embedded) and company address on the left, the
@@ -268,8 +272,8 @@ What was causing the lag, and the fix:
   Industries"); the spec sheet puts it at the foot of its last page. The
   account archive has none.
 - Orders list → **Export CSV**: **one row per product** ("Product no." 1 of
-  3…, order fields repeated; product values add up to the order total, so
-  there's no order-total column); one field per column with the form's labels;
+  3…, order fields repeated; Price, FEAT and Value = price + FEAT per product,
+  adding up to the order total, so there's no order-total column); one field per column with the form's labels;
   stage number and stage name in separate columns; dates `DD/MM/YYYY`,
   timestamps IST `DD/MM/YYYY HH:MM`; formula-injection safe.
 

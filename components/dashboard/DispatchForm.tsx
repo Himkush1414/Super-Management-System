@@ -31,7 +31,8 @@ export function DispatchForm({
   // typed in the others; only the values are tracked for the running total.
   const nextKey = useRef(1);
   const [items, setItems] = useState<number[]>([0]);
-  const [prices, setPrices] = useState<Record<number, string>>({});
+  // typed price / FEAT per card, for the product values and the running total
+  const [amounts, setAmounts] = useState<Record<number, { price?: string; feat?: string }>>({});
   const nameRefs = useRef(new Map<number, HTMLInputElement>());
   const [focusKey, setFocusKey] = useState<number | null>(null);
 
@@ -47,15 +48,22 @@ export function DispatchForm({
   };
   const remove = (key: number) => {
     setItems((prev) => prev.filter((k) => k !== key));
-    setPrices((prev) => {
+    setAmounts((prev) => {
       const next = { ...prev };
       delete next[key];
       return next;
     });
   };
 
-  const entered = items.map((k) => prices[k]).filter((v) => v !== undefined && v !== "").map(Number);
-  const total = entered.length && entered.every(Number.isFinite) ? entered.reduce((a, b) => a + b, 0) : null;
+  const setAmount = (key: number, field: "price" | "feat", value: string) =>
+    setAmounts((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+  /** price + FEAT of one card; null until one of them holds a number */
+  const productValue = (key: number): number | null => {
+    const nums = [amounts[key]?.price, amounts[key]?.feat].filter((v) => v !== undefined && v !== "").map(Number);
+    return nums.length && nums.every(Number.isFinite) ? nums.reduce((a, b) => a + b, 0) : null;
+  };
+  const values = items.map(productValue).filter((v): v is number => v !== null);
+  const total = values.length ? values.reduce((a, b) => a + b, 0) : null;
 
   const toggle = (id: string) =>
     setPicked((prev) => {
@@ -131,7 +139,7 @@ export function DispatchForm({
                   placeholder="e.g. Oil-cooled distribution transformer"
                 />
               </FormRow>
-              <div className="grid gap-4 sm:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <FormRow>
                   <Label htmlFor={`transformer_rating-${key}`}>Transformer rating</Label>
                   <Input
@@ -157,26 +165,31 @@ export function DispatchForm({
                 </FormRow>
                 <FormRow>
                   <Label htmlFor={`price-${key}`} hint="hidden from production">
-                    Value
+                    Price
                   </Label>
-                  <div className="relative">
-                    <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-text-tertiary">
-                      ₹
-                    </span>
-                    <Input
-                      id={`price-${key}`}
-                      name="price[]"
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      className="pl-7"
-                      onChange={(e) => setPrices((prev) => ({ ...prev, [key]: e.target.value }))}
-                    />
-                  </div>
+                  <MoneyInput
+                    id={`price-${key}`}
+                    name="price[]"
+                    onChange={(v) => setAmount(key, "price", v)}
+                  />
+                </FormRow>
+                <FormRow>
+                  <Label htmlFor={`feat-${key}`} hint="extra cost, freight… · hidden from production">
+                    FEAT
+                  </Label>
+                  <MoneyInput
+                    id={`feat-${key}`}
+                    name="feat[]"
+                    onChange={(v) => setAmount(key, "feat", v)}
+                  />
                 </FormRow>
               </div>
+              {productValue(key) !== null && (
+                <p className="-mt-1 text-right text-[12px] text-text-secondary">
+                  Product value (price + FEAT){" "}
+                  <span className="font-medium text-text tnum">{formatCurrency(productValue(key))}</span>
+                </p>
+              )}
               <FormRow>
                 <Label htmlFor={`description-${key}`}>Description</Label>
                 <Textarea
@@ -285,5 +298,35 @@ export function DispatchForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/** ₹-prefixed amount input (price, FEAT). Uncontrolled; reports what's typed. */
+function MoneyInput({
+  id,
+  name,
+  onChange,
+}: {
+  id: string;
+  name: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-text-tertiary">
+        ₹
+      </span>
+      <Input
+        id={id}
+        name={name}
+        type="number"
+        min={0}
+        step="0.01"
+        inputMode="decimal"
+        placeholder="0.00"
+        className="pl-7"
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
   );
 }

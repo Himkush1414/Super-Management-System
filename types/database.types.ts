@@ -72,6 +72,11 @@ export interface OrderItem {
   quantity: number;
   /** null when not given, or when the viewer isn't allowed to see it. */
   price: number | null;
+  /**
+   * FEAT — extra amount on this product (additional cost, freight…), added to
+   * its value (0020). Same visibility as price.
+   */
+  feat: number | null;
   description: string;
 }
 

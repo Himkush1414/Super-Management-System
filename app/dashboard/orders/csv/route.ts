@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { getOrders, type OrderRow } from "@/lib/data/orders";
 import type { OrderItem } from "@/types/database.types";
-import { MAX_STAGE, stageName, ORDER_STATUS_LABEL } from "@/lib/orders";
+import { MAX_STAGE, stageName, ORDER_STATUS_LABEL, itemValue } from "@/lib/orders";
 import { formatCsvDateTime, formatDay } from "@/lib/utils";
 
 function csvField(value: string | number | null): string {
@@ -20,9 +20,9 @@ type Column = { header: string; value: (l: Line) => string | number | null };
 /**
  * One row per PRODUCT (an order with three products is three rows, its order
  * fields repeated), one field per column — headers match the order form's
- * labels, nothing is combined into one cell. The product values of an order
- * add up to its total, so no order-total column (it would double-count when
- * summed). Dates are DD/MM/YYYY like the rest of the system (timestamps in
+ * labels, nothing is combined into one cell. Value = price + FEAT; the
+ * product values of an order add up to its total, so no order-total column
+ * (it would double-count when summed). Dates are DD/MM/YYYY like the rest of the system (timestamps in
  * IST as DD/MM/YYYY HH:MM). Production gets no value column at all.
  */
 export async function GET() {
@@ -36,7 +36,11 @@ export async function GET() {
     { header: "Transformer rating", value: ({ item }) => item.transformer_rating },
     { header: "Quantity", value: ({ item }) => item.quantity },
     ...(ctx.can("price.view")
-      ? [{ header: "Value (INR)", value: ({ item }: Line) => item.price } satisfies Column]
+      ? ([
+          { header: "Price (INR)", value: ({ item }: Line) => item.price },
+          { header: "FEAT (INR)", value: ({ item }: Line) => item.feat },
+          { header: "Value (INR)", value: ({ item }: Line) => itemValue(item) },
+        ] satisfies Column[])
       : []),
     { header: "Expected delivery date", value: ({ o }) => (o.expected_delivery ? formatDay(o.expected_delivery) : "") },
     { header: "Current stage", value: ({ o }) => `${o.stage} of ${MAX_STAGE}` },

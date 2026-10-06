@@ -27,6 +27,8 @@ export type AccountExport = {
       transformer_rating: string;
       quantity: number;
       price: number | null;
+      /** 0020+ */
+      feat?: number | null;
       description: string;
     }[];
   }[];
@@ -141,7 +143,8 @@ export function AccountArchive({ data, generatedAt }: { data: AccountExport; gen
                 { label: "Client name", width: 10, cell: (r) => r.client_name || "—" },
                 { label: "Transformer rating", width: 9, cell: (r) => r.item.transformer_rating || "—" },
                 { label: "Qty", width: 4, right: true, cell: (r) => String(r.item.quantity) },
-                { label: "Value", width: 10, right: true, cell: (r) => inr(r.item.price) },
+                { label: "Price", width: 9, right: true, cell: (r) => inr(r.item.price) },
+                { label: "FEAT", width: 8, right: true, cell: (r) => inr(r.item.feat ?? null) },
                 { label: "Expected delivery", width: 9, cell: (r) => formatDay(r.expected_delivery) },
                 { label: "Current stage", width: 9, cell: (r) => `Stage ${r.stage} of ${MAX_STAGE}` },
                 { label: "Status", width: 7, cell: (r) => (r.status === "active" ? "Active" : ORDER_STATUS_LABEL[r.status] ?? r.status) },

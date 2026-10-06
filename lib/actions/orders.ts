@@ -5,8 +5,9 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { requireSession, requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/server";
-import { STAGE_TIMER_MS, stageName } from "@/lib/orders";
+import { MAX_ORDER_ITEMS, STAGE_TIMER_MS, orderTitle, stageName } from "@/lib/orders";
 import { createOrderGroup, postStageUpdate } from "@/lib/whatsapp";
+import { titleOf } from "@/lib/data/order-title";
 
 export type Result = { error?: string; ok?: string; id?: string };
 
@@ -42,32 +43,62 @@ function isRealDate(iso: string) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso;
 }
 
-/** Marketing dispatches an order to one or more chosen production members. */
+/** One product as the form sends it: parallel `name[]` fields, one per card. */
+type ItemInput = {
+  product_name: string;
+  transformer_rating: string;
+  quantity: number;
+  price: number | null;
+  description: string;
+};
+
+/** Marketing punches an order (1–20 products) to one or more chosen production members. */
 export async function dispatchOrder(
   _prev: Result | null,
   fd: FormData,
 ): Promise<Result> {
   const ctx = await requireRole("marketing");
 
-  const product_name = str(fd, "product_name");
   const client_name = str(fd, "client_name");
-  const transformer_rating = str(fd, "transformer_rating");
-  const description = str(fd, "description");
-  const quantity = Number(str(fd, "quantity") || "1");
-  const priceRaw = str(fd, "price");
-  const price = priceRaw === "" ? null : Number(priceRaw);
   const expected_delivery = str(fd, "expected_delivery") || null;
   const assignees = [
     ...new Set(fd.getAll("assigned_to").map((v) => String(v).trim())),
   ].filter(Boolean);
 
-  if (!product_name) return { error: "Product name is required." };
+  const all = (k: string) => fd.getAll(k).map((v) => String(v).trim());
+  const names = all("product_name[]");
+  const ratings = all("transformer_rating[]");
+  const quantities = all("quantity[]");
+  const prices = all("price[]");
+  const descriptions = all("description[]");
+  const n = names.length;
+
   if (!client_name) return { error: "Client name is required." };
-  if (!transformer_rating) return { error: "Transformer rating is required." };
-  if (!Number.isInteger(quantity) || quantity < 1)
-    return { error: "Quantity must be a whole number of at least 1." };
-  if (price !== null && (!Number.isFinite(price) || price < 0))
-    return { error: "Order value must be a positive number, or left blank." };
+  if (n === 0) return { error: "Add at least one product." };
+  if (n > MAX_ORDER_ITEMS) return { error: `An order can have at most ${MAX_ORDER_ITEMS} products.` };
+  if ([ratings, quantities, prices, descriptions].some((a) => a.length !== n))
+    return { error: "The form was incomplete. Please reload the page and try again." };
+
+  const items: ItemInput[] = [];
+  for (let i = 0; i < n; i++) {
+    // Only name the product when there is more than one.
+    const p = n > 1 ? `Product ${i + 1}: ` : "";
+    const quantity = Number(quantities[i] || "1");
+    const price = prices[i] === "" ? null : Number(prices[i]);
+    if (!names[i]) return { error: `${p}Product name is required.` };
+    if (!ratings[i]) return { error: `${p}Transformer rating is required.` };
+    if (!Number.isInteger(quantity) || quantity < 1)
+      return { error: `${p}Quantity must be a whole number of at least 1.` };
+    if (price !== null && (!Number.isFinite(price) || price < 0))
+      return { error: `${p}Value must be a positive number, or left blank.` };
+    items.push({
+      product_name: names[i],
+      transformer_rating: ratings[i],
+      quantity,
+      price,
+      description: descriptions[i],
+    });
+  }
   if (expected_delivery && (!ISO_DATE.test(expected_delivery) || !isRealDate(expected_delivery)))
     return { error: "Expected delivery must be a real date, entered as DD/MM/YYYY." };
   if (assignees.length === 0)
@@ -79,27 +110,28 @@ export async function dispatchOrder(
   const { data, error } = await svc
     .rpc("create_order", {
       p_created_by: ctx.userId,
-      p_product_name: product_name,
       p_client_name: client_name,
-      p_transformer_rating: transformer_rating,
-      p_quantity: quantity,
-      p_price: price,
       p_expected_delivery: expected_delivery,
-      p_description: description,
+      p_items: items,
       p_assignees: assignees,
     })
     .single<{ order_id: string; status: string }>();
   if (error || !data) {
+    // create_order re-validates every product ("product 2: ...") — pass those through.
+    const m = /^product (\d+): (.+)$/.exec(error?.message ?? "");
     return {
       error: error?.message.includes("production accounts")
         ? "One of the selected production members no longer exists."
         : error?.message.includes("real name")
           ? "Add your real name in Settings before punching orders."
-          : "Could not create the order. Please try again.",
+          : m
+            ? `${n > 1 ? `Product ${m[1]}: ` : ""}${m[2][0].toUpperCase()}${m[2].slice(1)}.`
+            : "Could not create the order. Please try again.",
     };
   }
   const orderId = data.order_id;
   const active = data.status === "active";
+  const title = orderTitle({ product_name: items[0].product_name, items });
 
   // Side effects the redirected page doesn't depend on: the (stubbed)
   // WhatsApp group and the notifications.
@@ -114,14 +146,14 @@ export async function dispatchOrder(
       active
         ? createOrderGroup({
             orderId,
-            productName: product_name,
+            productName: title,
             productionPhones: (phones ?? []).map((p) => p.phone as string),
           })
         : Promise.resolve(),
       notify(svc, [...assignees, ...heads], {
         type: "order",
         title: "New order punched",
-        body: `${ctx.name} punched "${product_name}" for ${client_name}${
+        body: `${ctx.name} punched "${title}" for ${client_name}${
           active ? "" : " — waiting on a production phone number"
         }.`,
         entity_id: orderId,
@@ -187,11 +219,12 @@ export async function advanceStage(orderId: string, fromStage: number): Promise<
   // The (stubbed) WhatsApp post and the notifications are side effects the
   // caller doesn't need to wait on.
   after(async () => {
+    const title = await titleOf(svc, orderId, r.product_name);
     await Promise.all([
       postStageUpdate({
         orderId,
         groupId: r.whatsapp_group_id,
-        text: `Order "${r.product_name}" moved to Stage ${to} — ${stageName(to)}.`,
+        text: `Order "${title}" moved to Stage ${to} — ${stageName(to)}.`,
       }),
       (async () => {
         const recipients = [r.created_by, ...(await headAdminIds(svc)), ...(r.assignee_ids ?? [])].filter(
@@ -200,7 +233,7 @@ export async function advanceStage(orderId: string, fromStage: number): Promise<
         await notify(svc, recipients, {
           type: "stage",
           title: `Stage ${to} — ${stageName(to)}`,
-          body: `"${r.product_name}" is now at Stage ${to}: ${stageName(to)}.`,
+          body: `"${title}" is now at Stage ${to}: ${stageName(to)}.`,
           entity_id: orderId,
         });
       })(),

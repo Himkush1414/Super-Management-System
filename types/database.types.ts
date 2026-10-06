@@ -55,6 +55,24 @@ export interface Order {
   stage_ready_at: string | null;
   /** Production members this order was sent to (order_feed only). */
   assignee_ids: string[];
+  /**
+   * The order's products in entry order (order_feed only, 0019). The
+   * product_name / transformer_rating / quantity / description columns above
+   * mirror the FIRST product; `price` is the order total.
+   */
+  items: OrderItem[];
+}
+
+/** One product in an order (order_items, read via order_feed.items). */
+export interface OrderItem {
+  id: string;
+  position: number;
+  product_name: string;
+  transformer_rating: string;
+  quantity: number;
+  /** null when not given, or when the viewer isn't allowed to see it. */
+  price: number | null;
+  description: string;
 }
 
 export interface OrderAssignee {

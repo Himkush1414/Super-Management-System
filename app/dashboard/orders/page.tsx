@@ -11,7 +11,7 @@ import { BulkExport } from "@/components/dashboard/BulkExport";
 import { istDay } from "@/lib/periods";
 import { OrderStatusBadge } from "@/components/shared/Badge";
 import { formatDay } from "@/lib/utils";
-import { stageName } from "@/lib/orders";
+import { orderTitle, stageName, totalQuantity } from "@/lib/orders";
 
 export const metadata = { title: "Orders" };
 
@@ -141,11 +141,15 @@ function ProductionView({ orders, userId }: { orders: OrderRow[]; userId: string
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="font-medium">{o.product_name}</p>
+                  <p className="font-medium">{orderTitle(o)}</p>
                   <p className="mt-0.5 text-[13px] text-text-secondary">
-                    {o.client_name}
-                    {o.transformer_rating ? ` · ${o.transformer_rating}` : ""}
-                    {` · Qty ${o.quantity}`}
+                    {[
+                      o.client_name,
+                      o.items.length > 1 ? `${o.items.length} products` : o.items[0]?.transformer_rating,
+                      `Qty ${totalQuantity(o)}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
                   {o.expected_delivery && (
                     <p className="mt-0.5 text-[12px] text-text-tertiary">

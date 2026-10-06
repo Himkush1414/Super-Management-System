@@ -8,12 +8,18 @@ import { Table, THead, TR, TH, TD } from "@/components/ui/Table";
 import { Input, Select } from "@/components/ui/Field";
 import { StageBadge, OrderStatusBadge } from "@/components/shared/Badge";
 import { StageTracker } from "@/components/dashboard/StageTracker";
-import { STAGES } from "@/lib/orders";
+import { STAGES, orderTitle, totalQuantity } from "@/lib/orders";
 import { formatCurrency, formatDate, formatDay } from "@/lib/utils";
 
 const STAGE_FILTER_ALL = "all";
 
 const names = (o: OrderRow) => o.assignees.map((a) => a.label).join(", ");
+
+/** Second line under the title: client, then the rating (one product) or the product count. */
+const subline = (o: OrderRow) =>
+  [o.client_name, o.items.length > 1 ? `${o.items.length} products` : o.items[0]?.transformer_rating]
+    .filter(Boolean)
+    .join(" · ");
 
 export function OrdersTable({
   orders,
@@ -37,9 +43,8 @@ export function OrdersTable({
       }
       if (!q) return true;
       return [
-        o.product_name,
+        ...o.items.flatMap((i) => [i.product_name, i.transformer_rating]),
         o.client_name,
-        o.transformer_rating,
         o.dispatcher?.label,
         names(o),
         o.status,
@@ -100,11 +105,8 @@ export function OrdersTable({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate font-medium">{o.product_name}</p>
-                      <p className="mt-0.5 truncate text-[12px] text-text-secondary">
-                        {o.client_name}
-                        {o.transformer_rating ? ` · ${o.transformer_rating}` : ""}
-                      </p>
+                      <p className="truncate font-medium">{orderTitle(o)}</p>
+                      <p className="mt-0.5 truncate text-[12px] text-text-secondary">{subline(o)}</p>
                     </div>
                     {showPrice && (
                       <span className="shrink-0 text-[13px] font-medium tnum">
@@ -118,7 +120,7 @@ export function OrdersTable({
                   <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-text-tertiary">
                     <StageBadge stage={o.stage} />
                     {o.status !== "active" && <OrderStatusBadge status={o.status} />}
-                    <span className="tnum">Qty {o.quantity}</span>
+                    <span className="tnum">Qty {totalQuantity(o)}</span>
                     {o.expected_delivery && (
                       <span className="inline-flex items-center gap-1">
                         <CalendarDays size={12} /> {formatDay(o.expected_delivery)}
@@ -153,10 +155,10 @@ export function OrdersTable({
                         href={`/dashboard/orders/${o.id}`}
                         className="font-medium text-text group-hover:text-accent after:absolute after:inset-0"
                       >
-                        {o.product_name}
+                        {orderTitle(o)}
                       </Link>
                       <span className="block text-[12px] text-text-tertiary">
-                        {[o.client_name, o.transformer_rating].filter(Boolean).join(" · ")}
+                        {subline(o)}
                         {o.status !== "active" && (
                           <span className="ml-1 text-status-warning">· waiting on phone</span>
                         )}
@@ -172,7 +174,7 @@ export function OrdersTable({
                         {names(o) || "—"}
                       </TD>
                     )}
-                    <TD numeric>{o.quantity}</TD>
+                    <TD numeric>{totalQuantity(o)}</TD>
                     <TD>
                       <StageBadge stage={o.stage} />
                     </TD>

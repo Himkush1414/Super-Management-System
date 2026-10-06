@@ -1,5 +1,6 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { OrderRow } from "@/lib/data/orders";
+import type { OrderItem } from "@/types/database.types";
 import { MAX_STAGE, stageName, ORDER_STATUS_LABEL } from "@/lib/orders";
 import { formatDate, formatDay } from "@/lib/utils";
 import { C, base, inr } from "./theme";
@@ -41,6 +42,8 @@ const s = StyleSheet.create({
   right: { textAlign: "right" },
   center: { textAlign: "center" },
   sub: { fontSize: 6.8, color: C.muted, marginTop: 1 },
+  block: { flexDirection: "column" },
+  grow: { flexGrow: 1 },
 });
 
 type Col = {
@@ -51,12 +54,16 @@ type Col = {
   cell: (o: OrderRow) => string;
   sub?: (o: OrderRow) => string | undefined;
 };
+type ItemCol = { key: string; label: string; width: number; align?: "right"; cell: (i: OrderItem) => string };
 
 /**
  * Column widths are relative; amounts and dates are sized to fit on one line
- * (react-pdf can't forbid wrapping). Every order as one table row, every field in its own ruled column — no
- * two values ever share a cell. Stage = current stage only. The order-value
- * column exists only when `showPrice` (never for production).
+ * (react-pdf can't forbid wrapping). Every order is one table row, every field
+ * in its own ruled column — no two values ever share a cell. The product
+ * columns form a block inside the row with one ruled line per product, so a
+ * product's name, rating, quantity and description always line up. Stage =
+ * current stage only. The order-value column (the order's total) exists only
+ * when `showPrice` (never for production).
  */
 export function OrdersReport({
   orders,
@@ -79,12 +86,17 @@ export function OrdersReport({
   periodLabel?: string;
   generatedAt: Date;
 }) {
-  const cols: Col[] = [
+  const lead: Col[] = [
     { key: "n", label: "#", width: 2.8, align: "center", cell: () => "" },
-    { key: "product", label: "Product name", width: 12, cell: (o) => o.product_name },
     { key: "client", label: "Client name", width: 10, cell: (o) => o.client_name || "—" },
-    { key: "rating", label: "Transformer rating", width: 10, cell: (o) => o.transformer_rating || "—" },
-    { key: "qty", label: "Qty", width: 4, align: "right", cell: (o) => String(o.quantity) },
+  ];
+  const itemCols: ItemCol[] = [
+    { key: "product", label: "Product name", width: 12, cell: (i) => i.product_name },
+    { key: "rating", label: "Transformer rating", width: 10, cell: (i) => i.transformer_rating || "—" },
+    { key: "qty", label: "Qty", width: 4, align: "right", cell: (i) => String(i.quantity) },
+    { key: "desc", label: "Description", width: 12, cell: (i) => i.description || "—" },
+  ];
+  const tail: Col[] = [
     ...(showPrice
       ? [{ key: "value", label: "Order value", width: 13, align: "right" as const, cell: (o: OrderRow) => inr(o.price) }]
       : []),
@@ -104,12 +116,22 @@ export function OrdersReport({
       ? [{ key: "by", label: "Punched by", width: 11, cell: (o: OrderRow) => o.dispatcher?.label ?? "—" }]
       : []),
     { key: "date", label: "Punched on", width: 9, cell: (o) => formatDate(o.created_at) },
-    { key: "desc", label: "Description", width: 12, cell: (o) => o.description || "—" },
   ];
-  const total = cols.reduce((n, c) => n + c.width, 0);
-  const w = (c: Col) => ({ width: `${(c.width / total) * 100}%` });
-  const align = (c: Col) => (c.align === "right" ? s.right : c.align === "center" ? s.center : {});
+  const blockWidth = itemCols.reduce((n, c) => n + c.width, 0);
+  const total = [...lead, ...tail].reduce((n, c) => n + c.width, 0) + blockWidth;
+  const w = (width: number) => ({ width: `${(width / total) * 100}%` });
+  const wIn = (width: number) => ({ width: `${(width / blockWidth) * 100}%` });
+  const align = (c: { align?: "right" | "center" }) =>
+    c.align === "right" ? s.right : c.align === "center" ? s.center : {};
   const totalValue = orders.reduce((n, o) => n + (o.price ?? 0), 0);
+  const productCount = orders.reduce((n, o) => n + o.items.length, 0);
+
+  const orderCell = (o: OrderRow, c: Col, i: number) => (
+    <View key={c.key} style={[s.cell, w(c.width), c.key === "n" ? s.first : {}]}>
+      <Text style={align(c)}>{c.key === "n" ? String(i + 1) : c.cell(o)}</Text>
+      {c.sub ? <Text style={s.sub}>{c.sub(o)}</Text> : null}
+    </View>
+  );
 
   return (
     <Document title="Orders report" author="NR Industries">
@@ -124,6 +146,9 @@ export function OrdersReport({
           <Text style={s.summaryItem}>
             Orders: <Text style={s.bold}>{orders.length}</Text>
           </Text>
+          <Text style={s.summaryItem}>
+            Products: <Text style={s.bold}>{productCount}</Text>
+          </Text>
           {showPrice && (
             <Text style={s.summaryItem}>
               Total order value: <Text style={s.bold}>{inr(totalValue)}</Text>
@@ -133,8 +158,8 @@ export function OrdersReport({
 
         <View style={s.table}>
           <View style={s.row} fixed>
-            {cols.map((c) => (
-              <Text key={c.key} style={[s.cell, s.head, s.top, w(c), align(c), c.key === "n" ? s.first : {}]}>
+            {[...lead, ...itemCols, ...tail].map((c) => (
+              <Text key={c.key} style={[s.cell, s.head, s.top, w(c.width), align(c), c.key === "n" ? s.first : {}]}>
                 {c.label}
               </Text>
             ))}
@@ -164,14 +189,26 @@ export function OrdersReport({
                     <View
                       key={o.id}
                       style={[s.row, i % 2 === 1 ? { backgroundColor: C.zebra } : {}]}
-                      wrap={false}
+                      // kept on one page unless it may be taller than a page
+                      wrap={o.items.length > 4 || o.items.some((it) => it.description.length > 400)}
                     >
-                      {cols.map((c) => (
-                        <View key={c.key} style={[s.cell, w(c), c.key === "n" ? s.first : {}]}>
-                          <Text style={align(c)}>{c.key === "n" ? String(i + 1) : c.cell(o)}</Text>
-                          {c.sub ? <Text style={s.sub}>{c.sub(o)}</Text> : null}
-                        </View>
-                      ))}
+                      {lead.map((c) => orderCell(o, c, i))}
+                      <View style={[s.block, w(blockWidth)]}>
+                        {o.items.map((it, k) => (
+                          <View
+                            key={it.id}
+                            // the last line stretches, so the block's bottom rule meets the row's
+                            style={[s.row, k === o.items.length - 1 ? s.grow : {}]}
+                          >
+                            {itemCols.map((c) => (
+                              <Text key={c.key} style={[s.cell, wIn(c.width), align(c)]}>
+                                {c.cell(it)}
+                              </Text>
+                            ))}
+                          </View>
+                        ))}
+                      </View>
+                      {tail.map((c) => orderCell(o, c, i))}
                     </View>
                   );
                 })}

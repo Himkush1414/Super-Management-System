@@ -148,11 +148,20 @@ function Snapshot({ entry }: { entry: Entry }) {
   let rows: [string, string][] = [];
   if (entry.action === "order.delete" && d.order) {
     const o = d.order as Record<string, never>;
+    // 0019+: the products were snapshotted too; older entries only have the order row.
+    const items = (d.items as unknown as { product_name: string; transformer_rating: string; quantity: number }[]) ?? [];
     rows = [
-      ["Product", String(o.product_name ?? "—")],
+      ...(items.length
+        ? items.map((it, i): [string, string] => [
+            items.length > 1 ? `Product ${i + 1}` : "Product",
+            [it.product_name, it.transformer_rating, `Qty ${it.quantity}`].filter(Boolean).join(" · "),
+          ])
+        : ([
+            ["Product", String(o.product_name ?? "—")],
+            ["Rating", String(o.transformer_rating || "—")],
+            ["Quantity", String(o.quantity ?? "—")],
+          ] as [string, string][])),
       ["Client", String(o.client_name || "—")],
-      ["Rating", String(o.transformer_rating || "—")],
-      ["Quantity", String(o.quantity ?? "—")],
       ["Order value", formatCurrency(o.price === null ? null : Number(o.price))],
       ["Expected delivery", formatDay(o.expected_delivery ?? null)],
       ["Stage at deletion", `${o.stage} — ${stageName(Number(o.stage))}`],

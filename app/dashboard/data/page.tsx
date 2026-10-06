@@ -9,7 +9,7 @@ import { Badge, StageBadge } from "@/components/shared/Badge";
 import { Table, THead, TR, TH, TD } from "@/components/ui/Table";
 import { DeleteButton } from "@/components/dashboard/DeleteButton";
 import { ResetAccount } from "@/components/dashboard/ResetAccount";
-import { stageName } from "@/lib/orders";
+import { orderTitle, stageName, totalQuantity } from "@/lib/orders";
 import { cn, formatDateTime, formatDay } from "@/lib/utils";
 
 export const metadata = { title: "Data management" };
@@ -186,10 +186,20 @@ async function MarketingOrders({
 }) {
   const { data } = await supabase
     .from("order_feed")
-    .select("id, product_name, client_name, transformer_rating, quantity, stage, expected_delivery, created_at")
+    .select("id, product_name, client_name, transformer_rating, quantity, stage, expected_delivery, created_at, items")
     .eq("created_by", account.profile_id)
     .order("created_at", { ascending: false });
-  const orders = data ?? [];
+  const orders = (data ?? []).map((o) => ({
+    ...o,
+    title: orderTitle(o),
+    sub: [
+      o.client_name,
+      o.items.length > 1 ? `${o.items.length} products` : o.items[0]?.transformer_rating,
+      `Qty ${totalQuantity(o)}`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  }));
 
   return (
     <Card>
@@ -217,11 +227,9 @@ async function MarketingOrders({
                 <TR key={o.id}>
                   <TD>
                     <Link href={`/dashboard/orders/${o.id}`} className="font-medium hover:text-accent">
-                      {o.product_name}
+                      {o.title}
                     </Link>
-                    <span className="block text-[12px] text-text-tertiary">
-                      {[o.client_name, o.transformer_rating, `Qty ${o.quantity}`].filter(Boolean).join(" · ")}
-                    </span>
+                    <span className="block text-[12px] text-text-tertiary">{o.sub}</span>
                   </TD>
                   <TD><StageBadge stage={o.stage} /></TD>
                   <TD numeric className="text-text-tertiary">{formatDateTime(o.created_at)}</TD>
@@ -230,9 +238,9 @@ async function MarketingOrders({
                       compact
                       kind="order"
                       id={o.id}
-                      title={o.product_name}
+                      title={o.title}
                       lines={[
-                        `${o.client_name} · ${o.transformer_rating} · Qty ${o.quantity}`,
+                        o.sub,
                         `Stage ${o.stage} — ${stageName(o.stage)} · punched ${formatDateTime(o.created_at)}`,
                         ...(o.expected_delivery ? [`Expected delivery ${formatDay(o.expected_delivery)}`] : []),
                       ]}

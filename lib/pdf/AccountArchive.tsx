@@ -20,6 +20,15 @@ export type AccountExport = {
     created_at: string;
     dispatched_by: string;
     production: string[];
+    /** 0019+: the order's products (orders exported before then have none) */
+    items?: {
+      position: number;
+      product_name: string;
+      transformer_rating: string;
+      quantity: number;
+      price: number | null;
+      description: string;
+    }[];
   }[];
   stage_updates: {
     id: string;
@@ -85,6 +94,15 @@ function Grid<T>({ cols, rows }: { cols: Col<T>[]; rows: T[] }) {
  */
 export function AccountArchive({ data, generatedAt }: { data: AccountExport; generatedAt: Date }) {
   type O = AccountExport["orders"][number];
+  // One row per product (order fields repeated), like the CSV export.
+  type P = O & { line: string; item: NonNullable<O["items"]>[number] };
+  const productRows: P[] = data.orders.flatMap((o) => {
+    const items = o.items?.length
+      ? o.items
+      : [{ position: 1, product_name: o.product_name, transformer_rating: o.transformer_rating,
+           quantity: o.quantity, price: o.price, description: o.description }];
+    return items.map((item) => ({ ...o, item, line: `${item.position} of ${items.length}` }));
+  });
   type E = AccountExport["stage_updates"][number];
   type N = AccountExport["notifications"][number];
 
@@ -116,22 +134,23 @@ export function AccountArchive({ data, generatedAt }: { data: AccountExport; gen
           {data.orders.length === 0 ? (
             <Text style={s.none}>None included.</Text>
           ) : (
-            <Grid<O>
+            <Grid<P>
               cols={[
-                { label: "Product name", width: 12, cell: (o) => o.product_name },
-                { label: "Client name", width: 10, cell: (o) => o.client_name || "—" },
-                { label: "Transformer rating", width: 9, cell: (o) => o.transformer_rating || "—" },
-                { label: "Qty", width: 4, right: true, cell: (o) => String(o.quantity) },
-                { label: "Order value", width: 11, right: true, cell: (o) => inr(o.price) },
-                { label: "Expected delivery", width: 9, cell: (o) => formatDay(o.expected_delivery) },
-                { label: "Current stage", width: 9, cell: (o) => `Stage ${o.stage} of ${MAX_STAGE}` },
-                { label: "Status", width: 7, cell: (o) => (o.status === "active" ? "Active" : ORDER_STATUS_LABEL[o.status] ?? o.status) },
-                { label: "Production", width: 12, cell: (o) => o.production.join(", ") || "—" },
-                { label: "Punched by", width: 11, cell: (o) => o.dispatched_by || "—" },
-                { label: "Punched on", width: 10, cell: (o) => formatDateTime(o.created_at) },
-                { label: "Description", width: 13, cell: (o) => o.description || "—" },
+                { label: "Product name", width: 12, cell: (r) => r.item.product_name },
+                { label: "No.", width: 4, cell: (r) => r.line },
+                { label: "Client name", width: 10, cell: (r) => r.client_name || "—" },
+                { label: "Transformer rating", width: 9, cell: (r) => r.item.transformer_rating || "—" },
+                { label: "Qty", width: 4, right: true, cell: (r) => String(r.item.quantity) },
+                { label: "Value", width: 10, right: true, cell: (r) => inr(r.item.price) },
+                { label: "Expected delivery", width: 9, cell: (r) => formatDay(r.expected_delivery) },
+                { label: "Current stage", width: 9, cell: (r) => `Stage ${r.stage} of ${MAX_STAGE}` },
+                { label: "Status", width: 7, cell: (r) => (r.status === "active" ? "Active" : ORDER_STATUS_LABEL[r.status] ?? r.status) },
+                { label: "Production", width: 12, cell: (r) => r.production.join(", ") || "—" },
+                { label: "Punched by", width: 11, cell: (r) => r.dispatched_by || "—" },
+                { label: "Punched on", width: 10, cell: (r) => formatDateTime(r.created_at) },
+                { label: "Description", width: 13, cell: (r) => r.item.description || "—" },
               ]}
-              rows={data.orders}
+              rows={productRows}
             />
           )}
         </View>

@@ -71,12 +71,18 @@ returns every row *except* `head_admin` to admin; only `head_admin` sees
 
 ## 2. The order pipeline
 
-**Punch Order** (`/dashboard/orders/new`, marketing only) — product name, client
-name, transformer rating, quantity, order value, expected delivery date,
-description, and **Send to production**: one or more *specific* production
-members (never a broadcast). Button: *Proceed with product*. The order, its
-assignees and its first stage event are written in one transaction
-(`create_order()`).
+**Punch Order** (`/dashboard/orders/new`, marketing only) — client name and
+expected delivery date once per order, then **one or more products** (up to
+20; *+ Add product* / *Remove*), each with product name, transformer rating,
+quantity, value and description; and **Send to production**: one or more
+*specific* production members (never a broadcast). The order's value is the
+sum of its products' values (a running total shows while typing). Button:
+*Proceed with product* / *Proceed with N products*. The order, its products,
+its assignees and its first stage event are written in one transaction
+(`create_order()`, which re-validates every product). The whole order moves
+through the stages together and goes to one production team. Wherever one
+line is needed the order is named after its first product: "TRANSFORMER +2
+more".
 
 - If **every** selected member has a **saved + confirmed phone number**, the
   order is `active` and the WhatsApp group-creation stub fires with all their
@@ -125,12 +131,17 @@ Replace the bodies marked `// TODO(whatsapp):` and set `WHATSAPP_ENABLED = true`
 
 ## 4. Schema (`supabase/migrations/0008_orders_reset.sql` + later)
 
-`profiles` (id, username, full_name, role) · `orders` · `order_assignees` ·
-`order_stage_events` · `production_settings` · `notifications`. Reads go
-through the `order_feed` view, which nulls `price` (the order value) for
-anyone who isn't admin-tier or the marketing account that created the order,
-and lists `assignee_ids`. `orders.price` itself is not selectable by API
-roles at all (0010), and Realtime payloads omit it for the same reason.
+`profiles` (id, username, full_name, role) · `orders` · `order_items` ·
+`order_assignees` · `order_stage_events` · `production_settings` ·
+`notifications`. Reads go through the `order_feed` view, which nulls `price`
+(the order value = sum of its products) for anyone who isn't admin-tier or the
+marketing account that created the order, lists `assignee_ids`, and carries
+`items` (the products, each price nulled by the same rule). `orders.price` and
+`order_items.price` are not selectable by API roles at all (0010, 0019), and
+Realtime payloads omit them for the same reason. Since 0019,
+`orders.product_name / transformer_rating / quantity / description` mirror the
+first product (DB functions use product_name as the order's title) and
+`orders.price` holds the total; the app reads products only from `items`.
 
 Production never sees the order value anywhere — page, CSV, list PDF or spec
 sheet PDF all drop the column for that role, not just blank it.
@@ -141,7 +152,10 @@ policies for those tables (0012).
 
 Migrations 0001–0005 build the original schema; **0008 is a hard reset** that
 drops the old auth/messaging/projects system and rebuilds around orders.
-0012 adds the current order fields and multi-member assignment.
+0012 adds the current order fields and multi-member assignment. 0019 adds
+products per order (`order_items`, every existing order backfilled as a
+one-product order) and keeps the pre-0019 `create_order` signature as a
+one-product wrapper for the deploy window.
 
 `supabase/scripts/` holds one-off data scripts (not migrations), e.g.
 `clear_test_orders.sql`.
@@ -231,15 +245,19 @@ What was causing the lag, and the fix:
 ## 6. PDF and CSV export
 
 - Order detail page → **Download PDF**: an order specification — a ruled
-  Field | Value table, one field per row (product, client, rating, quantity,
-  order value, expected delivery date, current stage "Stage 2 of 5", status,
-  production, punched by/on, description). Current stage only, no history.
+  Field | Value table, one field per row (client, products, order value,
+  expected delivery date, current stage "Stage 2 of 5", status, production,
+  punched by/on), then a ruled **Products** table (#, product name, rating,
+  qty, value, description) with an order-total row. Current stage only, no
+  history.
 - Orders list → **Download All Orders** (admin and marketing): one PDF with
   a ruled table of every order the viewer can see, for **this / an earlier
   week, month or year** (by dispatch date, IST, Monday–Sunday weeks) or all
   time. Rows are grouped — year → months, month → weeks, week → days, all
   time → months — each heading with its count (and value subtotal where the
-  viewer may see prices). `/dashboard/orders/pdf?period=month&at=YYYY-MM-DD`;
+  viewer may see prices). One row per order; its products sit in a block of
+  ruled lines inside the row (name, rating, qty, description), the order
+  value column is the order's total. `/dashboard/orders/pdf?period=month&at=YYYY-MM-DD`;
   period logic in `lib/periods.ts`.
 - Every PDF: a letterhead on each page — the NR Industries logo
   (`lib/pdf/logo.ts`, embedded) and company address on the left, the
@@ -249,7 +267,9 @@ What was causing the lag, and the fix:
 - Both order PDFs end with a signature block (a line, "(Head)", "NR
   Industries"); the spec sheet puts it at the foot of its last page. The
   account archive has none.
-- Orders list → **Export CSV**: one field per column with the form's labels;
+- Orders list → **Export CSV**: **one row per product** ("Product no." 1 of
+  3…, order fields repeated; product values add up to the order total, so
+  there's no order-total column); one field per column with the form's labels;
   stage number and stage name in separate columns; dates `DD/MM/YYYY`,
   timestamps IST `DD/MM/YYYY HH:MM`; formula-injection safe.
 

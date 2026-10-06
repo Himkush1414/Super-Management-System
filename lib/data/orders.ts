@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
-import type { Order, Profile } from "@/types/database.types";
+import type { Order, OrderItem, Profile } from "@/types/database.types";
 import { displayName } from "@/lib/names";
 
 type Party = Pick<Profile, "id" | "username" | "full_name" | "real_name" | "role"> & {
@@ -62,9 +62,17 @@ async function visibleParties(
   );
 }
 
+/** jsonb numerics can arrive as strings; prices are numbers or null. */
+function items(o: Order): OrderItem[] {
+  return (o.items ?? [])
+    .map((i) => ({ ...i, quantity: Number(i.quantity), price: i.price === null ? null : Number(i.price) }))
+    .sort((a, b) => a.position - b.position);
+}
+
 function attach(orders: Order[], byId: Map<string, Party>): OrderRow[] {
   return orders.map((o) => ({
     ...o,
+    items: items(o),
     assignee_ids: o.assignee_ids ?? [],
     dispatcher: byId.get(o.created_by) ?? null,
     assignees: (o.assignee_ids ?? [])

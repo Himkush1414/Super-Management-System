@@ -7,6 +7,7 @@ import { requireSession } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/server";
 import { cleanRealName } from "@/lib/names";
 import { createOrderGroup } from "@/lib/whatsapp";
+import { titleOf } from "@/lib/data/order-title";
 
 export type Result = { error?: string; ok?: string };
 
@@ -64,6 +65,9 @@ export async function saveSettings(_prev: Result | null, fd: FormData): Promise<
     if (orders.length) {
       // Side effects (WhatsApp stub + notifications) don't block the response.
       after(async () => {
+        const titles = new Map(
+          await Promise.all(orders.map(async (o) => [o.order_id, await titleOf(svc, o.order_id, o.product_name)] as const)),
+        );
         const memberIds = [...new Set(orders.flatMap((o) => o.assignee_ids))];
         const [{ data: phones }, { data: heads }] = await Promise.all([
           svc.from("production_settings").select("profile_id, phone").in("profile_id", memberIds),
@@ -75,7 +79,7 @@ export async function saveSettings(_prev: Result | null, fd: FormData): Promise<
           ...orders.map((o) =>
             createOrderGroup({
               orderId: o.order_id,
-              productName: o.product_name,
+              productName: titles.get(o.order_id) ?? o.product_name,
               productionPhones: o.assignee_ids.map((id) => phoneOf.get(id)!).filter(Boolean),
             }),
           ),
@@ -85,7 +89,7 @@ export async function saveSettings(_prev: Result | null, fd: FormData): Promise<
                 user_id,
                 type: "order",
                 title: "Order activated",
-                body: `"${o.product_name}" is now active — every assigned production member has finished setup.`,
+                body: `"${titles.get(o.order_id) ?? o.product_name}" is now active — every assigned production member has finished setup.`,
                 entity_type: "order",
                 entity_id: o.order_id,
               })),

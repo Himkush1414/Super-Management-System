@@ -1,9 +1,12 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { OrderRow } from "@/lib/data/orders";
-import { MAX_STAGE, stageName, ORDER_STATUS_LABEL } from "@/lib/orders";
+import type { OrderItem } from "@/types/database.types";
+import { MAX_STAGE, stageName, ORDER_STATUS_LABEL, orderTitle, totalQuantity } from "@/lib/orders";
 import { formatDateTime, formatDay } from "@/lib/utils";
 import { C, base, inr } from "./theme";
 import { PdfHeader, PdfFooter, PdfSignature } from "./Chrome";
+
+const cellRule = { borderRight: `0.75 solid ${C.rule}`, borderBottom: `0.75 solid ${C.rule}` };
 
 const s = StyleSheet.create({
   table: { borderTop: `0.75 solid ${C.rule}`, borderLeft: `0.75 solid ${C.rule}` },
@@ -13,8 +16,7 @@ const s = StyleSheet.create({
     backgroundColor: C.head,
     paddingVertical: 7,
     paddingHorizontal: 9,
-    borderRight: `0.75 solid ${C.rule}`,
-    borderBottom: `0.75 solid ${C.rule}`,
+    ...cellRule,
     fontFamily: "Helvetica-Bold",
     fontSize: 9,
     color: C.ink,
@@ -23,20 +25,30 @@ const s = StyleSheet.create({
     width: "68%",
     paddingVertical: 7,
     paddingHorizontal: 9,
-    borderRight: `0.75 solid ${C.rule}`,
-    borderBottom: `0.75 solid ${C.rule}`,
+    ...cellRule,
     fontSize: 10,
     color: C.ink,
   },
-  long: { lineHeight: 1.5, fontSize: 9.5 },
+  heading: { marginTop: 18, marginBottom: 6, fontSize: 11, fontFamily: "Helvetica-Bold", color: C.navy },
+  // products table
+  pCell: { paddingVertical: 6, paddingHorizontal: 6, ...cellRule, fontSize: 9, color: C.ink },
+  pHead: { backgroundColor: C.head, fontFamily: "Helvetica-Bold", fontSize: 8.2, color: C.navy },
+  pDesc: { fontSize: 8.6, lineHeight: 1.45, color: C.body },
+  right: { textAlign: "right" },
+  center: { textAlign: "center" },
+  totalLabel: { fontFamily: "Helvetica-Bold", textAlign: "right", backgroundColor: C.head },
+  totalValue: { fontFamily: "Helvetica-Bold", textAlign: "right" },
   // pushes the signature to the foot of the (last) page
   fill: { flexGrow: 1 },
 });
 
+type PCol = { key: string; label: string; width: number; align?: "right" | "center"; cell: (i: OrderItem) => string };
+
 /**
- * One order, one field per table row — nothing shares a cell. Only the
- * CURRENT stage is shown (no stage-by-stage history). The order-value row
- * only exists when `showPrice` (never for production).
+ * One order: an order-details table (one field per row — nothing shares a
+ * cell), then a ruled products table, then the signature. Only the CURRENT
+ * stage is shown (no stage-by-stage history). The value column, its total
+ * and the order-value row only exist when `showPrice` (never for production).
  */
 export function OrderSpecSheet({
   order,
@@ -51,11 +63,10 @@ export function OrderSpecSheet({
   showAssignees: boolean;
   generatedAt: Date;
 }) {
+  const units = totalQuantity(order);
   const rows: [string, string][] = [
-    ["Product name", order.product_name],
     ["Client name", order.client_name || "—"],
-    ["Transformer rating", order.transformer_rating || "—"],
-    ["Quantity", String(order.quantity)],
+    ["Products", `${order.items.length} (${units} unit${units === 1 ? "" : "s"})`],
     ...(showPrice ? ([["Order value", inr(order.price)]] as [string, string][]) : []),
     ["Expected delivery date", formatDay(order.expected_delivery)],
     ["Current stage", `Stage ${order.stage} of ${MAX_STAGE} — ${stageName(order.stage)}`],
@@ -67,11 +78,26 @@ export function OrderSpecSheet({
       ? ([["Punched by", order.dispatcher?.label ?? "—"]] as [string, string][])
       : []),
     ["Punched on", formatDateTime(order.created_at)],
-    ["Description", order.description || "—"],
   ];
 
+  const cols: PCol[] = [
+    { key: "n", label: "#", width: 4, align: "center", cell: (i) => String(i.position) },
+    { key: "name", label: "Product name", width: 25, cell: (i) => i.product_name },
+    { key: "rating", label: "Transformer rating", width: 17, cell: (i) => i.transformer_rating || "—" },
+    { key: "qty", label: "Qty", width: 6, align: "right", cell: (i) => String(i.quantity) },
+    ...(showPrice
+      ? [{ key: "value", label: "Value", width: 14, align: "right" as const, cell: (i: OrderItem) => inr(i.price) }]
+      : []),
+    { key: "desc", label: "Description", width: 34, cell: (i) => i.description || "—" },
+  ];
+  const total = cols.reduce((n, c) => n + c.width, 0);
+  const w = (width: number) => ({ width: `${(width / total) * 100}%` });
+  const align = (c: PCol) => (c.align === "right" ? s.right : c.align === "center" ? s.center : {});
+  // Value column ends where "#"…"Qty" + Value do; the total row spans up to it.
+  const beforeValue = cols.slice(0, cols.findIndex((c) => c.key === "value")).reduce((n, c) => n + c.width, 0);
+
   return (
-    <Document title={`${order.product_name} — Order specification`} author="NR Industries">
+    <Document title={`${orderTitle(order)} — Order specification`} author="NR Industries">
       <Page size="A4" style={base.page}>
         <PdfHeader
           title="Order Specification"
@@ -80,12 +106,48 @@ export function OrderSpecSheet({
         />
         <View style={s.table}>
           {rows.map(([label, value]) => (
-            <View key={label} style={s.row} wrap={label === "Description"}>
+            <View key={label} style={s.row} wrap={false}>
               <Text style={s.label}>{label}</Text>
-              <Text style={[s.value, label === "Description" ? s.long : {}]}>{value}</Text>
+              <Text style={s.value}>{value}</Text>
             </View>
           ))}
         </View>
+
+        <Text style={s.heading} minPresenceAhead={60}>
+          Products
+        </Text>
+        <View style={s.table}>
+          <View style={s.row} fixed>
+            {cols.map((c) => (
+              <Text key={c.key} style={[s.pCell, s.pHead, w(c.width), align(c)]}>
+                {c.label}
+              </Text>
+            ))}
+          </View>
+          {order.items.map((it, ri) => (
+            // A row only splits across pages when its description is long
+            // enough that it might not fit on one.
+            <View
+              key={it.id}
+              style={[s.row, ri % 2 === 1 ? { backgroundColor: C.zebra } : {}]}
+              wrap={it.description.length > 900}
+            >
+              {cols.map((c) => (
+                <Text key={c.key} style={[s.pCell, w(c.width), align(c), c.key === "desc" ? s.pDesc : {}]}>
+                  {c.cell(it)}
+                </Text>
+              ))}
+            </View>
+          ))}
+          {showPrice && order.items.length > 1 && (
+            <View style={s.row} wrap={false}>
+              <Text style={[s.pCell, s.totalLabel, w(beforeValue)]}>Order total</Text>
+              <Text style={[s.pCell, s.totalValue, w(14)]}>{inr(order.price)}</Text>
+              <Text style={[s.pCell, w(34)]} />
+            </View>
+          )}
+        </View>
+
         <View style={s.fill} />
         <PdfSignature />
         <PdfFooter />

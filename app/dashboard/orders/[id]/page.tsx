@@ -13,7 +13,7 @@ import { StageControl } from "@/components/dashboard/StageControl";
 import { StageTimerBar } from "@/components/dashboard/StageTimerBar";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
 import { DeleteButton } from "@/components/dashboard/DeleteButton";
-import { MAX_STAGE, stageName } from "@/lib/orders";
+import { MAX_STAGE, orderTitle, stageName, totalQuantity } from "@/lib/orders";
 import { formatCurrency, formatDateTime, formatDay } from "@/lib/utils";
 
 export async function generateMetadata({
@@ -23,7 +23,7 @@ export async function generateMetadata({
 }) {
   const { id } = await params;
   const order = await getOrder(id);
-  return { title: order ? order.product_name : "Order" };
+  return { title: order ? orderTitle(order) : "Order" };
 }
 
 export default async function OrderDetailPage({
@@ -83,8 +83,15 @@ export default async function OrderDetailPage({
       )}
 
       <PageHeader
-        title={order.product_name}
-        description={[order.client_name, order.transformer_rating].filter(Boolean).join(" · ") || undefined}
+        title={orderTitle(order)}
+        description={
+          [
+            order.client_name,
+            order.items.length > 1 ? `${order.items.length} products` : order.items[0]?.transformer_rating,
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
         action={
           <div className="flex items-center gap-3">
             <OrderStatusBadge status={order.status} />
@@ -104,12 +111,14 @@ export default async function OrderDetailPage({
             <CardBody>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-[13px] sm:grid-cols-3">
                 <Field label="Client" value={order.client_name || "—"} />
-                <Field label="Transformer rating" value={order.transformer_rating || "—"} />
-                <Field label="Quantity" value={String(order.quantity)} />
+                <Field label="Expected delivery" value={formatDay(order.expected_delivery)} />
                 {canSeePrice && (
                   <Field label="Order value" value={formatCurrency(order.price)} />
                 )}
-                <Field label="Expected delivery" value={formatDay(order.expected_delivery)} />
+                <Field
+                  label="Products"
+                  value={`${order.items.length} · ${totalQuantity(order)} unit${totalQuantity(order) === 1 ? "" : "s"}`}
+                />
                 <Field label="Punched" value={formatDateTime(order.created_at)} />
                 {showDispatcher && (
                   <Field label="Punched by" value={order.dispatcher?.label ?? "—"} />
@@ -121,17 +130,41 @@ export default async function OrderDetailPage({
                   />
                 )}
               </dl>
-              {order.description && (
-                <div className="mt-5 border-t border-border pt-4">
-                  <p className="text-[11px] uppercase tracking-wide text-text-tertiary">
-                    Description
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap text-[13px] text-text-secondary">
-                    {order.description}
-                  </p>
-                </div>
-              )}
             </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Products"
+              description={order.items.length === 1 ? "1 product" : `${order.items.length} products`}
+            />
+            <ol className="divide-y divide-border">
+              {order.items.map((it) => (
+                <li key={it.id} className="flex gap-3 px-5 py-4 text-[13px]">
+                  <span className="mt-px w-5 shrink-0 text-text-tertiary tnum">{it.position}.</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                      <p className="font-medium text-text">{it.product_name}</p>
+                      {canSeePrice && (
+                        <p className="font-medium tnum">{formatCurrency(it.price)}</p>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-text-secondary">
+                      {[it.transformer_rating, `Qty ${it.quantity}`].filter(Boolean).join(" · ")}
+                    </p>
+                    {it.description && (
+                      <p className="mt-1.5 whitespace-pre-wrap text-text-tertiary">{it.description}</p>
+                    )}
+                  </div>
+                </li>
+              ))}
+              {canSeePrice && order.items.length > 1 && (
+                <li className="flex justify-between gap-3 px-5 py-3 text-[13px]">
+                  <span className="pl-8 text-text-secondary">Order total</span>
+                  <span className="font-semibold tnum">{formatCurrency(order.price)}</span>
+                </li>
+              )}
+            </ol>
           </Card>
 
           <Card>
@@ -215,10 +248,10 @@ export default async function OrderDetailPage({
                 <DeleteButton
                   kind="order"
                   id={order.id}
-                  title={order.product_name}
+                  title={orderTitle(order)}
                   redirectTo="/dashboard/orders"
                   lines={[
-                    [order.client_name, order.transformer_rating, `Qty ${order.quantity}`].filter(Boolean).join(" · "),
+                    [order.client_name, `${order.items.length} product${order.items.length === 1 ? "" : "s"}`, `Qty ${totalQuantity(order)}`].filter(Boolean).join(" · "),
                     `Punched by ${order.dispatcher?.label ?? "—"} · Stage ${order.stage} — ${stageName(order.stage)}`,
                   ]}
                 />

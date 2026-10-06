@@ -22,6 +22,21 @@ export function stageName(n: number): string {
   return STAGES.find((s) => s.n === n)?.name ?? `Stage ${n}`;
 }
 
+/** Most products one order can hold (create_order enforces the same). */
+export const MAX_ORDER_ITEMS = 20;
+
+/** The order's name everywhere a single line is needed: "TRANSFORMER +2 more". */
+export function orderTitle(o: { product_name: string; items?: { product_name: string }[] }): string {
+  const items = o.items ?? [];
+  const first = items[0]?.product_name ?? o.product_name;
+  return items.length > 1 ? `${first} +${items.length - 1} more` : first;
+}
+
+/** Total units across the order's products. */
+export function totalQuantity(o: { quantity: number; items?: { quantity: number }[] }): number {
+  return o.items?.length ? o.items.reduce((n, i) => n + i.quantity, 0) : o.quantity;
+}
+
 export const ORDER_STATUS_LABEL: Record<string, string> = {
   active: "Active",
   waiting_on_production_phone: "Waiting on production phone number",

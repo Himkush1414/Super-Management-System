@@ -13,7 +13,7 @@ import { StageControl } from "@/components/dashboard/StageControl";
 import { StageTimerBar } from "@/components/dashboard/StageTimerBar";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
 import { DeleteButton } from "@/components/dashboard/DeleteButton";
-import { MAX_STAGE, itemValue, orderTitle, stageName, totalQuantity } from "@/lib/orders";
+import { GST_PERCENT, MAX_STAGE, itemTotal, orderAmounts, orderTitle, stageName, totalQuantity } from "@/lib/orders";
 import { formatCurrency, formatDateTime, formatDay } from "@/lib/utils";
 
 export async function generateMetadata({
@@ -53,6 +53,9 @@ export default async function OrderDetailPage({
   const canSeePrice = ctx.can("price.view");
   const showDispatcher = ctx.isAdminTier;
   const showAssignees = ctx.role !== "production";
+  // Admin tier advances any order, without the timer, after confirming.
+  const canOverrideStage = ctx.can("orders.overrideStage");
+  const amounts = orderAmounts(order);
 
   // Admin tier: which assigned members have a WhatsApp number on file.
   const phoneOf = new Map(
@@ -111,9 +114,13 @@ export default async function OrderDetailPage({
             <CardBody>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-[13px] sm:grid-cols-3">
                 <Field label="Client" value={order.client_name || "—"} />
+                <Field label="Ship To" value={order.ship_to || "—"} wide />
                 <Field label="Expected delivery" value={formatDay(order.expected_delivery)} />
                 {canSeePrice && (
-                  <Field label="Order value" value={formatCurrency(order.price)} />
+                  <Field label="Order subtotal" value={formatCurrency(amounts.subtotal)} />
+                )}
+                {canSeePrice && (
+                  <Field label="Additional Amount" value={formatCurrency(amounts.additional)} />
                 )}
                 <Field
                   label="Products"
@@ -153,20 +160,32 @@ export default async function OrderDetailPage({
                   </div>
                   {canSeePrice && (
                     <div className="shrink-0 text-right">
-                      <p className="font-medium tnum">{formatCurrency(itemValue(it))}</p>
-                      {it.feat !== null && (
+                      <p className="font-medium tnum">{formatCurrency(itemTotal(it))}</p>
+                      {it.price !== null && (
                         <p className="mt-0.5 text-[12px] text-text-tertiary tnum">
-                          Price {formatCurrency(it.price ?? 0)} + FEAT {formatCurrency(it.feat)}
+                          Price {formatCurrency(it.price)} + GST {GST_PERCENT}% {formatCurrency(it.gst)}
                         </p>
                       )}
                     </div>
                   )}
                 </li>
               ))}
-              {canSeePrice && order.items.length > 1 && (
-                <li className="flex justify-between gap-3 px-5 py-3 text-[13px]">
-                  <span className="pl-8 text-text-secondary">Order total</span>
-                  <span className="font-semibold tnum">{formatCurrency(order.price)}</span>
+              {canSeePrice && (
+                <li className="space-y-1.5 px-5 py-3 text-[13px]">
+                  <div className="flex justify-between gap-3">
+                    <span className="pl-8 text-text-secondary">Products, including {GST_PERCENT}% GST</span>
+                    <span className="tnum">{formatCurrency(amounts.products)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="pl-8 text-text-secondary">Additional Amount added</span>
+                    <span className="tnum">
+                      {amounts.additional === null ? "—" : `+ ${formatCurrency(amounts.additional)}`}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3 font-semibold">
+                    <span className="pl-8">Order subtotal</span>
+                    <span className="tnum">{formatCurrency(amounts.subtotal)}</span>
+                  </div>
                 </li>
               )}
             </ol>
@@ -179,13 +198,14 @@ export default async function OrderDetailPage({
             />
             <CardBody className="grid gap-6 sm:grid-cols-[1fr_auto] sm:items-start">
               <StageTracker stage={order.stage} />
-              {isAssignedProduction && (
+              {(isAssignedProduction || canOverrideStage) && (
                 <div className="rounded-lg border border-border bg-bg-subtle p-4">
                   <StageControl
                     orderId={order.id}
                     stage={order.stage}
                     waiting={order.status === "waiting_on_production_phone"}
                     stageReadyAt={order.stage_ready_at}
+                    override={canOverrideStage}
                   />
                 </div>
               )}
@@ -269,13 +289,15 @@ export default async function OrderDetailPage({
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ label, value, wide }: { label: string; value: string; wide?: boolean }) {
   return (
-    <div>
+    <div className={wide ? "col-span-full" : undefined}>
       <dt className="text-[11px] uppercase tracking-wide text-text-tertiary">
         {label}
       </dt>
-      <dd className="mt-1 font-medium text-text">{value}</dd>
+      <dd className={wide ? "mt-1 whitespace-pre-wrap break-words font-medium text-text" : "mt-1 font-medium text-text"}>
+        {value}
+      </dd>
     </div>
   );
 }

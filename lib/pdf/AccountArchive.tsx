@@ -1,8 +1,12 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
-import { MAX_STAGE, stageName, ORDER_STATUS_LABEL } from "@/lib/orders";
+import { GST_PERCENT, MAX_STAGE, stageName, ORDER_STATUS_LABEL, itemTotal } from "@/lib/orders";
 import { formatDateTime, formatDay } from "@/lib/utils";
-import { C, base, inr } from "./theme";
+import { C, amount, base } from "./theme";
 import { PdfHeader, PdfFooter } from "./Chrome";
+import { fitWords } from "./fit";
+
+/** The landscape A4 line between the page margins, in points. */
+const LINE = 841.89 - 2 * 36;
 
 export type AccountExport = {
   account: { username: string; role: string; display_name: string };
@@ -10,9 +14,13 @@ export type AccountExport = {
     id: string;
     product_name: string;
     client_name: string;
+    /** 0021+ */
+    ship_to?: string;
     transformer_rating: string;
     quantity: number;
     price: number | null;
+    /** 0021+: the order's Additional Amount (older orders: their FEAT amounts) */
+    additional_amount?: number | null;
     expected_delivery: string | null;
     description: string;
     stage: number;
@@ -27,8 +35,8 @@ export type AccountExport = {
       transformer_rating: string;
       quantity: number;
       price: number | null;
-      /** 0020+ */
-      feat?: number | null;
+      /** 0021+: 18% GST on price */
+      gst?: number | null;
       description: string;
     }[];
   }[];
@@ -57,6 +65,9 @@ const s = StyleSheet.create({
     color: C.ink,
   },
   head: { backgroundColor: C.head, fontFamily: "Helvetica-Bold", fontSize: 7.2, color: C.navy },
+  // the 16-column orders table: slightly smaller so nothing crosses a rule
+  cellCompact: { paddingHorizontal: 4, fontSize: 7 },
+  headCompact: { fontSize: 6.6 },
   first: { borderLeft: `0.75 solid ${C.rule}` },
   top: { borderTop: `0.75 solid ${C.rule}` },
   right: { textAlign: "right" },
@@ -65,14 +76,19 @@ const s = StyleSheet.create({
 type Col<T> = { label: string; width: number; right?: boolean; cell: (r: T) => string };
 
 /** A ruled table: one value per cell, header repeated on each page. */
-function Grid<T>({ cols, rows }: { cols: Col<T>[]; rows: T[] }) {
+function Grid<T>({ cols, rows, compact }: { cols: Col<T>[]; rows: T[]; compact?: boolean }) {
   const total = cols.reduce((n, c) => n + c.width, 0);
   const w = (c: Col<T>) => ({ width: `${(c.width / total) * 100}%` });
+  const cell = compact ? [s.cell, s.cellCompact] : [s.cell];
+  const head = compact ? [s.head, s.headCompact] : [s.head];
+  // a word wider than its column is hyphenated instead of crossing the rule
+  const fit = (text: string, c: Col<T>) =>
+    fitWords(text, (c.width / total) * LINE - 2 * (compact ? 4 : 5) - 0.5, compact ? 7 : 7.8);
   return (
     <View>
       <View style={s.row} fixed>
         {cols.map((c, i) => (
-          <Text key={c.label} style={[s.cell, s.head, s.top, w(c), c.right ? s.right : {}, i === 0 ? s.first : {}]}>
+          <Text key={c.label} style={[...cell, ...head, s.top, w(c), c.right ? s.right : {}, i === 0 ? s.first : {}]}>
             {c.label}
           </Text>
         ))}
@@ -80,8 +96,8 @@ function Grid<T>({ cols, rows }: { cols: Col<T>[]; rows: T[] }) {
       {rows.map((r, ri) => (
         <View key={ri} style={[s.row, ri % 2 === 1 ? { backgroundColor: C.zebra } : {}]} wrap={false}>
           {cols.map((c, i) => (
-            <Text key={c.label} style={[s.cell, w(c), c.right ? s.right : {}, i === 0 ? s.first : {}]}>
-              {c.cell(r)}
+            <Text key={c.label} style={[...cell, w(c), c.right ? s.right : {}, i === 0 ? s.first : {}]}>
+              {fit(c.cell(r), c)}
             </Text>
           ))}
         </View>
@@ -102,7 +118,7 @@ export function AccountArchive({ data, generatedAt }: { data: AccountExport; gen
     const items = o.items?.length
       ? o.items
       : [{ position: 1, product_name: o.product_name, transformer_rating: o.transformer_rating,
-           quantity: o.quantity, price: o.price, description: o.description }];
+           quantity: o.quantity, price: o.price, gst: null, description: o.description }];
     return items.map((item) => ({ ...o, item, line: `${item.position} of ${items.length}` }));
   });
   type E = AccountExport["stage_updates"][number];
@@ -137,21 +153,31 @@ export function AccountArchive({ data, generatedAt }: { data: AccountExport; gen
             <Text style={s.none}>None included.</Text>
           ) : (
             <Grid<P>
+              compact
+              // widths in points of the 770pt line; amounts are bare numbers
+              // under "(INR)" headers: one line up to ₹1 crore
               cols={[
-                { label: "Product name", width: 12, cell: (r) => r.item.product_name },
-                { label: "No.", width: 4, cell: (r) => r.line },
-                { label: "Client name", width: 10, cell: (r) => r.client_name || "—" },
-                { label: "Transformer rating", width: 9, cell: (r) => r.item.transformer_rating || "—" },
-                { label: "Qty", width: 4, right: true, cell: (r) => String(r.item.quantity) },
-                { label: "Price", width: 9, right: true, cell: (r) => inr(r.item.price) },
-                { label: "FEAT", width: 8, right: true, cell: (r) => inr(r.item.feat ?? null) },
-                { label: "Expected delivery", width: 9, cell: (r) => formatDay(r.expected_delivery) },
-                { label: "Current stage", width: 9, cell: (r) => `Stage ${r.stage} of ${MAX_STAGE}` },
-                { label: "Status", width: 7, cell: (r) => (r.status === "active" ? "Active" : ORDER_STATUS_LABEL[r.status] ?? r.status) },
-                { label: "Production", width: 12, cell: (r) => r.production.join(", ") || "—" },
-                { label: "Punched by", width: 11, cell: (r) => r.dispatched_by || "—" },
-                { label: "Punched on", width: 10, cell: (r) => formatDateTime(r.created_at) },
-                { label: "Description", width: 13, cell: (r) => r.item.description || "—" },
+                { label: "Product name", width: 60, cell: (r) => r.item.product_name },
+                { label: "No.", width: 26, cell: (r) => r.line },
+                { label: "Client name", width: 52, cell: (r) => r.client_name || "—" },
+                { label: "Ship To", width: 56, cell: (r) => r.ship_to || "—" },
+                { label: "Transformer rating", width: 54, cell: (r) => r.item.transformer_rating || "—" },
+                { label: "Qty", width: 26, right: true, cell: (r) => String(r.item.quantity) },
+                { label: "Price (INR)", width: 50, right: true, cell: (r) => amount(r.item.price) },
+                {
+                  label: `Total incl. ${GST_PERCENT}% GST (INR)`,
+                  width: 52,
+                  right: true,
+                  cell: (r) => amount(itemTotal({ price: r.item.price, gst: r.item.gst ?? null })),
+                },
+                { label: "Expected delivery", width: 44, cell: (r) => formatDay(r.expected_delivery) },
+                { label: "Current stage", width: 46, cell: (r) => `Stage ${r.stage} of ${MAX_STAGE}` },
+                { label: "Status", width: 42, cell: (r) => (r.status === "active" ? "Active" : ORDER_STATUS_LABEL[r.status] ?? r.status) },
+                { label: "Production", width: 50, cell: (r) => r.production.join(", ") || "—" },
+                { label: "Punched by", width: 46, cell: (r) => r.dispatched_by || "—" },
+                { label: "Punched on", width: 50, cell: (r) => formatDateTime(r.created_at) },
+                { label: "Additional Amount (INR)", width: 50, right: true, cell: (r) => amount(r.additional_amount ?? null) },
+                { label: "Description", width: 66, cell: (r) => r.item.description || "—" },
               ]}
               rows={productRows}
             />

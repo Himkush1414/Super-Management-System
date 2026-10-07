@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { getOrders, type OrderRow } from "@/lib/data/orders";
 import type { OrderItem } from "@/types/database.types";
-import { MAX_STAGE, stageName, ORDER_STATUS_LABEL, itemValue } from "@/lib/orders";
+import { GST_PERCENT, MAX_STAGE, stageName, ORDER_STATUS_LABEL, itemTotal, orderAmounts } from "@/lib/orders";
 import { formatCsvDateTime, formatDay } from "@/lib/utils";
 
 function csvField(value: string | number | null): string {
@@ -20,10 +20,12 @@ type Column = { header: string; value: (l: Line) => string | number | null };
 /**
  * One row per PRODUCT (an order with three products is three rows, its order
  * fields repeated), one field per column — headers match the order form's
- * labels, nothing is combined into one cell. Value = price + FEAT; the
- * product values of an order add up to its total, so no order-total column
- * (it would double-count when summed). Dates are DD/MM/YYYY like the rest of the system (timestamps in
- * IST as DD/MM/YYYY HH:MM). Production gets no value column at all.
+ * labels, nothing is combined into one cell. Per product: price, 18% GST and
+ * price + GST. The order-level Additional Amount and Order subtotal are
+ * filled on the order's FIRST product row only (blank on the others), so
+ * summing any money column never double-counts. Dates are DD/MM/YYYY like
+ * the rest of the system (timestamps in IST as DD/MM/YYYY HH:MM). Production
+ * gets no money column at all.
  */
 export async function GET() {
   const [ctx, orders] = await Promise.all([requireSession(), getOrders()]);
@@ -33,13 +35,22 @@ export async function GET() {
     { header: "Product no.", value: ({ o, item }) => `${item.position} of ${o.items.length}` },
     { header: "Product name", value: ({ item }) => item.product_name },
     { header: "Client name", value: ({ o }) => o.client_name },
+    { header: "Ship To", value: ({ o }) => o.ship_to },
     { header: "Transformer rating", value: ({ item }) => item.transformer_rating },
     { header: "Quantity", value: ({ item }) => item.quantity },
     ...(ctx.can("price.view")
       ? ([
           { header: "Price (INR)", value: ({ item }: Line) => item.price },
-          { header: "FEAT (INR)", value: ({ item }: Line) => item.feat },
-          { header: "Value (INR)", value: ({ item }: Line) => itemValue(item) },
+          { header: `GST ${GST_PERCENT}% (INR)`, value: ({ item }: Line) => item.gst },
+          { header: `Total incl. ${GST_PERCENT}% GST (INR)`, value: ({ item }: Line) => itemTotal(item) },
+          {
+            header: "Additional Amount (INR, per order)",
+            value: ({ o, item }: Line) => (item.position === o.items[0]?.position ? orderAmounts(o).additional : null),
+          },
+          {
+            header: `Order subtotal (INR, incl. ${GST_PERCENT}% GST + Additional Amount, per order)`,
+            value: ({ o, item }: Line) => (item.position === o.items[0]?.position ? orderAmounts(o).subtotal : null),
+          },
         ] satisfies Column[])
       : []),
     { header: "Expected delivery date", value: ({ o }) => (o.expected_delivery ? formatDay(o.expected_delivery) : "") },

@@ -13,18 +13,24 @@ export function StageControl({
   stage,
   waiting,
   stageReadyAt,
+  override = false,
 }: {
   orderId: string;
   stage: number;
   waiting: boolean;
   /** Null once the post-confirmation timer has elapsed (or never started). */
   stageReadyAt: string | null;
+  /**
+   * Admin tier: advance any order with no timer, behind an explicit
+   * "Are you sure?" confirmation. Production's flow is unchanged.
+   */
+  override?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [state, setState] = useState<{ error?: string; ok?: string } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const target = !waiting && stageReadyAt ? new Date(stageReadyAt).getTime() : null;
+  const target = !waiting && !override && stageReadyAt ? new Date(stageReadyAt).getTime() : null;
 
   // `now` starts correct via the lazy useState initializer (runs once, on
   // mount) and afterwards is only ever updated from the interval callback —
@@ -37,6 +43,15 @@ export function StageControl({
   }, [target]);
 
   const counting = Boolean(target && target > now);
+
+  if (waiting && override) {
+    return (
+      <p className="text-[13px] text-text-secondary">
+        This order is waiting on a production phone number. It can be advanced once every
+        assigned production member has registered one.
+      </p>
+    );
+  }
 
   if (waiting) {
     return (
@@ -84,14 +99,24 @@ export function StageControl({
         <ArrowRight size={15} />
       </Button>
       <p className="text-[12px] text-text-tertiary">
-        Marketing is notified on every stage change.
+        {override
+          ? "Admin override: no timer. Marketing and production are notified."
+          : "Marketing is notified on every stage change."}
       </p>
 
       <Modal
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        title="Move to the next step?"
-        description={`Stage ${next} — ${stageName(next)} starts right away. After that, the following stage opens after 3 minutes.`}
+        title={
+          override
+            ? "Are you sure you want to advance this order to the next stage?"
+            : "Move to the next step?"
+        }
+        description={
+          override
+            ? `It moves from Stage ${stage} — ${stageName(stage)} to Stage ${next} — ${stageName(next)} right away.`
+            : `Stage ${next} — ${stageName(next)} starts right away. After that, the following stage opens after 3 minutes.`
+        }
       >
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button

@@ -49,7 +49,6 @@ type ItemInput = {
   transformer_rating: string;
   quantity: number;
   price: number | null;
-  feat: number | null;
   description: string;
 };
 
@@ -61,6 +60,10 @@ export async function dispatchOrder(
   const ctx = await requireRole("marketing");
 
   const client_name = str(fd, "client_name");
+  // browsers submit textarea line breaks as CRLF; store plain "\n"
+  const ship_to = str(fd, "ship_to").replace(/\r\n?/g, "\n");
+  const additionalRaw = str(fd, "additional_amount");
+  const additional_amount = additionalRaw === "" ? null : Number(additionalRaw);
   const expected_delivery = str(fd, "expected_delivery") || null;
   const assignees = [
     ...new Set(fd.getAll("assigned_to").map((v) => String(v).trim())),
@@ -71,14 +74,13 @@ export async function dispatchOrder(
   const ratings = all("transformer_rating[]");
   const quantities = all("quantity[]");
   const prices = all("price[]");
-  const feats = all("feat[]");
   const descriptions = all("description[]");
   const n = names.length;
 
   if (!client_name) return { error: "Client name is required." };
   if (n === 0) return { error: "Add at least one product." };
   if (n > MAX_ORDER_ITEMS) return { error: `An order can have at most ${MAX_ORDER_ITEMS} products.` };
-  if ([ratings, quantities, prices, feats, descriptions].some((a) => a.length !== n))
+  if ([ratings, quantities, prices, descriptions].some((a) => a.length !== n))
     return { error: "The form was incomplete. Please reload the page and try again." };
 
   const items: ItemInput[] = [];
@@ -87,24 +89,23 @@ export async function dispatchOrder(
     const p = n > 1 ? `Product ${i + 1}: ` : "";
     const quantity = Number(quantities[i] || "1");
     const price = prices[i] === "" ? null : Number(prices[i]);
-    const feat = feats[i] === "" ? null : Number(feats[i]);
     if (!names[i]) return { error: `${p}Product name is required.` };
     if (!ratings[i]) return { error: `${p}Transformer rating is required.` };
     if (!Number.isInteger(quantity) || quantity < 1)
       return { error: `${p}Quantity must be a whole number of at least 1.` };
     if (price !== null && (!Number.isFinite(price) || price < 0))
       return { error: `${p}Price must be a positive number, or left blank.` };
-    if (feat !== null && (!Number.isFinite(feat) || feat < 0))
-      return { error: `${p}FEAT must be a positive number, or left blank.` };
     items.push({
       product_name: names[i],
       transformer_rating: ratings[i],
       quantity,
       price,
-      feat,
       description: descriptions[i],
     });
   }
+  if (ship_to.length > 2000) return { error: "Ship To is too long (up to 2000 characters)." };
+  if (additional_amount !== null && (!Number.isFinite(additional_amount) || additional_amount < 0))
+    return { error: "Additional Amount must be a positive number, or left blank." };
   if (expected_delivery && (!ISO_DATE.test(expected_delivery) || !isRealDate(expected_delivery)))
     return { error: "Expected delivery must be a real date, entered as DD/MM/YYYY." };
   if (assignees.length === 0)
@@ -117,8 +118,10 @@ export async function dispatchOrder(
     .rpc("create_order", {
       p_created_by: ctx.userId,
       p_client_name: client_name,
+      p_ship_to: ship_to,
       p_expected_delivery: expected_delivery,
       p_items: items,
+      p_additional_amount: additional_amount,
       p_assignees: assignees,
     })
     .single<{ order_id: string; status: string }>();
@@ -172,13 +175,16 @@ export async function dispatchOrder(
 }
 
 /**
- * Any production member assigned to the order advances it one stage.
- * `fromStage` is the stage the member was looking at: if the order has moved
- * since (another assignee, a stale tab), nothing happens.
+ * Any production member assigned to the order advances it one stage, once
+ * the stage timer has run out. Admin tier may advance any order at any time
+ * (no assignment, no timer — advance_order_stage checks the role itself,
+ * 0021); the UI asks them to confirm first. `fromStage` is the stage the
+ * caller was looking at: if the order has moved since (another assignee, a
+ * stale tab), nothing happens.
  */
 export async function advanceStage(orderId: string, fromStage: number): Promise<Result> {
   const ctx = await requireSession();
-  if (ctx.role !== "production") return { error: "Not permitted." };
+  if (!ctx.can("orders.advanceStage") && !ctx.can("orders.overrideStage")) return { error: "Not permitted." };
   if (!UUID.test(orderId) || !Number.isInteger(fromStage)) return { error: "Order not found." };
   const svc = createServiceClient();
 

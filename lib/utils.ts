@@ -10,10 +10,20 @@ const inr = new Intl.NumberFormat("en-IN", {
   currency: "INR",
   maximumFractionDigits: 0,
 });
+const inrPaise = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
+/**
+ * "₹7,500" for whole rupees, "₹1,25,000.50" when there are paise — never
+ * rounded, so price + GST visibly adds up to the total.
+ */
 export function formatCurrency(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
-  return inr.format(value);
+  return Number.isInteger(Math.round(value * 100) / 100) ? inr.format(value) : inrPaise.format(value);
 }
 
 /** Date and time pieces in IST, 2-digit, independent of the runtime's locale. */

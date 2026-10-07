@@ -62,14 +62,14 @@ async function visibleParties(
   );
 }
 
-/** jsonb numerics can arrive as strings; prices are numbers or null. */
+/** jsonb numerics can arrive as strings; prices / GST are numbers or null. */
 function items(o: Order): OrderItem[] {
   return (o.items ?? [])
     .map((i) => ({
       ...i,
       quantity: Number(i.quantity),
       price: i.price === null || i.price === undefined ? null : Number(i.price),
-      feat: i.feat === null || i.feat === undefined ? null : Number(i.feat),
+      gst: i.gst === null || i.gst === undefined ? null : Number(i.gst),
     }))
     .sort((a, b) => a.position - b.position);
 }
@@ -78,6 +78,10 @@ function attach(orders: Order[], byId: Map<string, Party>): OrderRow[] {
   return orders.map((o) => ({
     ...o,
     items: items(o),
+    ship_to: o.ship_to ?? "",
+    price: o.price === null || o.price === undefined ? null : Number(o.price),
+    additional_amount:
+      o.additional_amount === null || o.additional_amount === undefined ? null : Number(o.additional_amount),
     assignee_ids: o.assignee_ids ?? [],
     dispatcher: byId.get(o.created_by) ?? null,
     assignees: (o.assignee_ids ?? [])

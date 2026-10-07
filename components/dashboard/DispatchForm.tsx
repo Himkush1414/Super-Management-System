@@ -8,7 +8,7 @@ import { Input, Textarea, Label, FormRow } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { DateField } from "@/components/ui/DateField";
 import { cn, formatCurrency } from "@/lib/utils";
-import { MAX_ORDER_ITEMS } from "@/lib/orders";
+import { GST_PERCENT, MAX_ORDER_ITEMS, gstOf } from "@/lib/orders";
 
 type Prod = { id: string; label: string; ready: boolean };
 
@@ -31,8 +31,10 @@ export function DispatchForm({
   // typed in the others; only the values are tracked for the running total.
   const nextKey = useRef(1);
   const [items, setItems] = useState<number[]>([0]);
-  // typed price / FEAT per card, for the product values and the running total
-  const [amounts, setAmounts] = useState<Record<number, { price?: string; feat?: string }>>({});
+  // typed price per card + the Additional Amount, for the GST preview and
+  // the running subtotal (the database recomputes all of it on save)
+  const [prices, setPrices] = useState<Record<number, string>>({});
+  const [additional, setAdditional] = useState("");
   const nameRefs = useRef(new Map<number, HTMLInputElement>());
   const [focusKey, setFocusKey] = useState<number | null>(null);
 
@@ -48,22 +50,31 @@ export function DispatchForm({
   };
   const remove = (key: number) => {
     setItems((prev) => prev.filter((k) => k !== key));
-    setAmounts((prev) => {
+    setPrices((prev) => {
       const next = { ...prev };
       delete next[key];
       return next;
     });
   };
 
-  const setAmount = (key: number, field: "price" | "feat", value: string) =>
-    setAmounts((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
-  /** price + FEAT of one card; null until one of them holds a number */
-  const productValue = (key: number): number | null => {
-    const nums = [amounts[key]?.price, amounts[key]?.feat].filter((v) => v !== undefined && v !== "").map(Number);
-    return nums.length && nums.every(Number.isFinite) ? nums.reduce((a, b) => a + b, 0) : null;
+  const amount = (v: string | undefined): number | null =>
+    v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v);
+  /** one card's price, its GST and price + GST; null until a price is typed */
+  const productAmounts = (key: number) => {
+    const price = amount(prices[key]);
+    if (price === null) return null;
+    const gst = gstOf(price);
+    return { price, gst, total: Math.round((price + gst) * 100) / 100 };
   };
-  const values = items.map(productValue).filter((v): v is number => v !== null);
-  const total = values.length ? values.reduce((a, b) => a + b, 0) : null;
+  const productTotals = items.map((k) => productAmounts(k)?.total).filter((v): v is number => v !== undefined);
+  const productsSum = productTotals.length
+    ? Math.round(productTotals.reduce((a, b) => a + b, 0) * 100) / 100
+    : null;
+  const additionalAmount = amount(additional);
+  const subtotal =
+    productsSum === null && additionalAmount === null
+      ? null
+      : Math.round(((productsSum ?? 0) + (additionalAmount ?? 0)) * 100) / 100;
 
   const toggle = (id: string) =>
     setPicked((prev) => {
@@ -91,11 +102,15 @@ export function DispatchForm({
 
       <fieldset className="space-y-4">
         <legend className="nr-section-label">Order</legend>
+        <FormRow>
+          <Label htmlFor="client_name">Client name</Label>
+          <Input id="client_name" name="client_name" required autoFocus maxLength={200} />
+        </FormRow>
+        <FormRow>
+          <Label htmlFor="ship_to">Ship To</Label>
+          <Textarea id="ship_to" name="ship_to" rows={2} maxLength={2000} />
+        </FormRow>
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormRow>
-            <Label htmlFor="client_name">Client name</Label>
-            <Input id="client_name" name="client_name" required autoFocus maxLength={200} />
-          </FormRow>
           <FormRow>
             <Label htmlFor="expected_delivery">Expected delivery</Label>
             <DateField id="expected_delivery" name="expected_delivery" min={today} />
@@ -170,26 +185,26 @@ export function DispatchForm({
                   <MoneyInput
                     id={`price-${key}`}
                     name="price[]"
-                    onChange={(v) => setAmount(key, "price", v)}
+                    onChange={(v) => setPrices((prev) => ({ ...prev, [key]: v }))}
                   />
                 </FormRow>
                 <FormRow>
-                  <Label htmlFor={`feat-${key}`} hint="extra cost, freight… · hidden from production">
-                    FEAT
-                  </Label>
-                  <MoneyInput
-                    id={`feat-${key}`}
-                    name="feat[]"
-                    onChange={(v) => setAmount(key, "feat", v)}
-                  />
+                  <p className="mb-1.5 text-[13px] font-medium text-text-secondary">
+                    Total incl. {GST_PERCENT}% GST
+                  </p>
+                  <div
+                    className="flex h-9 items-center justify-end rounded-lg border border-border bg-bg-subtle/60 px-3 text-sm font-medium tnum"
+                    aria-live="polite"
+                  >
+                    {formatCurrency(productAmounts(key)?.total)}
+                  </div>
+                  <p className="text-right text-[12px] text-text-tertiary tnum">
+                    {productAmounts(key)
+                      ? `${formatCurrency(productAmounts(key)!.price)} + GST ${formatCurrency(productAmounts(key)!.gst)}`
+                      : `Price + ${GST_PERCENT}% GST`}
+                  </p>
                 </FormRow>
               </div>
-              {productValue(key) !== null && (
-                <p className="-mt-1 text-right text-[12px] text-text-secondary">
-                  Product value (price + FEAT){" "}
-                  <span className="font-medium text-text tnum">{formatCurrency(productValue(key))}</span>
-                </p>
-              )}
               <FormRow>
                 <Label htmlFor={`description-${key}`}>Description</Label>
                 <Textarea
@@ -213,16 +228,41 @@ export function DispatchForm({
           >
             <Plus size={14} /> Add product
           </Button>
-          {items.length >= MAX_ORDER_ITEMS ? (
+          {items.length >= MAX_ORDER_ITEMS && (
             <span className="text-[12px] text-text-tertiary">
               An order can have at most {MAX_ORDER_ITEMS} products.
             </span>
-          ) : items.length > 1 && total !== null ? (
-            <span className="text-[13px] text-text-secondary">
-              Order total <span className="font-medium text-text tnum">{formatCurrency(total)}</span>
-            </span>
-          ) : null}
+          )}
         </div>
+      </fieldset>
+
+      <fieldset className="space-y-3">
+        <legend className="nr-section-label">Amounts</legend>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormRow>
+            <Label htmlFor="additional_amount" hint="no GST · hidden from production">
+              Additional Amount
+            </Label>
+            <MoneyInput id="additional_amount" name="additional_amount" onChange={setAdditional} />
+          </FormRow>
+        </div>
+        <dl className="space-y-1.5 rounded-xl border border-border bg-bg-subtle/40 p-4 text-[13px]">
+          <div className="flex justify-between gap-3">
+            <dt className="text-text-secondary">
+              Products (price + {GST_PERCENT}% GST
+              {items.length > 1 ? `, ${items.length} products` : ""})
+            </dt>
+            <dd className="tnum">{formatCurrency(productsSum)}</dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-text-secondary">Additional Amount added</dt>
+            <dd className="tnum">{additionalAmount === null ? "—" : `+ ${formatCurrency(additionalAmount)}`}</dd>
+          </div>
+          <div className="flex justify-between gap-3 border-t border-border pt-1.5 font-medium">
+            <dt>Order subtotal (incl. {GST_PERCENT}% GST, Additional Amount added)</dt>
+            <dd className="tnum">{formatCurrency(subtotal)}</dd>
+          </div>
+        </dl>
       </fieldset>
 
       <fieldset className="space-y-3">
@@ -301,7 +341,7 @@ export function DispatchForm({
   );
 }
 
-/** ₹-prefixed amount input (price, FEAT). Uncontrolled; reports what's typed. */
+/** ₹-prefixed amount input (price, Additional Amount). Uncontrolled; reports what's typed. */
 function MoneyInput({
   id,
   name,

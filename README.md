@@ -71,14 +71,26 @@ returns every row *except* `head_admin` to admin; only `head_admin` sees
 
 ## 2. The order pipeline
 
-**Punch Order** (`/dashboard/orders/new`, marketing only) — client name and
-expected delivery date once per order, then **one or more products** (up to
-20; *+ Add product* / *Remove*), each with product name, transformer rating,
-quantity, price, **FEAT** (an extra amount on that product — additional cost,
-freight or similar) and description; a product's value = price + FEAT; and **Send to production**: one or more
-*specific* production members (never a broadcast). The order's value is the
-sum of its products' values, FEAT included (a running total shows while
-typing). Button:
+**Punch Order** (`/dashboard/orders/new`, marketing only) — client name,
+**Ship To** (free text, any number of lines) and expected delivery date once
+per order, then **one or more products** (up to 20; *+ Add product* /
+*Remove*), each with product name, transformer rating, quantity, price and
+description; then one **Additional Amount** for the whole order; and **Send
+to production**: one or more *specific* production members (never a
+broadcast).
+
+**Money** (0021): every product gets **18% GST on its price** (never on the
+Additional Amount); product total = price + GST. The **order subtotal** =
+Σ(price + GST) over all products, **then** the Additional Amount added at the
+end. The form, the order page and both order PDFs show it step by step —
+"Products, including 18% GST", "Additional Amount added", "Order subtotal" —
+so the sum can be checked by hand. Amounts show paise only when there are
+any (₹7,500 · ₹1,25,000.50). GST is computed by the database (`gst_of()`,
+rounded to the paisa) when the order is read, so it applies to every order,
+including those punched before 0021. Orders punched before 0021 had a
+per-product **FEAT** amount instead of an Additional Amount; their FEAT
+amounts (kept untouched in `order_items.feat`) are read as their Additional
+Amount. Button:
 *Proceed with product* / *Proceed with N products*. The order, its products,
 its assignees and its first stage event are written in one transaction
 (`create_order()`, which re-validates every product). The whole order moves
@@ -98,8 +110,13 @@ way to actually verify a number without the WhatsApp API) and activates any
 parked orders.
 
 **Stages** (`orders.stage`, 1–5) — any production member assigned to the
-order can advance it, one step at a time (a conditional update stops two
-members double-advancing):
+order can advance it, one step at a time, once the 3-minute stage timer has
+run out (a conditional update stops two members double-advancing).
+**Admin and head_admin** can advance **any** order the same way, with no
+timer, after confirming "Are you sure you want to advance this order to the
+next stage?" (`advance_order_stage` checks the actor's role itself, 0021).
+The order must still be active; production's next advance still waits for
+the timer:
 
 | # | Name |
 |---|---|
@@ -136,18 +153,20 @@ Replace the bodies marked `// TODO(whatsapp):` and set `WHATSAPP_ENABLED = true`
 `profiles` (id, username, full_name, role) · `orders` · `order_items` ·
 `order_assignees` · `order_stage_events` · `production_settings` ·
 `notifications`. Reads go through the `order_feed` view, which nulls `price`
-(the order value = sum of its products) for anyone who isn't admin-tier or the
-marketing account that created the order, lists `assignee_ids`, and carries
-`items` (the products, each price and FEAT nulled by the same rule).
-`orders.price`, `order_items.price` and `order_items.feat` are not selectable
-by API roles at all (0010, 0019, 0020), and
+(the order subtotal = Σ(price + GST) + Additional Amount) and
+`additional_amount` for anyone who isn't admin-tier or the marketing account
+that created the order, lists `assignee_ids`, carries `items` (the products,
+each price and GST nulled by the same rule) and `ship_to` (visible to all).
+`orders.price`, `orders.additional_amount`, `order_items.price` and
+`order_items.feat` are not selectable by API roles at all (0010, 0019–0021), and
 Realtime payloads omit them for the same reason. Since 0019,
 `orders.product_name / transformer_rating / quantity / description` mirror the
 first product (DB functions use product_name as the order's title) and
 `orders.price` holds the total; the app reads products only from `items`.
 
-Production never sees the order value anywhere — page, CSV, list PDF or spec
-sheet PDF all drop the column for that role, not just blank it.
+Production never sees a price, GST, Additional Amount or subtotal anywhere —
+page, CSV, list PDF or spec sheet PDF all drop those columns for that role,
+not just blank them.
 
 Writes to orders / assignees / stage history go only through the server
 actions (service role, session-checked) — there are no direct-write RLS
@@ -159,9 +178,15 @@ drops the old auth/messaging/projects system and rebuilds around orders.
 products per order (`order_items`, every existing order backfilled as a
 one-product order) and keeps the pre-0019 `create_order` signature as a
 one-product wrapper for the deploy window. 0020 adds `order_items.feat`.
+0021 is **additive only** (no existing row is updated): `orders.ship_to`,
+`orders.additional_amount`, GST computed on read, a 7-arg `create_order`
+(the 0020 5-arg and 0019 9-arg versions stay for the deploy window) and the
+admin stage override.
 
-`supabase/scripts/` holds one-off data scripts (not migrations), e.g.
-`clear_test_orders.sql`.
+`supabase/scripts/` holds one-off data scripts (not migrations): per-migration
+`*_verify.sql` / `*_rollback.sql`, `0021_snapshot.sql` (a read-only
+fingerprint of every existing order and product — run before and after a
+migration; the output must match), `clear_test_orders.sql`.
 
 ---
 
@@ -248,10 +273,12 @@ What was causing the lag, and the fix:
 ## 6. PDF and CSV export
 
 - Order detail page → **Download PDF**: an order specification — a ruled
-  Field | Value table, one field per row (client, products, order value,
-  expected delivery date, current stage "Stage 2 of 5", status, production,
-  punched by/on), then a ruled **Products** table (#, product name, rating,
-  qty, price, FEAT, value) with an order-total row. No descriptions in any
+  Field | Value table, one field per row (client, ship to, products, order
+  subtotal, expected delivery date, current stage "Stage 2 of 5", status,
+  production, punched by/on, Additional Amount), then a ruled **Products**
+  table (#, product name, rating, qty, price, GST 18%, total incl. GST) with
+  the three-line breakdown (products incl. GST, Additional Amount added,
+  order subtotal). No descriptions in any
   order PDF — they stay on the order page. Current stage only, no
   history.
 - Orders list → **Download All Orders** (admin and marketing): one PDF with
@@ -260,9 +287,13 @@ What was causing the lag, and the fix:
   time. Rows are grouped — year → months, month → weeks, week → days, all
   time → months — each heading with its count (and value subtotal where the
   viewer may see prices). One row per order; its products sit in a block of
-  ruled lines inside the row (name, rating, qty), the order value column is
-  the order's total (prices + FEATs). `/dashboard/orders/pdf?period=month&at=YYYY-MM-DD`;
-  period logic in `lib/periods.ts`.
+  ruled lines inside the row (name, rating, qty, price, total incl. 18% GST);
+  then the order subtotal, …, punched on, and the Additional Amount. With the
+  money columns the table has 16 columns, so it uses 7pt text, amounts as
+  bare numbers under "(INR)" headers, and `lib/pdf/fit.ts` hyphenates a word
+  too wide for its cell instead of letting it cross the rule.
+  `/dashboard/orders/pdf?period=month&at=YYYY-MM-DD`; period logic in
+  `lib/periods.ts`.
 - Every PDF: a letterhead on each page — the NR Industries logo
   (`lib/pdf/logo.ts`, embedded) and company address on the left, the
   document title and "Generated: <date> <time>" (IST) on the right — and a
@@ -272,8 +303,9 @@ What was causing the lag, and the fix:
   Industries"); the spec sheet puts it at the foot of its last page. The
   account archive has none.
 - Orders list → **Export CSV**: **one row per product** ("Product no." 1 of
-  3…, order fields repeated; Price, FEAT and Value = price + FEAT per product,
-  adding up to the order total, so there's no order-total column); one field per column with the form's labels;
+  3…, order fields repeated; Price, GST and Total incl. GST per product; the
+  Additional Amount and Order subtotal only on each order's first product row,
+  so summing a column never double-counts); one field per column with the form's labels;
   stage number and stage name in separate columns; dates `DD/MM/YYYY`,
   timestamps IST `DD/MM/YYYY HH:MM`; formula-injection safe.
 
@@ -281,7 +313,8 @@ What was causing the lag, and the fix:
 in IST — all through `lib/utils.ts`. The Punch Order form's date field is our
 own (`components/ui/DateField.tsx`): the browser's date input follows the
 device locale (often MM/DD/YYYY) and can't be forced to DD/MM/YYYY.
-- Production never gets an order-value row/column in any of them. Names are
+- Production never gets a price, GST, Additional Amount or subtotal
+  row/column in any of them. Names are
   "Real Name (Production 1)".
 
 Both are plain GET routes (`/dashboard/orders/[id]/pdf`,

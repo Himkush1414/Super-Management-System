@@ -38,13 +38,24 @@ export interface Order {
   created_by: string;
   product_name: string;
   client_name: string;
+  /** Free-text delivery destination (0021); '' when not given. */
+  ship_to: string;
   transformer_rating: string;
   quantity: number;
   /** ISO date (YYYY-MM-DD), or null when not given. */
   expected_delivery: string | null;
   description: string;
-  /** Order value. null when the viewer isn't allowed to see it (production). */
+  /**
+   * Order subtotal = Σ(product price + 18% GST) + Additional Amount (0021).
+   * null when the viewer isn't allowed to see it (production).
+   */
   price: number | null;
+  /**
+   * One extra amount for the whole order, added at the very end — never part
+   * of a product's price or GST (0021; replaces per-product FEAT). Same
+   * visibility as price.
+   */
+  additional_amount: number | null;
   stage: number;
   status: OrderStatus;
   whatsapp_group_created: boolean;
@@ -72,11 +83,8 @@ export interface OrderItem {
   quantity: number;
   /** null when not given, or when the viewer isn't allowed to see it. */
   price: number | null;
-  /**
-   * FEAT — extra amount on this product (additional cost, freight…), added to
-   * its value (0020). Same visibility as price.
-   */
-  feat: number | null;
+  /** 18% GST on this product's price (0021). Same visibility as price. */
+  gst: number | null;
   description: string;
 }
 

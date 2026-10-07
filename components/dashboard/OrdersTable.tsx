@@ -143,7 +143,7 @@ export function OrdersTable({
                   {showAssignees && <TH>Production</TH>}
                   <TH numeric>Qty</TH>
                   <TH>Stage</TH>
-                  {showPrice && <TH numeric>Value</TH>}
+                  {showPrice && <TH numeric>Subtotal</TH>}
                   <TH numeric>Delivery</TH>
                 </TR>
               </THead>

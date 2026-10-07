@@ -26,6 +26,7 @@ export type Permission =
   | "orders.viewAssigned" // see orders assigned to you (production)
   | "orders.viewAll" // see every order (admin tier)
   | "orders.advanceStage" // move an assigned order to the next stage (production)
+  | "orders.overrideStage" // move ANY order to the next stage, no timer (admin tier, after a confirmation)
   | "price.view" // see the price field
   | "production.settings" // register a production phone number
   | "profile.edit" // set your real name (marketing, production)
@@ -39,6 +40,7 @@ type Caps = Partial<Record<Permission, boolean>>;
 const MATRIX: Record<Role, Caps> = {
   head_admin: {
     "orders.viewAll": T,
+    "orders.overrideStage": T,
     "price.view": T,
     "roster.viewAll": T,
     "data.delete": T,
@@ -46,6 +48,7 @@ const MATRIX: Record<Role, Caps> = {
   },
   admin: {
     "orders.viewAll": T,
+    "orders.overrideStage": T,
     "price.view": T,
     "roster.viewAll": T,
     "data.delete": T,

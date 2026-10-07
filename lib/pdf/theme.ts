@@ -7,13 +7,14 @@ Font.registerHyphenationCallback((word) => [word]);
 /**
  * Shared look for every exported PDF. Print-first: white page, the logo's
  * navy for structure, hairline grid rules so every value sits in its own
- * clearly bounded cell. Built-in Helvetica only — it has no ₹ glyph, hence
- * `inr()`.
+ * clearly bounded cell. Every piece of text is Helvetica-Bold in black (or
+ * navy / white on navy) so it prints dark on the office printer, not just on
+ * screen. Built-in Helvetica only — it has no ₹ glyph, hence `inr()`.
  */
 export const C = {
-  ink: "#0B1220",
-  body: "#1F2937",
-  muted: "#6B7280",
+  ink: "#000000",
+  body: "#000000",
+  muted: "#000000",
   rule: "#CBD2DC",
   head: "#EEF2F8",
   zebra: "#F8FAFC",
@@ -45,7 +46,7 @@ export const base = StyleSheet.create({
     paddingHorizontal: 36,
     fontSize: 9.5,
     color: C.body,
-    fontFamily: "Helvetica",
+    fontFamily: "Helvetica-Bold",
     lineHeight: 1.35,
   },
 });

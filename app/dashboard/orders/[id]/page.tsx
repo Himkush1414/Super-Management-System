@@ -27,6 +27,7 @@ import {
   totalQuantity,
 } from "@/lib/orders";
 import { displayName } from "@/lib/names";
+import { perf } from "@/lib/perf";
 import type { Profile } from "@/types/database.types";
 import { formatCurrency, formatDateTime, formatDay } from "@/lib/utils";
 
@@ -46,18 +47,18 @@ export default async function OrderDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const pf = perf("page.order");
   const supabase = await createClient();
   // Everything in one parallel round. production_settings is RLS-scoped
   // (admin tier sees all, production only itself) and only shown to admins.
   const [ctx, order, { data: events }, { data: phones }] = await Promise.all([
-    requireSession(),
-    getOrder(id),
-    supabase
-      .from("order_stage_events")
-      .select("*")
-      .eq("order_id", id)
-      .order("created_at", { ascending: false }),
-    supabase.from("production_settings").select("profile_id, phone, confirmed_at"),
+    pf.time("requireSession", requireSession()),
+    pf.time("getOrder", getOrder(id)),
+    pf.time(
+      "stage_events",
+      supabase.from("order_stage_events").select("*").eq("order_id", id).order("created_at", { ascending: false }),
+    ),
+    pf.time("production_settings", supabase.from("production_settings").select("profile_id, phone, confirmed_at")),
   ]);
   if (!order) notFound();
 
@@ -80,6 +81,7 @@ export default async function OrderDetailPage({
       ? await supabase.from("profiles").select("full_name, real_name, role").eq("id", dispatchEvent.changed_by).maybeSingle()
       : { data: null };
   const reviewing = reviewStatus(order);
+  pf.end({ role: ctx.role });
 
   // Admin tier: which assigned members have a WhatsApp number on file.
   const phoneOf = new Map(

@@ -4,6 +4,7 @@ import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type { Order, OrderItem, Profile } from "@/types/database.types";
 import { displayName } from "@/lib/names";
+import { perf } from "@/lib/perf";
 
 type Party = Pick<Profile, "id" | "username" | "full_name" | "real_name" | "role"> & {
   /** "Real Name (Production 1)" / account label — see lib/names.ts */
@@ -31,13 +32,15 @@ export async function getOrders(
   /** only orders punched in [from, to) — UTC instants (see lib/periods.ts) */
   range?: { from: string; to: string } | null,
 ): Promise<OrderRow[]> {
+  const pf = perf("getOrders");
   const supabase = await createClient();
   let q = supabase.from("order_feed").select("*");
   if (range) q = q.gte("created_at", range.from).lt("created_at", range.to);
   const [{ data: orders }, parties] = await Promise.all([
-    q.order("created_at", { ascending: false }),
-    visibleParties(supabase),
+    pf.time("order_feed", q.order("created_at", { ascending: false })),
+    pf.time("profiles", visibleParties(supabase)),
   ]);
+  pf.end({ rows: orders?.length ?? 0 });
   return attach((orders ?? []) as Order[], parties);
 }
 
@@ -46,11 +49,13 @@ export async function getOrders(
  * the page body — without it every detail render fetched the order twice.
  */
 export const getOrder = cache(async (id: string): Promise<OrderRow | null> => {
+  const pf = perf("getOrder");
   const supabase = await createClient();
   const [{ data }, parties] = await Promise.all([
-    supabase.from("order_feed").select("*").eq("id", id).maybeSingle(),
-    visibleParties(supabase),
+    pf.time("order_feed", supabase.from("order_feed").select("*").eq("id", id).maybeSingle()),
+    pf.time("profiles", visibleParties(supabase)),
   ]);
+  pf.end();
   if (!data) return null;
   return attach([data as Order], parties)[0] ?? null;
 });

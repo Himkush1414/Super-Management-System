@@ -13,6 +13,7 @@ import { OrderStatusBadge } from "@/components/shared/Badge";
 import { formatDay } from "@/lib/utils";
 import { orderTitle, reviewStatus, stageLabel, stageName, totalQuantity } from "@/lib/orders";
 import { cn } from "@/lib/utils";
+import { perf } from "@/lib/perf";
 
 export const metadata = { title: "Orders" };
 
@@ -24,7 +25,13 @@ export default async function OrdersPage({
 }: {
   searchParams: Promise<{ tab?: string }>;
 }) {
-  const [ctx, orders, { tab }] = await Promise.all([requireSession(), getOrders(), searchParams]);
+  const pf = perf("page.orders");
+  const [ctx, orders, { tab }] = await Promise.all([
+    pf.time("requireSession", requireSession()),
+    pf.time("getOrders", getOrders()),
+    searchParams,
+  ]);
+  pf.end({ role: ctx.role, rows: orders.length });
 
   if (ctx.role === "production") return <ProductionView orders={orders} userId={ctx.userId} />;
   if (ctx.can("orders.dispatchReview"))

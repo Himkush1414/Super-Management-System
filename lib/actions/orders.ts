@@ -8,6 +8,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { MAX_ORDER_ITEMS, STAGE_TIMER_MS, orderTitle, stageName } from "@/lib/orders";
 import { createOrderGroup, postStageUpdate } from "@/lib/whatsapp";
 import { titleOf } from "@/lib/data/order-title";
+import { perf } from "@/lib/perf";
 
 export type Result = { error?: string; ok?: string; id?: string };
 
@@ -118,8 +119,9 @@ export async function punchOrder(
   if (!assignees.every((id) => UUID.test(id)))
     return { error: "That production member no longer exists." };
 
+  const pf = perf("action.punchOrder");
   const svc = createServiceClient();
-  const { data, error } = await svc
+  const { data, error } = await pf.time("rpc.create_order", svc
     .rpc("create_order", {
       p_created_by: ctx.userId,
       p_client_name: client_name,
@@ -129,7 +131,8 @@ export async function punchOrder(
       p_additional_amount: additional_amount,
       p_assignees: assignees,
     })
-    .single<{ order_id: string; status: string }>();
+    .single<{ order_id: string; status: string }>());
+  pf.end();
   if (error || !data) {
     // create_order re-validates every product ("product 2: ...") — pass those through.
     const m = /^product (\d+): (.+)$/.exec(error?.message ?? "");
@@ -246,14 +249,16 @@ export async function advanceStage(orderId: string, fromStage: number): Promise<
 
   // One round trip: checks, stage move and history row in one transaction
   // under a row lock (advance_order_stage, migrations 0015 / 0023).
-  const { data: r, error } = await svc
+  const pf = perf("action.advanceStage");
+  const { data: r, error } = await pf.time("rpc.advance_order_stage", svc
     .rpc("advance_order_stage", {
       p_order_id: orderId,
       p_actor: ctx.userId,
       p_from_stage: fromStage,
       p_timer_seconds: Math.round(STAGE_TIMER_MS / 1000),
     })
-    .single<StageMove>();
+    .single<StageMove>());
+  pf.end({ outcome: r?.outcome });
   if (error || !r) return { error: "Could not advance the order. Please try again." };
 
   switch (r.outcome) {
@@ -308,9 +313,11 @@ export async function dispatchToProduction(orderId: string): Promise<Result> {
   if (!UUID.test(orderId)) return { error: "Order not found." };
   const svc = createServiceClient();
 
-  const { data: r, error } = await svc
+  const pf = perf("action.dispatchToProduction");
+  const { data: r, error } = await pf.time("rpc.dispatch_order", svc
     .rpc("dispatch_order", { p_order_id: orderId, p_actor: ctx.userId })
-    .single<StageMove & { by_label: string | null }>();
+    .single<StageMove & { by_label: string | null }>());
+  pf.end({ outcome: r?.outcome });
   if (error || !r) return { error: "Could not dispatch the order. Please try again." };
 
   switch (r.outcome) {
@@ -354,14 +361,16 @@ export async function setStage(orderId: string, fromStage: number, toStage: numb
     return { error: "Order not found." };
   const svc = createServiceClient();
 
-  const { data: r, error } = await svc
+  const pf = perf("action.setStage");
+  const { data: r, error } = await pf.time("rpc.admin_set_order_stage", svc
     .rpc("admin_set_order_stage", {
       p_order_id: orderId,
       p_actor: ctx.userId,
       p_from_stage: fromStage,
       p_to_stage: toStage,
     })
-    .single<StageMove>();
+    .single<StageMove>());
+  pf.end({ outcome: r?.outcome });
   if (error || !r) return { error: "Could not move the order. Please try again." };
 
   switch (r.outcome) {

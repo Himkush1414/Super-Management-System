@@ -61,8 +61,14 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
+  // temporary timing (performance investigation): one log line per check
+  const t0 = performance.now();
+  const log = (step: string, extra: Record<string, unknown>) =>
+    console.log(JSON.stringify({ perf: "proxy", step, path, ms: Math.round(performance.now() - t0), ...extra }));
+
   if (isEntry) {
     const user = await withTimeout(supabase.auth.getUser().then((r) => r.data.user));
+    log("getUser", { user: Boolean(user) });
     return user ? to("/dashboard/orders") : response;
   }
 
@@ -70,6 +76,7 @@ export async function updateSession(request: NextRequest) {
     // Local cookie read; only touches the network when the access token has
     // expired and needs refreshing (the new cookies are written above).
     const session = await withTimeout(supabase.auth.getSession().then((r) => r.data.session));
+    log("getSession", { session: Boolean(session) });
     if (!session) return to("/login");
   }
 

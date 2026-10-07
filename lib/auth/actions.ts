@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { perf } from "@/lib/perf";
 
 export type ActionState = { error?: string } | null;
 
@@ -43,8 +44,9 @@ export async function loginAction(
     return { error: "Incorrect username or PIN." };
   }
 
+  const pf = perf("login");
   const svc = createServiceClient();
-  const { data, error } = await svc
+  const { data, error } = await pf.time("pin_login_attempt", svc
     .rpc("pin_login_attempt", {
       p_username: username,
       p_pin: pin,
@@ -56,7 +58,7 @@ export async function loginAction(
       email: string | null;
       retry_after_seconds: number;
       attempts_left: number;
-    }>();
+    }>());
   if (error || !data) return { error: "Sign-in is unavailable right now. Please try again." };
 
   if (!data.ok) {
@@ -73,21 +75,25 @@ export async function loginAction(
   // has to finish setup (real name; production also phone) — if so it goes
   // straight to Settings instead of bouncing off the orders page.
   const [{ data: link, error: linkErr }, { data: me }] = await Promise.all([
-    svc.auth.admin.generateLink({ type: "magiclink", email: data.email! }),
-    svc
-      .from("profiles")
-      .select("role, real_name, production_settings(phone, confirmed_at)")
-      .eq("id", data.user_id!)
-      .maybeSingle(),
+    pf.time("auth.generateLink", svc.auth.admin.generateLink({ type: "magiclink", email: data.email! })),
+    pf.time(
+      "profile",
+      svc
+        .from("profiles")
+        .select("role, real_name, production_settings(phone, confirmed_at)")
+        .eq("id", data.user_id!)
+        .maybeSingle(),
+    ),
   ]);
   if (linkErr || !link?.properties?.hashed_token) {
     return { error: "Sign-in is unavailable right now. Please try again." };
   }
   const supabase = await createClient();
-  const { error: otpErr } = await supabase.auth.verifyOtp({
+  const { error: otpErr } = await pf.time("auth.verifyOtp", supabase.auth.verifyOtp({
     type: "magiclink",
     token_hash: link.properties.hashed_token,
-  });
+  }));
+  pf.end({ ok: !otpErr });
   if (otpErr) return { error: "Sign-in is unavailable right now. Please try again." };
 
   const ps = (Array.isArray(me?.production_settings) ? me.production_settings[0] : me?.production_settings) as

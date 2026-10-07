@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "@/types/database.types";
 import { type Permission, type Role, can, isAdminTier } from "@/lib/permissions";
 import { displayName } from "@/lib/names";
+import { perf } from "@/lib/perf";
 
 export interface SessionContext {
   userId: string;
@@ -49,6 +50,7 @@ function tokenSubject(jwt: string | undefined): string | null {
  * resolves it once.
  */
 const loadSession = cache(async (): Promise<SessionContext> => {
+  const pf = perf("session");
   const supabase = await createClient();
   const {
     data: { session },
@@ -59,18 +61,25 @@ const loadSession = cache(async (): Promise<SessionContext> => {
   const [user, { data: profile }, { data: settings }] = await Promise.all([
     // Cap the Auth round trip so a slow/unreachable Auth server can't hang
     // every dashboard render (see lib/supabase/middleware.ts).
-    Promise.race([
-      supabase.auth.getUser().then((r) => r.data.user),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-    ]).catch(() => null),
-    supabase.from("profiles").select("*").eq("id", sub).maybeSingle<Profile>(),
+    pf.time(
+      "auth.getUser",
+      Promise.race([
+        supabase.auth.getUser().then((r) => r.data.user),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+      ]).catch(() => null),
+    ),
+    pf.time("profile", supabase.from("profiles").select("*").eq("id", sub).maybeSingle<Profile>()),
     // RLS: production reads its own row; everyone else gets nothing.
-    supabase
-      .from("production_settings")
-      .select("phone, confirmed_at")
-      .eq("profile_id", sub)
-      .maybeSingle<{ phone: string | null; confirmed_at: string | null }>(),
+    pf.time(
+      "production_settings",
+      supabase
+        .from("production_settings")
+        .select("phone, confirmed_at")
+        .eq("profile_id", sub)
+        .maybeSingle<{ phone: string | null; confirmed_at: string | null }>(),
+    ),
   ]);
+  pf.end({ user: Boolean(user) });
 
   if (!user || user.id !== sub || !profile) redirect("/login");
 

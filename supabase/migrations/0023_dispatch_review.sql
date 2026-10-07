@@ -25,9 +25,11 @@
 --     Dispatchers can't use it.
 --   * admin_set_order_stage(): admin / head_admin move an order to ANY stage
 --     (forward, back, skipping) with no timer, dispatch step or status check.
---     As with the admin advance shipped in 0021, a move to Stage 2-4 starts
---     production's timer for their next advance. Moving back to Stage 1 puts
---     the order back to "Start" for the dispatchers.
+--     Admin moves never start the timer: it belongs to production's own
+--     advances only (any running timer is cleared). Moving back to Stage 1
+--     puts the order back to "Start" for the dispatchers.
+--   * advance_order_stage(): its admin branch (kept for the 0021 app build
+--     during the deploy window) no longer starts the timer either.
 -- ============================================================================
 
 begin;
@@ -241,7 +243,8 @@ begin
   v_to := o.stage + 1;
   update public.orders
      set stage = v_to,
-         stage_ready_at = case when v_to < 5 then now() + make_interval(secs => p_timer_seconds) end
+         -- the timer is production's only: an admin advance starts none
+         stage_ready_at = case when v_to < 5 and not v_admin then now() + make_interval(secs => p_timer_seconds) end
    where id = o.id;
 
   insert into public.order_stage_events (order_id, from_stage, to_stage, changed_by)
@@ -254,11 +257,10 @@ grant execute on function public.advance_order_stage(uuid, uuid, smallint, int) 
 
 -- ── 7. admin / head_admin: any stage, no restrictions ──────────────────────
 create or replace function public.admin_set_order_stage(
-  p_order_id      uuid,
-  p_actor         uuid,
-  p_from_stage    smallint,
-  p_to_stage      smallint,
-  p_timer_seconds int
+  p_order_id   uuid,
+  p_actor      uuid,
+  p_from_stage smallint,
+  p_to_stage   smallint
 )
 returns table (
   outcome           text,      -- ok | not_found | not_permitted | invalid | stale
@@ -294,9 +296,8 @@ begin
 
   update public.orders
      set stage = p_to_stage,
-         -- production's next advance waits, as after any 0021 admin advance
-         stage_ready_at = case when p_to_stage between 2 and 4
-                               then now() + make_interval(secs => p_timer_seconds) end,
+         -- admin moves start no timer (and clear a running one)
+         stage_ready_at = null,
          -- back in Stage 1: the dispatchers see it as "Start" again
          review_started_at = case when p_to_stage = 1 then null else review_started_at end,
          review_started_by = case when p_to_stage = 1 then null else review_started_by end
@@ -306,7 +307,7 @@ begin
 
   return query select 'ok'::text, p_to_stage, o.created_by, o.product_name, o.whatsapp_group_id, v_assignees;
 end $$;
-revoke all on function public.admin_set_order_stage(uuid, uuid, smallint, smallint, int) from public, anon, authenticated;
-grant execute on function public.admin_set_order_stage(uuid, uuid, smallint, smallint, int) to service_role;
+revoke all on function public.admin_set_order_stage(uuid, uuid, smallint, smallint) from public, anon, authenticated;
+grant execute on function public.admin_set_order_stage(uuid, uuid, smallint, smallint) to service_role;
 
 commit;

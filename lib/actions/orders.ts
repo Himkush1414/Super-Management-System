@@ -344,8 +344,8 @@ export async function dispatchToProduction(orderId: string): Promise<Result> {
 /**
  * Admin / head_admin: move the order to ANY stage (next, back, or skipping)
  * — no timer, no dispatch step, no status check (admin_set_order_stage,
- * 0023). The UI asks them to confirm every move first. A move to Stage 2-4
- * starts production's timer for their next advance, as in 0021.
+ * 0023). The UI asks them to confirm every move first. The 3-minute timer
+ * is production's only: an admin move starts none and clears a running one.
  */
 export async function setStage(orderId: string, fromStage: number, toStage: number): Promise<Result> {
   const ctx = await requireSession();
@@ -360,7 +360,6 @@ export async function setStage(orderId: string, fromStage: number, toStage: numb
       p_actor: ctx.userId,
       p_from_stage: fromStage,
       p_to_stage: toStage,
-      p_timer_seconds: Math.round(STAGE_TIMER_MS / 1000),
     })
     .single<StageMove>();
   if (error || !r) return { error: "Could not move the order. Please try again." };

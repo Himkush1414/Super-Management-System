@@ -135,9 +135,9 @@ parked orders.
   stage forward or back, on any order (waiting ones too), no timer and no
   dispatch step, after confirming "Are you sure you want to advance this
   order to the next stage?" / "…move this order to Stage N?"
-  (`admin_set_order_stage`, 0023). A move to Stage 2–4 starts production's
-  timer for their next advance; a move back to Stage 1 returns the order to
-  the dispatchers as "Start".
+  (`admin_set_order_stage`, 0023). The 3-minute timer is production's only:
+  an admin move never starts one (and clears a running one). A move back to
+  Stage 1 returns the order to the dispatchers as "Start".
 
 | # | Name |
 |---|---|

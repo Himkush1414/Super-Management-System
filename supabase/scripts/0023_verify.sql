@@ -24,7 +24,7 @@ select check_name, ok from (values
      has_function_privilege('service_role', 'public.dispatch_order(uuid,uuid)', 'EXECUTE')
      and not has_function_privilege('authenticated', 'public.dispatch_order(uuid,uuid)', 'EXECUTE')
      and not has_function_privilege('authenticated', 'public.start_order_review(uuid,uuid)', 'EXECUTE')
-     and not has_function_privilege('authenticated', 'public.admin_set_order_stage(uuid,uuid,smallint,smallint,integer)', 'EXECUTE')
+     and not has_function_privilege('authenticated', 'public.admin_set_order_stage(uuid,uuid,smallint,smallint)', 'EXECUTE')
      and not has_function_privilege('anon', 'public.dispatch_order(uuid,uuid)', 'EXECUTE')),
   ('advance_order_stage still service_role only',
      not has_function_privilege('authenticated', 'public.advance_order_stage(uuid,uuid,smallint,int)', 'EXECUTE')),

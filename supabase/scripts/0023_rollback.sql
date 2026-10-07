@@ -111,7 +111,7 @@ $$;
 
 drop function if exists public.dispatch_order(uuid, uuid);
 drop function if exists public.start_order_review(uuid, uuid);
-drop function if exists public.admin_set_order_stage(uuid, uuid, smallint, smallint, int);
+drop function if exists public.admin_set_order_stage(uuid, uuid, smallint, smallint);
 drop function if exists public.is_dispatcher();
 
 delete from supabase_migrations.schema_migrations where version in ('0022', '0023');

@@ -6,9 +6,12 @@ import { cn } from "@/lib/utils";
 export function StageTracker({
   stage,
   compact = false,
+  status,
 }: {
   stage: number;
   compact?: boolean;
+  /** shown under the current stage — Stage 1's "Start" / "Verification in progress" */
+  status?: string | null;
 }) {
   if (compact) {
     return (
@@ -73,6 +76,9 @@ export function StageTracker({
               >
                 {s.name}
               </p>
+              {current && status && (
+                <p className="mt-0.5 text-[12px] text-accent">{status}</p>
+              )}
             </div>
           </li>
         );

@@ -2,7 +2,7 @@ import { requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/shared/Page";
 import { Card, CardBody } from "@/components/ui/Card";
-import { DispatchForm } from "@/components/dashboard/DispatchForm";
+import { PunchOrderForm } from "@/components/dashboard/PunchOrderForm";
 import { displayName } from "@/lib/names";
 import type { Profile } from "@/types/database.types";
 
@@ -46,7 +46,7 @@ export default async function NewOrderPage() {
       />
       <Card className="max-w-3xl">
         <CardBody>
-          <DispatchForm production={production} today={todayInIndia()} />
+          <PunchOrderForm production={production} today={todayInIndia()} />
         </CardBody>
       </Card>
     </>

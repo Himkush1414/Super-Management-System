@@ -1,6 +1,6 @@
 /**
  * Calendar periods for the bulk orders PDF — weeks (Monday–Sunday), months,
- * years — all in IST, by the order's DISPATCH date. Pure functions shared by
+ * years — all in IST, by the order's PUNCH date. Pure functions shared by
  * the period picker (client) and the PDF route (server), so both always
  * agree on what "this week" contains.
  */

@@ -14,7 +14,7 @@ export function SettingsForm({
   phone,
   phoneConfirmed,
 }: {
-  role: "marketing" | "production";
+  role: "marketing" | "production" | "dispatcher";
   accountLabel: string;
   realName: string | null;
   phone: string | null;

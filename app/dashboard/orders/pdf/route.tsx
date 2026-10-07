@@ -9,7 +9,7 @@ const KINDS: PeriodKind[] = ["all", "week", "month", "year"];
 
 /**
  * "Download All Orders": every order the caller may see (RLS), optionally
- * limited to the week / month / year containing `at` (by dispatch date, IST),
+ * limited to the week / month / year containing `at` (by punch date, IST),
  * grouped into sections (year→months, month→weeks, week→days, all→months).
  * The order-value column, totals and subtotals exist only for roles with
  * price.view — never for production.
@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     <OrdersReport
       orders={ordered}
       groups={groups}
-      showDispatcher={ctx.isAdminTier}
+      showPuncher={ctx.isAdminTier || ctx.can("orders.dispatchReview")}
       showAssignees={ctx.role !== "production"}
       // Production never gets a value column, total or subtotal.
       showPrice={ctx.can("price.view")}

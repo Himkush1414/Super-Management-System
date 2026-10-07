@@ -31,7 +31,9 @@ begin
       ('production1', '<6-DIGIT-PIN>', 'production', 'Production 1'),
       ('production2', '<6-DIGIT-PIN>', 'production', 'Production 2'),
       ('production3', '<6-DIGIT-PIN>', 'production', 'Production 3'),
-      ('production4', '<6-DIGIT-PIN>', 'production', 'Production 4')
+      ('production4', '<6-DIGIT-PIN>', 'production', 'Production 4'),
+      ('dispatcher1', '<6-DIGIT-PIN>', 'dispatcher', 'Dispatcher 1'),
+      ('dispatcher2', '<6-DIGIT-PIN>', 'dispatcher', 'Dispatcher 2')
     ) as t(username, pin, role, full_name)
   loop
     uid := gen_random_uuid();

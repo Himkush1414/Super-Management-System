@@ -14,7 +14,7 @@ export interface SessionContext {
   name: string;
   /**
    * What this account still has to provide before it can use the app:
-   * marketing -> real name; production -> real name + phone. Empty = ready.
+   * marketing / dispatcher -> real name; production -> real name + phone. Empty = ready.
    */
   missingSetup: ("real_name" | "phone")[];
   profile: Profile;
@@ -76,7 +76,7 @@ const loadSession = cache(async (): Promise<SessionContext> => {
 
   const role = profile.role as Role;
   const missingSetup: SessionContext["missingSetup"] = [];
-  if ((role === "marketing" || role === "production") && !profile.real_name) {
+  if ((role === "marketing" || role === "production" || role === "dispatcher") && !profile.real_name) {
     missingSetup.push("real_name");
   }
   if (role === "production" && !(settings?.phone && settings.confirmed_at)) {

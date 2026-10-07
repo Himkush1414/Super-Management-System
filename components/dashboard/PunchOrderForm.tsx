@@ -2,7 +2,7 @@
 
 import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { Check, Phone, PhoneOff, Plus, X } from "lucide-react";
-import { dispatchOrder, type Result } from "@/lib/actions/orders";
+import { punchOrder, type Result } from "@/lib/actions/orders";
 import { FormAlert } from "@/components/shared/FormAlert";
 import { Input, Textarea, Label, FormRow } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
@@ -12,7 +12,7 @@ import { GST_PERCENT, MAX_ORDER_ITEMS, gstOf } from "@/lib/orders";
 
 type Prod = { id: string; label: string; ready: boolean };
 
-export function DispatchForm({
+export function PunchOrderForm({
   production,
   today,
 }: {
@@ -21,7 +21,7 @@ export function DispatchForm({
   today: string;
 }) {
   const [state, action, pending] = useActionState<Result | null, FormData>(
-    dispatchOrder,
+    punchOrder,
     null,
   );
   const [picked, setPicked] = useState<Set<string>>(new Set());

@@ -1,7 +1,8 @@
 # NR Industries — internal order system
 
-Marketing punches production orders; production advances them through five
-stages; administrators oversee everything. Next.js 16 (App Router, Turbopack) +
+Marketing punches production orders; a dispatcher reviews each one and
+dispatches it to production, which advances it through the remaining stages
+(five in all); administrators oversee everything. Next.js 16 (App Router, Turbopack) +
 Supabase (Postgres + Auth + RLS).
 
 ---
@@ -9,7 +10,7 @@ Supabase (Postgres + Auth + RLS).
 ## 1. Accounts — fixed, no self-registration
 
 There is **no sign-up, no OTP, no password recovery, no landing page.** The app
-opens directly on a **username + 6-digit PIN** screen. Ten accounts exist,
+opens directly on a **username + 6-digit PIN** screen. Twelve accounts exist,
 seeded by `supabase/seed.sql` (gitignored; template `seed.sql.example`) and
 nothing else — Supabase Auth sign-ups are refused in the database
 (`handle_new_user()`, migration 0014), whatever the project's sign-up setting:
@@ -20,6 +21,12 @@ nothing else — Supabase Auth sign-ups are refused in the database
 | `admin` | admin | every order + all production activity, incl. price. Believes it is the top level. |
 | `marketing1`…`marketing4` | marketing | **only their own** punched orders (incl. price) |
 | `production1`…`production4` | production | **only orders assigned to them**. Never price. |
+| `dispatcher1`, `dispatcher2` | dispatcher | **every order** (each goes to both), never price; dispatches Stage 1 orders to production (0022/0023) |
+
+The dispatcher accounts were added to the live project by
+`supabase/hosted-dispatchers.sql` (gitignored, holds their PINs); locally
+they are in `seed.sql`. Like marketing and production they must add a real
+name before using the app.
 
 Login field is the **username**. Supabase Auth needs an email internally, so
 each account is stored as `<username>@nr.local` in `auth.users` — that address is
@@ -109,18 +116,32 @@ phone number for WhatsApp order groups. Saving sets `confirmed_at` (there is no
 way to actually verify a number without the WhatsApp API) and activates any
 parked orders.
 
-**Stages** (`orders.stage`, 1–5) — any production member assigned to the
-order can advance it, one step at a time, once the 3-minute stage timer has
-run out (a conditional update stops two members double-advancing).
-**Admin and head_admin** can advance **any** order the same way, with no
-timer, after confirming "Are you sure you want to advance this order to the
-next stage?" (`advance_order_stage` checks the actor's role itself, 0021).
-The order must still be active; production's next advance still waits for
-the timer:
+**Stages** (`orders.stage`, 1–5):
+
+- **Stage 1 — Dispatch review** belongs to the dispatchers. Every new order
+  lands in both dispatchers' *To dispatch* queue (and in the assigned
+  production members' list, read-only). Inside Stage 1 it shows **Start**
+  until a dispatcher opens it, then **Verification in progress** (with the
+  dispatcher's name, for admins and dispatchers). **Dispatch to production**
+  (with a confirmation) moves it to Stage 2 — only once every assigned
+  production member has a phone linked; a waiting order can be reviewed but
+  not dispatched. The first dispatcher wins; the other gets "already
+  dispatched by …". Dispatching starts no timer.
+- **Stages 2 → 5:** any production member assigned to the order advances it,
+  one step at a time, once the 3-minute stage timer has run out (a
+  conditional update stops two members double-advancing). Production can't
+  move an order out of Stage 1 (`awaiting_dispatch`).
+- **Admin and head_admin** have no restrictions: next stage, or any other
+  stage forward or back, on any order (waiting ones too), no timer and no
+  dispatch step, after confirming "Are you sure you want to advance this
+  order to the next stage?" / "…move this order to Stage N?"
+  (`admin_set_order_stage`, 0023). A move to Stage 2–4 starts production's
+  timer for their next advance; a move back to Stage 1 returns the order to
+  the dispatchers as "Start".
 
 | # | Name |
 |---|---|
-| 1 | Start |
+| 1 | Dispatch review |
 | 2 | Mid |
 | 3 | Testing |
 | 4 | End of Production |
@@ -181,7 +202,12 @@ one-product wrapper for the deploy window. 0020 adds `order_items.feat`.
 0021 is **additive only** (no existing row is updated): `orders.ship_to`,
 `orders.additional_amount`, GST computed on read, a 7-arg `create_order`
 (the 0020 5-arg and 0019 9-arg versions stay for the deploy window) and the
-admin stage override.
+admin stage override. 0022 adds the `dispatcher` role; 0023 (additive) adds
+the dispatch step: `orders.review_started_at/_by`, dispatcher read policies,
+`start_order_review()`, `dispatch_order()`, `admin_set_order_stage()`, and
+production locked out of Stage 1. Orders already at Stage 1 when it went live
+were moved to Stage 2 by the one-off `scripts/0023_move_stage1_orders.sql`
+(except those whose production member had no phone linked).
 
 `supabase/scripts/` holds one-off data scripts (not migrations): per-migration
 `*_verify.sql` / `*_rollback.sql`, `0021_snapshot.sql` (a read-only

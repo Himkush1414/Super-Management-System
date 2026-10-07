@@ -4,7 +4,7 @@ import type { OrderItem } from "@/types/database.types";
 import {
   GST_PERCENT,
   MAX_STAGE,
-  stageName,
+  stageLabel,
   ORDER_STATUS_LABEL,
   itemTotal,
   orderAmounts,
@@ -66,13 +66,13 @@ type PCol = { key: string; label: string; width: number; align?: "right" | "cent
 export function OrderSpecSheet({
   order,
   showPrice,
-  showDispatcher,
+  showPuncher,
   showAssignees,
   generatedAt,
 }: {
   order: OrderRow;
   showPrice: boolean;
-  showDispatcher: boolean;
+  showPuncher: boolean;
   showAssignees: boolean;
   generatedAt: Date;
 }) {
@@ -84,13 +84,13 @@ export function OrderSpecSheet({
     ["Products", `${order.items.length} (${units} unit${units === 1 ? "" : "s"})`],
     ...(showPrice ? ([["Order subtotal", inr(amounts.subtotal)]] as [string, string][]) : []),
     ["Expected delivery date", formatDay(order.expected_delivery)],
-    ["Current stage", `Stage ${order.stage} of ${MAX_STAGE} — ${stageName(order.stage)}`],
+    ["Current stage", `Stage ${order.stage} of ${MAX_STAGE} — ${stageLabel(order)}`],
     ["Status", ORDER_STATUS_LABEL[order.status] ?? order.status],
     ...(showAssignees
       ? ([["Production", order.assignees.map((a) => a.label).join(", ") || "—"]] as [string, string][])
       : []),
-    ...(showDispatcher
-      ? ([["Punched by", order.dispatcher?.label ?? "—"]] as [string, string][])
+    ...(showPuncher
+      ? ([["Punched by", order.puncher?.label ?? "—"]] as [string, string][])
       : []),
     ["Punched on", formatDateTime(order.created_at)],
     ...(showPrice ? ([["Additional Amount", inr(amounts.additional)]] as [string, string][]) : []),

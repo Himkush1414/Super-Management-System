@@ -11,7 +11,7 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export type UserRole = "head_admin" | "admin" | "marketing" | "production";
+export type UserRole = "head_admin" | "admin" | "marketing" | "production" | "dispatcher";
 
 export type OrderStatus = "active" | "waiting_on_production_phone";
 
@@ -64,6 +64,12 @@ export interface Order {
   updated_at: string;
   /** When the assigned production account may advance to the next stage; null = may advance now. */
   stage_ready_at: string | null;
+  /**
+   * Stage 1 (Dispatch review): when / which dispatcher first opened the order
+   * ("Verification in progress"); null = "Start" (0023).
+   */
+  review_started_at: string | null;
+  review_started_by: string | null;
   /** Production members this order was sent to (order_feed only). */
   assignee_ids: string[];
   /**

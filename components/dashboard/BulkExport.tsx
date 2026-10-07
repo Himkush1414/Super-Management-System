@@ -16,16 +16,16 @@ const KINDS: { kind: PeriodKind; label: string }[] = [
 
 /**
  * "Download All Orders": one PDF with a table of every order the viewer can
- * see, for a chosen week / month / year (by dispatch date, IST) or all time.
+ * see, for a chosen week / month / year (by punch date, IST) or all time.
  * The PDF route applies the price rule; this only builds the link.
  */
 export function BulkExport({
-  dispatchedAt,
+  punchedAt,
   today,
   className,
 }: {
   /** created_at of every order the viewer can see */
-  dispatchedAt: string[];
+  punchedAt: string[];
   /** today in IST, YYYY-MM-DD (from the server, so it can't drift) */
   today: string;
   className?: string;
@@ -37,7 +37,7 @@ export function BulkExport({
   const options = useMemo(() => {
     if (kind === "all") return [];
     const current = periodContaining(kind, today);
-    const withOrders = periodsWithOrders(kind, dispatchedAt);
+    const withOrders = periodsWithOrders(kind, punchedAt);
     const list = withOrders.some((p) => p.period.start === current.start)
       ? withOrders
       : [{ period: current, count: 0 }, ...withOrders];
@@ -48,11 +48,11 @@ export function BulkExport({
         `${period.label} (${count} order${count === 1 ? "" : "s"})`,
       count,
     }));
-  }, [kind, dispatchedAt, today]);
+  }, [kind, punchedAt, today]);
 
   const chosen = kind === "all" ? null : (options.find((o) => o.start === start) ?? options[0]);
   const count =
-    kind === "all" ? dispatchedAt.length : (chosen?.count ?? 0);
+    kind === "all" ? punchedAt.length : (chosen?.count ?? 0);
   const href =
     kind === "all"
       ? "/dashboard/orders/pdf?period=all"

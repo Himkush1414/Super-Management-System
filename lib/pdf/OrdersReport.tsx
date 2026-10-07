@@ -1,7 +1,7 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { OrderRow } from "@/lib/data/orders";
 import type { OrderItem } from "@/types/database.types";
-import { GST_PERCENT, MAX_STAGE, stageName, ORDER_STATUS_LABEL, itemTotal, orderAmounts } from "@/lib/orders";
+import { GST_PERCENT, MAX_STAGE, stageLabel, ORDER_STATUS_LABEL, itemTotal, orderAmounts } from "@/lib/orders";
 import { formatDate, formatDay } from "@/lib/utils";
 import { C, amount, base, inr } from "./theme";
 import { PdfHeader, PdfFooter, PdfSignature } from "./Chrome";
@@ -95,7 +95,7 @@ const shipTo = (o: OrderRow) =>
 export function OrdersReport({
   orders,
   groups,
-  showDispatcher,
+  showPuncher,
   showAssignees,
   showPrice,
   scopeLabel,
@@ -105,7 +105,7 @@ export function OrdersReport({
   orders: OrderRow[];
   /** sections in display order; each order belongs to exactly one */
   groups?: { heading: string; orders: OrderRow[] }[];
-  showDispatcher: boolean;
+  showPuncher: boolean;
   showAssignees: boolean;
   showPrice: boolean;
   scopeLabel: string;
@@ -156,14 +156,14 @@ export function OrdersReport({
       label: "Current stage",
       width: W(46, 66),
       cell: (o) => `Stage ${o.stage} of ${MAX_STAGE}`,
-      sub: (o) => stageName(o.stage),
+      sub: (o) => stageLabel(o),
     },
     { key: "status", label: "Status", width: W(42, 52), cell: (o) => (o.status === "active" ? "Active" : ORDER_STATUS_LABEL[o.status] ?? o.status) },
     ...(showAssignees
       ? [{ key: "prod", label: "Production", width: 50, cell: (o: OrderRow) => o.assignees.map((a) => a.label).join(", ") || "—" }]
       : []),
-    ...(showDispatcher
-      ? [{ key: "by", label: "Punched by", width: 46, cell: (o: OrderRow) => o.dispatcher?.label ?? "—" }]
+    ...(showPuncher
+      ? [{ key: "by", label: "Punched by", width: 46, cell: (o: OrderRow) => o.puncher?.label ?? "—" }]
       : []),
     { key: "date", label: "Punched on", width: W(44, 62), cell: (o) => formatDate(o.created_at) },
     ...(showPrice

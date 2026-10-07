@@ -10,10 +10,24 @@ import { Button } from "@/components/ui/Button";
 import { OrderStatusBadge, WhatsAppBadge } from "@/components/shared/Badge";
 import { StageTracker } from "@/components/dashboard/StageTracker";
 import { StageControl } from "@/components/dashboard/StageControl";
+import { AdminStageControl } from "@/components/dashboard/AdminStageControl";
+import { DispatchControl } from "@/components/dashboard/DispatchControl";
 import { StageTimerBar } from "@/components/dashboard/StageTimerBar";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
 import { DeleteButton } from "@/components/dashboard/DeleteButton";
-import { GST_PERCENT, MAX_STAGE, itemTotal, orderAmounts, orderTitle, stageName, totalQuantity } from "@/lib/orders";
+import {
+  GST_PERCENT,
+  MAX_STAGE,
+  itemTotal,
+  orderAmounts,
+  orderTitle,
+  reviewStatus,
+  stageLabel,
+  stageName,
+  totalQuantity,
+} from "@/lib/orders";
+import { displayName } from "@/lib/names";
+import type { Profile } from "@/types/database.types";
 import { formatCurrency, formatDateTime, formatDay } from "@/lib/utils";
 
 export async function generateMetadata({
@@ -51,11 +65,21 @@ export default async function OrderDetailPage({
     ctx.role === "production" && order.assignee_ids.includes(ctx.userId);
   // Price follows the role rule, not "whatever the row happened to carry".
   const canSeePrice = ctx.can("price.view");
-  const showDispatcher = ctx.isAdminTier;
+  const isDispatcher = ctx.can("orders.dispatchReview");
+  const showPuncher = ctx.isAdminTier || isDispatcher;
   const showAssignees = ctx.role !== "production";
-  // Admin tier advances any order, without the timer, after confirming.
+  // Admin tier moves any order to any stage, without the timer, after confirming.
   const canOverrideStage = ctx.can("orders.overrideStage");
   const amounts = orderAmounts(order);
+
+  // Who dispatched it (Stage 1 -> 2), for the dispatchers' view. The name only
+  // resolves where the viewer's profile RLS allows it.
+  const dispatchEvent = (events ?? []).find((e) => e.from_stage === 1 && e.to_stage === 2);
+  const { data: dispatchedByProfile } =
+    isDispatcher && dispatchEvent?.changed_by
+      ? await supabase.from("profiles").select("full_name, real_name, role").eq("id", dispatchEvent.changed_by).maybeSingle()
+      : { data: null };
+  const reviewing = reviewStatus(order);
 
   // Admin tier: which assigned members have a WhatsApp number on file.
   const phoneOf = new Map(
@@ -81,7 +105,7 @@ export default async function OrderDetailPage({
         <ArrowLeft size={14} /> Orders
       </Link>
 
-      {isAssignedProduction && order.status === "active" && order.stage < MAX_STAGE && (
+      {isAssignedProduction && order.status === "active" && order.stage > 1 && order.stage < MAX_STAGE && (
         <StageTimerBar stageReadyAt={order.stage_ready_at} nextStage={order.stage + 1} />
       )}
 
@@ -127,8 +151,8 @@ export default async function OrderDetailPage({
                   value={`${order.items.length} · ${totalQuantity(order)} unit${totalQuantity(order) === 1 ? "" : "s"}`}
                 />
                 <Field label="Punched" value={formatDateTime(order.created_at)} />
-                {showDispatcher && (
-                  <Field label="Punched by" value={order.dispatcher?.label ?? "—"} />
+                {showPuncher && (
+                  <Field label="Punched by" value={order.puncher?.label ?? "—"} />
                 )}
                 {showAssignees && (
                   <Field
@@ -194,21 +218,36 @@ export default async function OrderDetailPage({
           <Card>
             <CardHeader
               title="Progress"
-              description={`Currently Stage ${order.stage} — ${stageName(order.stage)}`}
+              description={`Currently Stage ${order.stage} — ${stageLabel(order)}${
+                reviewing && order.reviewer ? ` (${order.reviewer.label})` : ""
+              }`}
             />
             <CardBody className="grid gap-6 sm:grid-cols-[1fr_auto] sm:items-start">
-              <StageTracker stage={order.stage} />
-              {(isAssignedProduction || canOverrideStage) && (
+              <StageTracker stage={order.stage} status={reviewing} />
+              {canOverrideStage ? (
+                <div className="rounded-lg border border-border bg-bg-subtle p-4">
+                  <AdminStageControl orderId={order.id} stage={order.stage} />
+                </div>
+              ) : isDispatcher ? (
+                <div className="rounded-lg border border-border bg-bg-subtle p-4">
+                  <DispatchControl
+                    orderId={order.id}
+                    stage={order.stage}
+                    waiting={order.status === "waiting_on_production_phone"}
+                    reviewStarted={Boolean(order.review_started_at)}
+                    dispatchedBy={dispatchedByProfile ? displayName(dispatchedByProfile as Profile) : null}
+                  />
+                </div>
+              ) : isAssignedProduction ? (
                 <div className="rounded-lg border border-border bg-bg-subtle p-4">
                   <StageControl
                     orderId={order.id}
                     stage={order.stage}
                     waiting={order.status === "waiting_on_production_phone"}
                     stageReadyAt={order.stage_ready_at}
-                    override={canOverrideStage}
                   />
                 </div>
-              )}
+              ) : null}
             </CardBody>
           </Card>
         </div>
@@ -251,8 +290,17 @@ export default async function OrderDetailPage({
                       <p className="text-text">
                         {e.from_stage === null
                           ? "Order punched"
-                          : `Stage ${e.to_stage} — ${stageName(e.to_stage)}`}
+                          : e.from_stage === 1 && e.to_stage === 2 && e.changed_by
+                            ? `Dispatched to production — Stage 2 — ${stageName(2)}`
+                            : e.to_stage < e.from_stage
+                              ? `Moved back to Stage ${e.to_stage} — ${stageName(e.to_stage)}`
+                              : `Stage ${e.to_stage} — ${stageName(e.to_stage)}`}
                       </p>
+                      {e.from_stage === 1 && e.to_stage === 2 && !e.changed_by && (
+                        <p className="text-[12px] text-text-tertiary">
+                          Punched before Dispatch review existed — moved on when it went live
+                        </p>
+                      )}
                       <p className="text-[12px] text-text-tertiary">
                         {formatDateTime(e.created_at)}
                       </p>
@@ -277,7 +325,7 @@ export default async function OrderDetailPage({
                   redirectTo="/dashboard/orders"
                   lines={[
                     [order.client_name, `${order.items.length} product${order.items.length === 1 ? "" : "s"}`, `Qty ${totalQuantity(order)}`].filter(Boolean).join(" · "),
-                    `Punched by ${order.dispatcher?.label ?? "—"} · Stage ${order.stage} — ${stageName(order.stage)}`,
+                    `Punched by ${order.puncher?.label ?? "—"} · Stage ${order.stage} — ${stageLabel(order)}`,
                   ]}
                 />
               </CardBody>

@@ -13,24 +13,18 @@ export function StageControl({
   stage,
   waiting,
   stageReadyAt,
-  override = false,
 }: {
   orderId: string;
   stage: number;
   waiting: boolean;
   /** Null once the post-confirmation timer has elapsed (or never started). */
   stageReadyAt: string | null;
-  /**
-   * Admin tier: advance any order with no timer, behind an explicit
-   * "Are you sure?" confirmation. Production's flow is unchanged.
-   */
-  override?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [state, setState] = useState<{ error?: string; ok?: string } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const target = !waiting && !override && stageReadyAt ? new Date(stageReadyAt).getTime() : null;
+  const target = !waiting && stageReadyAt ? new Date(stageReadyAt).getTime() : null;
 
   // `now` starts correct via the lazy useState initializer (runs once, on
   // mount) and afterwards is only ever updated from the interval callback —
@@ -44,21 +38,23 @@ export function StageControl({
 
   const counting = Boolean(target && target > now);
 
-  if (waiting && override) {
-    return (
-      <p className="text-[13px] text-text-secondary">
-        This order is waiting on a production phone number. It can be advanced once every
-        assigned production member has registered one.
-      </p>
-    );
-  }
-
   if (waiting) {
     return (
       <p className="text-[13px] text-text-secondary">
         This order starts once every assigned production member has registered a
         phone number. If you haven&apos;t yet, add yours in{" "}
         <span className="font-medium text-text">Settings</span>.
+      </p>
+    );
+  }
+
+  // Stage 1 is the dispatchers' review; production starts at Stage 2.
+  if (stage === 1) {
+    return (
+      <p className="text-[13px] text-text-secondary">
+        This order is in <span className="font-medium text-text">Dispatch review</span>. A
+        dispatcher checks the product details and dispatches it to production — then you can
+        start work on it.
       </p>
     );
   }
@@ -99,24 +95,14 @@ export function StageControl({
         <ArrowRight size={15} />
       </Button>
       <p className="text-[12px] text-text-tertiary">
-        {override
-          ? "Admin override: no timer. Marketing and production are notified."
-          : "Marketing is notified on every stage change."}
+        Marketing is notified on every stage change.
       </p>
 
       <Modal
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
-        title={
-          override
-            ? "Are you sure you want to advance this order to the next stage?"
-            : "Move to the next step?"
-        }
-        description={
-          override
-            ? `It moves from Stage ${stage} — ${stageName(stage)} to Stage ${next} — ${stageName(next)} right away.`
-            : `Stage ${next} — ${stageName(next)} starts right away. After that, the following stage opens after 3 minutes.`
-        }
+        title="Move to the next step?"
+        description={`Stage ${next} — ${stageName(next)} starts right away. After that, the following stage opens after 3 minutes.`}
       >
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button

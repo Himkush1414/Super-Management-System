@@ -95,7 +95,7 @@ export async function loginAction(
     | null
     | undefined;
   const needsSetup =
-    (me?.role === "marketing" || me?.role === "production") &&
+    (me?.role === "marketing" || me?.role === "production" || me?.role === "dispatcher") &&
     (!me.real_name || (me.role === "production" && !(ps?.phone && ps.confirmed_at)));
   redirect(needsSetup ? "/dashboard/settings" : "/dashboard/orders");
 }

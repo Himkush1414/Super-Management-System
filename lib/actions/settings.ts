@@ -12,7 +12,7 @@ import { titleOf } from "@/lib/data/order-title";
 export type Result = { error?: string; ok?: string };
 
 /**
- * Marketing / production account setup: the real name (both roles) and, for
+ * Marketing / production / dispatcher account setup: the real name (all three) and, for
  * production, the WhatsApp phone number. Profiles aren't writable through the
  * API (0014), so this goes through the service role after the session check.
  *
@@ -23,7 +23,8 @@ export type Result = { error?: string; ok?: string };
  */
 export async function saveSettings(_prev: Result | null, fd: FormData): Promise<Result> {
   const ctx = await requireSession({ allowIncompleteSetup: true });
-  if (ctx.role !== "marketing" && ctx.role !== "production") return { error: "Not permitted." };
+  if (ctx.role !== "marketing" && ctx.role !== "production" && ctx.role !== "dispatcher")
+    return { error: "Not permitted." };
   const svc = createServiceClient();
 
   const realName = cleanRealName(String(fd.get("real_name") ?? ""));

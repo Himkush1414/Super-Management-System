@@ -8,7 +8,7 @@ import { Table, THead, TR, TH, TD } from "@/components/ui/Table";
 import { Input, Select } from "@/components/ui/Field";
 import { StageBadge, OrderStatusBadge } from "@/components/shared/Badge";
 import { StageTracker } from "@/components/dashboard/StageTracker";
-import { STAGES, orderTitle, totalQuantity } from "@/lib/orders";
+import { STAGES, orderTitle, reviewStatus, totalQuantity } from "@/lib/orders";
 import { formatCurrency, formatDate, formatDay } from "@/lib/utils";
 
 const STAGE_FILTER_ALL = "all";
@@ -23,12 +23,12 @@ const subline = (o: OrderRow) =>
 
 export function OrdersTable({
   orders,
-  showDispatcher,
+  showPuncher,
   showAssignees = true,
   showPrice,
 }: {
   orders: OrderRow[];
-  showDispatcher: boolean;
+  showPuncher: boolean;
   showAssignees?: boolean;
   showPrice: boolean;
 }) {
@@ -45,7 +45,7 @@ export function OrdersTable({
       return [
         ...o.items.flatMap((i) => [i.product_name, i.transformer_rating]),
         o.client_name,
-        o.dispatcher?.label,
+        o.puncher?.label,
         names(o),
         o.status,
       ]
@@ -139,7 +139,7 @@ export function OrdersTable({
               <THead>
                 <TR>
                   <TH>Product</TH>
-                  {showDispatcher && <TH className="whitespace-nowrap">Punched by</TH>}
+                  {showPuncher && <TH className="whitespace-nowrap">Punched by</TH>}
                   {showAssignees && <TH>Production</TH>}
                   <TH numeric>Qty</TH>
                   <TH>Stage</TH>
@@ -164,9 +164,9 @@ export function OrdersTable({
                         )}
                       </span>
                     </TD>
-                    {showDispatcher && (
+                    {showPuncher && (
                       <TD className="whitespace-nowrap text-text-secondary">
-                        {o.dispatcher?.label ?? "—"}
+                        {o.puncher?.label ?? "—"}
                       </TD>
                     )}
                     {showAssignees && (
@@ -177,6 +177,9 @@ export function OrdersTable({
                     <TD numeric>{totalQuantity(o)}</TD>
                     <TD>
                       <StageBadge stage={o.stage} />
+                      {reviewStatus(o) && (
+                        <span className="mt-1 block text-[11px] text-text-tertiary">{reviewStatus(o)}</span>
+                      )}
                     </TD>
                     {showPrice && <TD numeric className="whitespace-nowrap font-medium">{formatCurrency(o.price)}</TD>}
                     <TD numeric className="whitespace-nowrap text-text-secondary">

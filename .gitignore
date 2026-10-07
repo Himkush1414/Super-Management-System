@@ -48,6 +48,7 @@ supabase/.env
 supabase/seed.sql
 supabase/hosted-bootstrap.sql
 supabase/hosted-pins.sql
+supabase/hosted-dispatchers.sql
 
 # typescript
 *.tsbuildinfo

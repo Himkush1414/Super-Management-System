@@ -12,7 +12,8 @@ export const metadata = { title: "Settings" };
 export default async function SettingsPage() {
   // The one page an account mid-setup may open.
   const ctx = await requireSession({ allowIncompleteSetup: true });
-  if (ctx.role !== "marketing" && ctx.role !== "production") redirect("/dashboard/orders");
+  if (ctx.role !== "marketing" && ctx.role !== "production" && ctx.role !== "dispatcher")
+    redirect("/dashboard/orders");
   const isProduction = ctx.role === "production";
 
   const { data } = isProduction
@@ -33,7 +34,9 @@ export default async function SettingsPage() {
           settingUp
             ? isProduction
               ? "Add your real name and WhatsApp number to start working on orders."
-              : "Add your real name to start punching orders."
+              : ctx.role === "dispatcher"
+                ? "Add your real name to start reviewing orders."
+                : "Add your real name to start punching orders."
             : "Your details as they appear to the rest of the team."
         }
       />
@@ -44,7 +47,7 @@ export default async function SettingsPage() {
         />
         <CardBody>
           <SettingsForm
-            role={ctx.role as "marketing" | "production"}
+            role={ctx.role as "marketing" | "production" | "dispatcher"}
             accountLabel={ctx.profile.full_name}
             realName={ctx.profile.real_name}
             phone={data?.phone ?? null}

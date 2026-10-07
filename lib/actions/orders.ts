@@ -22,6 +22,11 @@ async function headAdminIds(svc: Svc) {
   return (data ?? []).map((r) => r.id as string);
 }
 
+async function dispatcherIds(svc: Svc) {
+  const { data } = await svc.from("profiles").select("id").eq("role", "dispatcher");
+  return (data ?? []).map((r) => r.id as string);
+}
+
 async function notify(
   svc: Svc,
   userIds: string[],
@@ -53,7 +58,7 @@ type ItemInput = {
 };
 
 /** Marketing punches an order (1–20 products) to one or more chosen production members. */
-export async function dispatchOrder(
+export async function punchOrder(
   _prev: Result | null,
   fd: FormData,
 ): Promise<Result> {
@@ -151,6 +156,8 @@ export async function dispatchOrder(
         : Promise.resolve({ data: [] as { phone: string | null }[] }),
       headAdminIds(svc),
     ]);
+    // Stage 1 is the dispatchers' review: both of them get every new order.
+    const dispatchers = await dispatcherIds(svc);
     await Promise.all([
       active
         ? createOrderGroup({
@@ -159,7 +166,7 @@ export async function dispatchOrder(
             productionPhones: (phones ?? []).map((p) => p.phone as string),
           })
         : Promise.resolve(),
-      notify(svc, [...assignees, ...heads], {
+      notify(svc, [...assignees, ...heads, ...dispatchers], {
         type: "order",
         title: "New order punched",
         body: `${ctx.name} punched "${title}" for ${client_name}${
@@ -174,22 +181,71 @@ export async function dispatchOrder(
   redirect(`/dashboard/orders/${orderId}`);
 }
 
+type StageMove = {
+  outcome: string;
+  stage: number | null;
+  created_by: string;
+  product_name: string;
+  whatsapp_group_id: string | null;
+  assignee_ids: string[] | null;
+};
+
+/** WhatsApp post + notifications after any stage change (not awaited by the caller). */
+function announceStage(
+  svc: Svc,
+  orderId: string,
+  r: StageMove,
+  actorId: string,
+  opts: { text?: (title: string, to: number) => string; extra?: string[] } = {},
+) {
+  const to = r.stage as number;
+  after(async () => {
+    const title = await titleOf(svc, orderId, r.product_name);
+    await Promise.all([
+      postStageUpdate({
+        orderId,
+        groupId: r.whatsapp_group_id,
+        text: opts.text ? opts.text(title, to) : `Order "${title}" moved to Stage ${to} — ${stageName(to)}.`,
+      }),
+      (async () => {
+        const recipients = [
+          r.created_by,
+          ...(await headAdminIds(svc)),
+          ...(r.assignee_ids ?? []),
+          ...(opts.extra ?? []),
+        ].filter((id) => id !== actorId);
+        await notify(svc, recipients, {
+          type: "stage",
+          title: `Stage ${to} — ${stageName(to)}`,
+          body: opts.text ? opts.text(title, to) : `"${title}" is now at Stage ${to}: ${stageName(to)}.`,
+          entity_id: orderId,
+        });
+      })(),
+    ]);
+  });
+}
+
+function revalidateOrder(orderId: string) {
+  // The action's response carries the re-rendered page (revalidatePath), so
+  // the client must NOT router.refresh() on top of it.
+  revalidatePath(`/dashboard/orders/${orderId}`);
+  revalidatePath("/dashboard/orders");
+}
+
 /**
- * Any production member assigned to the order advances it one stage, once
- * the stage timer has run out. Admin tier may advance any order at any time
- * (no assignment, no timer — advance_order_stage checks the role itself,
- * 0021); the UI asks them to confirm first. `fromStage` is the stage the
- * caller was looking at: if the order has moved since (another assignee, a
- * stale tab), nothing happens.
+ * An assigned production member advances the order one stage — from Stage 2
+ * on (Stage 1 is the dispatchers' review) and once the stage timer has run
+ * out. `fromStage` is the stage the member was looking at: if the order has
+ * moved since (another assignee, a stale tab), nothing happens.
  */
 export async function advanceStage(orderId: string, fromStage: number): Promise<Result> {
   const ctx = await requireSession();
-  if (!ctx.can("orders.advanceStage") && !ctx.can("orders.overrideStage")) return { error: "Not permitted." };
+  if (!ctx.can("orders.advanceStage")) return { error: "Not permitted." };
   if (!UUID.test(orderId) || !Number.isInteger(fromStage)) return { error: "Order not found." };
   const svc = createServiceClient();
 
   // One round trip: checks, stage move and history row in one transaction
-  // under a row lock (advance_order_stage, migration 0015).
+  // under a row lock (advance_order_stage, migrations 0015 / 0023).
   const { data: r, error } = await svc
     .rpc("advance_order_stage", {
       p_order_id: orderId,
@@ -197,14 +253,7 @@ export async function advanceStage(orderId: string, fromStage: number): Promise<
       p_from_stage: fromStage,
       p_timer_seconds: Math.round(STAGE_TIMER_MS / 1000),
     })
-    .single<{
-      outcome: string;
-      stage: number | null;
-      created_by: string;
-      product_name: string;
-      whatsapp_group_id: string | null;
-      assignee_ids: string[] | null;
-    }>();
+    .single<StageMove>();
   if (error || !r) return { error: "Could not advance the order. Please try again." };
 
   switch (r.outcome) {
@@ -218,6 +267,8 @@ export async function advanceStage(orderId: string, fromStage: number): Promise<
       return { error: "This order is waiting on a production phone number." };
     case "delivered":
       return { error: "This order is already at the final stage." };
+    case "awaiting_dispatch":
+      return { error: "This order is still in Dispatch review. A dispatcher has to dispatch it first." };
     case "timer":
       return { error: "The timer for this stage hasn't finished yet." };
     case "stale":
@@ -227,34 +278,111 @@ export async function advanceStage(orderId: string, fromStage: number): Promise<
       return { error: "Could not advance the order. Please try again." };
   }
 
+  announceStage(svc, orderId, r, ctx.userId);
+  revalidateOrder(orderId);
   const to = r.stage as number;
-  // The (stubbed) WhatsApp post and the notifications are side effects the
-  // caller doesn't need to wait on.
-  after(async () => {
-    const title = await titleOf(svc, orderId, r.product_name);
-    await Promise.all([
-      postStageUpdate({
-        orderId,
-        groupId: r.whatsapp_group_id,
-        text: `Order "${title}" moved to Stage ${to} — ${stageName(to)}.`,
-      }),
-      (async () => {
-        const recipients = [r.created_by, ...(await headAdminIds(svc)), ...(r.assignee_ids ?? [])].filter(
-          (id) => id !== ctx.userId,
-        );
-        await notify(svc, recipients, {
-          type: "stage",
-          title: `Stage ${to} — ${stageName(to)}`,
-          body: `"${title}" is now at Stage ${to}: ${stageName(to)}.`,
-          entity_id: orderId,
-        });
-      })(),
-    ]);
-  });
-
-  // The action's response carries the re-rendered page (revalidatePath), so
-  // the client must NOT router.refresh() on top of it.
-  revalidatePath(`/dashboard/orders/${orderId}`);
-  revalidatePath("/dashboard/orders");
   return { ok: `Advanced to Stage ${to} — ${stageName(to)}.` };
+}
+
+/**
+ * A dispatcher opened a Stage 1 order: "Start" becomes "Verification in
+ * progress" (once — start_order_review only marks it the first time).
+ */
+export async function startReview(orderId: string): Promise<void> {
+  const ctx = await requireSession();
+  if (!ctx.can("orders.dispatchReview") || !UUID.test(orderId)) return;
+  const svc = createServiceClient();
+  const { data } = await svc.rpc("start_order_review", { p_order_id: orderId, p_actor: ctx.userId });
+  if (data === true) revalidateOrder(orderId);
+}
+
+/**
+ * Dispatcher: "Dispatch to production" — Stage 1 -> Stage 2. Only once every
+ * assigned production member has a phone linked (status active). No timer;
+ * production may start Stage 2 -> 3 straight away. If the other dispatcher
+ * got there first, nothing happens.
+ */
+export async function dispatchToProduction(orderId: string): Promise<Result> {
+  const ctx = await requireSession();
+  if (!ctx.can("orders.dispatchReview")) return { error: "Not permitted." };
+  if (!UUID.test(orderId)) return { error: "Order not found." };
+  const svc = createServiceClient();
+
+  const { data: r, error } = await svc
+    .rpc("dispatch_order", { p_order_id: orderId, p_actor: ctx.userId })
+    .single<StageMove & { by_label: string | null }>();
+  if (error || !r) return { error: "Could not dispatch the order. Please try again." };
+
+  switch (r.outcome) {
+    case "ok":
+      break;
+    case "not_found":
+      return { error: "Order not found." };
+    case "not_permitted":
+      return { error: "Not permitted." };
+    case "waiting":
+      return {
+        error: "This order can't be dispatched yet: an assigned production member hasn't linked a phone number.",
+      };
+    case "already":
+      revalidateOrder(orderId);
+      return {
+        error: `This order has already left Dispatch review${r.by_label ? ` (dispatched by ${r.by_label})` : ""}.`,
+      };
+    default:
+      return { error: "Could not dispatch the order. Please try again." };
+  }
+
+  announceStage(svc, orderId, r, ctx.userId, {
+    extra: await dispatcherIds(svc),
+    text: (title) => `"${title}" was dispatched to production by ${ctx.name} and is now at Stage 2 — ${stageName(2)}.`,
+  });
+  revalidateOrder(orderId);
+  return { ok: `Dispatched to production — now at Stage 2 — ${stageName(2)}.` };
+}
+
+/**
+ * Admin / head_admin: move the order to ANY stage (next, back, or skipping)
+ * — no timer, no dispatch step, no status check (admin_set_order_stage,
+ * 0023). The UI asks them to confirm every move first. A move to Stage 2-4
+ * starts production's timer for their next advance, as in 0021.
+ */
+export async function setStage(orderId: string, fromStage: number, toStage: number): Promise<Result> {
+  const ctx = await requireSession();
+  if (!ctx.can("orders.overrideStage")) return { error: "Not permitted." };
+  if (!UUID.test(orderId) || !Number.isInteger(fromStage) || !Number.isInteger(toStage))
+    return { error: "Order not found." };
+  const svc = createServiceClient();
+
+  const { data: r, error } = await svc
+    .rpc("admin_set_order_stage", {
+      p_order_id: orderId,
+      p_actor: ctx.userId,
+      p_from_stage: fromStage,
+      p_to_stage: toStage,
+      p_timer_seconds: Math.round(STAGE_TIMER_MS / 1000),
+    })
+    .single<StageMove>();
+  if (error || !r) return { error: "Could not move the order. Please try again." };
+
+  switch (r.outcome) {
+    case "ok":
+      break;
+    case "not_found":
+      return { error: "Order not found." };
+    case "not_permitted":
+      return { error: "Not permitted." };
+    case "invalid":
+      return { error: "Choose a different stage." };
+    case "stale":
+      revalidatePath(`/dashboard/orders/${orderId}`);
+      return { error: `This order was already moved to Stage ${r.stage} — ${stageName(r.stage ?? 1)}.` };
+    default:
+      return { error: "Could not move the order. Please try again." };
+  }
+
+  // Back in Dispatch review: the dispatchers need to know.
+  announceStage(svc, orderId, r, ctx.userId, { extra: toStage === 1 ? await dispatcherIds(svc) : [] });
+  revalidateOrder(orderId);
+  return { ok: `Moved to Stage ${toStage} — ${stageName(toStage)}.` };
 }

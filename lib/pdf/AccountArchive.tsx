@@ -26,6 +26,7 @@ export type AccountExport = {
     stage: number;
     status: string;
     created_at: string;
+    /** the punching marketing account (JSON key kept from before the rename) */
     dispatched_by: string;
     production: string[];
     /** 0019+: the order's products (orders exported before then have none) */

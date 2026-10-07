@@ -4,7 +4,7 @@ import type { OrderItem } from "@/types/database.types";
 import {
   GST_PERCENT,
   MAX_STAGE,
-  stageLabel,
+  stageName,
   ORDER_STATUS_LABEL,
   itemTotal,
   orderAmounts,
@@ -84,7 +84,7 @@ export function OrderSpecSheet({
     ["Products", `${order.items.length} (${units} unit${units === 1 ? "" : "s"})`],
     ...(showPrice ? ([["Order subtotal", inr(amounts.subtotal)]] as [string, string][]) : []),
     ["Expected delivery date", formatDay(order.expected_delivery)],
-    ["Current stage", `Stage ${order.stage} of ${MAX_STAGE} — ${stageLabel(order)}`],
+    ["Current stage", `Stage ${order.stage} of ${MAX_STAGE} — ${stageName(order.stage)}`],
     ["Status", ORDER_STATUS_LABEL[order.status] ?? order.status],
     ...(showAssignees
       ? ([["Production", order.assignees.map((a) => a.label).join(", ") || "—"]] as [string, string][])

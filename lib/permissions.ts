@@ -1,12 +1,12 @@
 /**
  * lib/permissions.ts — single source of truth for the role model.
  *
- * Five roles. `marketing` and `production` are each held by several fixed
+ * Four roles. `marketing` and `production` are each held by several fixed
  * accounts (marketing1..4, production1..4); individual scoping (an account
  * only sees its own orders) is enforced by RLS on `orders.created_by` /
- * `order_assignees`, not by the role. `dispatcher` (dispatcher1, dispatcher2;
- * 0022/0023) sees every order — without prices — and moves it from Stage 1
- * (Dispatch review) to Stage 2 once its product details are checked.
+ * `order_assignees`, not by the role. (The database still knows a retired
+ * `dispatcher` role — 0022, removed from the app in 0024: those accounts
+ * can't sign in; see lib/auth/session.ts.)
  *
  * The database enforces the same rules independently (RLS + SECURITY DEFINER
  * checks) — this matrix decides what the UI offers and is re-checked in every
@@ -19,7 +19,7 @@
  * reveals it to another role. `admin` believes it is the top level.
  */
 
-export const ROLES = ["head_admin", "admin", "marketing", "production", "dispatcher"] as const;
+export const ROLES = ["head_admin", "admin", "marketing", "production"] as const;
 export type Role = (typeof ROLES)[number];
 
 export type Permission =
@@ -27,9 +27,8 @@ export type Permission =
   | "orders.viewOwn" // see orders you punched (marketing)
   | "orders.viewAssigned" // see orders assigned to you (production)
   | "orders.viewAll" // see every order (admin tier)
-  | "orders.advanceStage" // move an assigned order from Stage 2 on to the next stage (production)
-  | "orders.dispatchReview" // see every order (no prices) and dispatch Stage 1 orders to production (dispatcher)
-  | "orders.overrideStage" // move ANY order to ANY stage — no timer, no dispatch step (admin tier, after a confirmation)
+  | "orders.advanceStage" // move an assigned order to the next stage (production)
+  | "orders.overrideStage" // move ANY order to ANY stage — no timer (admin tier, after a confirmation)
   | "price.view" // see the price field
   | "production.settings" // register a production phone number
   | "profile.edit" // set your real name (marketing, production)
@@ -67,10 +66,6 @@ const MATRIX: Record<Role, Caps> = {
     "orders.viewAssigned": T,
     "orders.advanceStage": T,
     "production.settings": T,
-    "profile.edit": T,
-  },
-  dispatcher: {
-    "orders.dispatchReview": T,
     "profile.edit": T,
   },
 };

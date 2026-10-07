@@ -11,6 +11,8 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+// "dispatcher" (0022) is retired: the database keeps the value, the app has
+// no such role (lib/permissions.ts) and those accounts can't sign in.
 export type UserRole = "head_admin" | "admin" | "marketing" | "production" | "dispatcher";
 
 export type OrderStatus = "active" | "waiting_on_production_phone";
@@ -64,10 +66,7 @@ export interface Order {
   updated_at: string;
   /** When the assigned production account may advance to the next stage; null = may advance now. */
   stage_ready_at: string | null;
-  /**
-   * Stage 1 (Dispatch review): when / which dispatcher first opened the order
-   * ("Verification in progress"); null = "Start" (0023).
-   */
+  /** Left from the retired dispatch review (0023); unused since 0024. */
   review_started_at: string | null;
   review_started_by: string | null;
   /** Production members this order was sent to (order_feed only). */

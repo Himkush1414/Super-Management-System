@@ -65,7 +65,6 @@ function NavList({ role, onNavigate }: { role: Role; onNavigate?: () => void }) 
 const ROLE_CAPTION: Partial<Record<Role, string>> = {
   marketing: "Marketing",
   production: "Production",
-  dispatcher: "Dispatcher",
 };
 
 function UserFooter({ name, role, caption }: { name: string; role: Role; caption?: string }) {

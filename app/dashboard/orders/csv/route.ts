@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { getOrders, type OrderRow } from "@/lib/data/orders";
 import type { OrderItem } from "@/types/database.types";
-import { GST_PERCENT, MAX_STAGE, stageLabel, ORDER_STATUS_LABEL, itemTotal, orderAmounts } from "@/lib/orders";
+import { GST_PERCENT, MAX_STAGE, stageName, ORDER_STATUS_LABEL, itemTotal, orderAmounts } from "@/lib/orders";
 import { formatCsvDateTime, formatDay } from "@/lib/utils";
 
 function csvField(value: string | number | null): string {
@@ -55,12 +55,12 @@ export async function GET() {
       : []),
     { header: "Expected delivery date", value: ({ o }) => (o.expected_delivery ? formatDay(o.expected_delivery) : "") },
     { header: "Current stage", value: ({ o }) => `${o.stage} of ${MAX_STAGE}` },
-    { header: "Stage name", value: ({ o }) => stageLabel(o) },
+    { header: "Stage name", value: ({ o }) => stageName(o.stage) },
     { header: "Status", value: ({ o }) => ORDER_STATUS_LABEL[o.status] ?? o.status },
     ...(ctx.role !== "production"
       ? [{ header: "Production", value: ({ o }: Line) => o.assignees.map((a) => a.label).join("; ") } satisfies Column]
       : []),
-    ...(ctx.isAdminTier || ctx.can("orders.dispatchReview")
+    ...(ctx.isAdminTier
       ? [{ header: "Punched by", value: ({ o }: Line) => o.puncher?.label ?? "" } satisfies Column]
       : []),
     { header: "Punched at (IST)", value: ({ o }) => formatCsvDateTime(o.created_at) },

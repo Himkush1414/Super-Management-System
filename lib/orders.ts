@@ -6,9 +6,7 @@
  */
 
 export const STAGES = [
-  // Stage 1 belongs to the dispatchers (0023): they check the product
-  // details and dispatch the order to production.
-  { n: 1, name: "Dispatch review" },
+  { n: 1, name: "Start" },
   { n: 2, name: "Mid" },
   { n: 3, name: "Testing" },
   { n: 4, name: "End of Production" },
@@ -22,21 +20,6 @@ export const STAGE_TIMER_MS = 3 * 60 * 1000;
 
 export function stageName(n: number): string {
   return STAGES.find((s) => s.n === n)?.name ?? `Stage ${n}`;
-}
-
-/**
- * Where an order stands inside Stage 1 (still one stage): "Start" until a
- * dispatcher opens it, then "Verification in progress". null past Stage 1.
- */
-export function reviewStatus(o: { stage: number; review_started_at: string | null }): string | null {
-  if (o.stage !== 1) return null;
-  return o.review_started_at ? "Verification in progress" : "Start";
-}
-
-/** "Dispatch review · Start" at Stage 1, the plain stage name after. */
-export function stageLabel(o: { stage: number; review_started_at: string | null }): string {
-  const sub = reviewStatus(o);
-  return sub ? `${stageName(o.stage)} · ${sub}` : stageName(o.stage);
 }
 
 /** Most products one order can hold (create_order enforces the same). */

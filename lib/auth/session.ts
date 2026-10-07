@@ -4,7 +4,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "@/types/database.types";
-import { type Permission, type Role, can, isAdminTier } from "@/lib/permissions";
+import { ROLES, type Permission, type Role, can, isAdminTier } from "@/lib/permissions";
 import { displayName } from "@/lib/names";
 import { perf } from "@/lib/perf";
 
@@ -15,7 +15,7 @@ export interface SessionContext {
   name: string;
   /**
    * What this account still has to provide before it can use the app:
-   * marketing / dispatcher -> real name; production -> real name + phone. Empty = ready.
+   * marketing -> real name; production -> real name + phone. Empty = ready.
    */
   missingSetup: ("real_name" | "phone")[];
   profile: Profile;
@@ -82,10 +82,12 @@ const loadSession = cache(async (): Promise<SessionContext> => {
   pf.end({ user: Boolean(user) });
 
   if (!user || user.id !== sub || !profile) redirect("/login");
+  // A role the app no longer has (the retired dispatchers, 0024): out.
+  if (!(ROLES as readonly string[]).includes(profile.role)) redirect("/login/retired");
 
   const role = profile.role as Role;
   const missingSetup: SessionContext["missingSetup"] = [];
-  if ((role === "marketing" || role === "production" || role === "dispatcher") && !profile.real_name) {
+  if ((role === "marketing" || role === "production") && !profile.real_name) {
     missingSetup.push("real_name");
   }
   if (role === "production" && !(settings?.phone && settings.confirmed_at)) {

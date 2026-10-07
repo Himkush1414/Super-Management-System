@@ -48,17 +48,6 @@ export function StageControl({
     );
   }
 
-  // Stage 1 is the dispatchers' review; production starts at Stage 2.
-  if (stage === 1) {
-    return (
-      <p className="text-[13px] text-text-secondary">
-        This order is in <span className="font-medium text-text">Dispatch review</span>. A
-        dispatcher checks the product details and dispatches it to production — then you can
-        start work on it.
-      </p>
-    );
-  }
-
   if (stage >= MAX_STAGE) {
     return (
       <p className="text-[13px] text-status-success">

@@ -4,13 +4,13 @@ type Named = { full_name: string; real_name?: string | null; role?: Role | strin
 
 /**
  * How an account is shown as an actor anywhere (pages, PDFs, CSV, audit).
- * Marketing / production / dispatcher with a real name: "Manik Rana (Production 1)".
+ * Marketing / production with a real name: "Manik Rana (Production 1)".
  * Everyone else (admin tiers, or before a real name is set): the account's
  * existing label. Mirrors public.display_name() in migration 0016.
  */
 export function displayName(p: Named | null | undefined): string {
   if (!p) return "—";
-  if ((p.role === "marketing" || p.role === "production" || p.role === "dispatcher") && p.real_name) {
+  if ((p.role === "marketing" || p.role === "production") && p.real_name) {
     return `${p.real_name} (${p.full_name})`;
   }
   return p.full_name;

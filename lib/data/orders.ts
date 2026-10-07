@@ -16,11 +16,6 @@ export type OrderRow = Order & {
   puncher: Party | null;
   /** Assigned production members the viewer is allowed to resolve (RLS). */
   assignees: Party[];
-  /**
-   * The dispatcher who opened the order in Stage 1 ("Verification in
-   * progress"), when the viewer may resolve them (admin tier, dispatchers).
-   */
-  reviewer: Party | null;
 };
 
 /**
@@ -95,9 +90,6 @@ function attach(orders: Order[], byId: Map<string, Party>): OrderRow[] {
       o.additional_amount === null || o.additional_amount === undefined ? null : Number(o.additional_amount),
     assignee_ids: o.assignee_ids ?? [],
     puncher: byId.get(o.created_by) ?? null,
-    reviewer: o.review_started_by ? (byId.get(o.review_started_by) ?? null) : null,
-    review_started_at: o.review_started_at ?? null,
-    review_started_by: o.review_started_by ?? null,
     assignees: (o.assignee_ids ?? [])
       .map((id) => byId.get(id))
       .filter((p): p is Party => Boolean(p))

@@ -11,7 +11,7 @@ import { FormAlert } from "@/components/shared/FormAlert";
 
 /**
  * Admin / head_admin: move the order to the next stage — or to any other
- * stage, forward or back — with no timer, no dispatch step and no status
+ * stage, forward or back — with no timer and no status
  * check. Every move asks for confirmation first.
  */
 export function AdminStageControl({ orderId, stage }: { orderId: string; stage: number }) {
@@ -61,7 +61,7 @@ export function AdminStageControl({ orderId, stage }: { orderId: string; stage: 
         </Button>
       </div>
       <p className="text-[12px] text-text-tertiary">
-        Admin: any stage, no timer, no dispatch step. Marketing and production are notified.
+        Admin: any stage, no timer. Marketing and production are notified.
       </p>
 
       <Modal
@@ -72,9 +72,7 @@ export function AdminStageControl({ orderId, stage }: { orderId: string; stage: 
             ? "Are you sure you want to advance this order to the next stage?"
             : `Are you sure you want to move this order to Stage ${target} — ${stageName(target ?? 1)}?`
         }
-        description={`It moves from Stage ${stage} — ${stageName(stage)} to Stage ${target} — ${stageName(target ?? 1)} right away.${
-          target === 1 ? " It goes back to the dispatchers for review." : ""
-        }`}
+        description={`It moves from Stage ${stage} — ${stageName(stage)} to Stage ${target} — ${stageName(target ?? 1)} right away.`}
       >
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" className="w-full sm:w-auto" onClick={() => setTarget(null)}>

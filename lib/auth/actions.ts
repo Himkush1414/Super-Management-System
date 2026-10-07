@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { perf } from "@/lib/perf";
+import { ROLES } from "@/lib/permissions";
 
 export type ActionState = { error?: string } | null;
 
@@ -88,6 +89,11 @@ export async function loginAction(
   if (linkErr || !link?.properties?.hashed_token) {
     return { error: "Sign-in is unavailable right now. Please try again." };
   }
+  // A role the app no longer has (the retired dispatchers, 0024): the PIN
+  // is right, but no session is created.
+  if (!me || !(ROLES as readonly string[]).includes(me.role)) {
+    return { error: "This account is no longer in use." };
+  }
   const supabase = await createClient();
   const { error: otpErr } = await pf.time("auth.verifyOtp", supabase.auth.verifyOtp({
     type: "magiclink",
@@ -101,7 +107,7 @@ export async function loginAction(
     | null
     | undefined;
   const needsSetup =
-    (me?.role === "marketing" || me?.role === "production" || me?.role === "dispatcher") &&
+    (me.role === "marketing" || me.role === "production") &&
     (!me.real_name || (me.role === "production" && !(ps?.phone && ps.confirmed_at)));
   redirect(needsSetup ? "/dashboard/settings" : "/dashboard/orders");
 }

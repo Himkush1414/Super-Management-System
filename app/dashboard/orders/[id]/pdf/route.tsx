@@ -17,7 +17,7 @@ export async function GET(
     <OrderSpecSheet
       order={order}
       showPrice={ctx.can("price.view")}
-      showPuncher={ctx.isAdminTier || ctx.can("orders.dispatchReview")}
+      showPuncher={ctx.isAdminTier}
       showAssignees={ctx.role !== "production"}
       generatedAt={new Date()}
     />,

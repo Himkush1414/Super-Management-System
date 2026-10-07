@@ -8,7 +8,7 @@ import { Table, THead, TR, TH, TD } from "@/components/ui/Table";
 import { Input, Select } from "@/components/ui/Field";
 import { StageBadge, OrderStatusBadge } from "@/components/shared/Badge";
 import { StageTracker } from "@/components/dashboard/StageTracker";
-import { STAGES, orderTitle, reviewStatus, totalQuantity } from "@/lib/orders";
+import { STAGES, orderTitle, totalQuantity } from "@/lib/orders";
 import { formatCurrency, formatDate, formatDay } from "@/lib/utils";
 
 const STAGE_FILTER_ALL = "all";
@@ -177,9 +177,6 @@ export function OrdersTable({
                     <TD numeric>{totalQuantity(o)}</TD>
                     <TD>
                       <StageBadge stage={o.stage} />
-                      {reviewStatus(o) && (
-                        <span className="mt-1 block text-[11px] text-text-tertiary">{reviewStatus(o)}</span>
-                      )}
                     </TD>
                     {showPrice && <TD numeric className="whitespace-nowrap font-medium">{formatCurrency(o.price)}</TD>}
                     <TD numeric className="whitespace-nowrap text-text-secondary">

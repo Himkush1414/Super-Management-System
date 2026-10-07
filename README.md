@@ -1,8 +1,8 @@
 # NR Industries — internal order system
 
-Marketing punches production orders; a dispatcher reviews each one and
-dispatches it to production, which advances it through the remaining stages
-(five in all); administrators oversee everything. Next.js 16 (App Router, Turbopack) +
+Marketing punches production orders straight to the assigned production
+team, which advances them through five stages; administrators oversee
+everything. Next.js 16 (App Router, Turbopack) +
 Supabase (Postgres + Auth + RLS).
 
 ---
@@ -21,12 +21,13 @@ nothing else — Supabase Auth sign-ups are refused in the database
 | `admin` | admin | every order + all production activity, incl. price. Believes it is the top level. |
 | `marketing1`…`marketing4` | marketing | **only their own** punched orders (incl. price) |
 | `production1`…`production4` | production | **only orders assigned to them**. Never price. |
-| `dispatcher1`, `dispatcher2` | dispatcher | **every order** (each goes to both), never price; dispatches Stage 1 orders to production (0022/0023) |
+| `dispatcher1`, `dispatcher2` | dispatcher (retired) | nothing — the dispatcher feature was removed in 0024 |
 
-The dispatcher accounts were added to the live project by
-`supabase/hosted-dispatchers.sql` (gitignored, holds their PINs); locally
-they are in `seed.sql`. Like marketing and production they must add a real
-name before using the app.
+The two dispatcher accounts (added by the gitignored
+`supabase/hosted-dispatchers.sql`) are **kept, not deleted**, with their
+PINs, but can no longer sign in: the login refuses them ("This account is no
+longer in use.") and an already-open session is signed out of that browser
+on its next request (`app/(auth)/login/retired`).
 
 Login field is the **username**. Supabase Auth needs an email internally, so
 each account is stored as `<username>@nr.local` in `auth.users` — that address is
@@ -118,30 +119,21 @@ parked orders.
 
 **Stages** (`orders.stage`, 1–5):
 
-- **Stage 1 — Dispatch review** belongs to the dispatchers. Every new order
-  lands in both dispatchers' *To dispatch* queue (and in the assigned
-  production members' list, read-only). Inside Stage 1 it shows **Start**
-  until a dispatcher opens it, then **Verification in progress** (with the
-  dispatcher's name, for admins and dispatchers). **Dispatch to production**
-  (with a confirmation) moves it to Stage 2 — only once every assigned
-  production member has a phone linked; a waiting order can be reviewed but
-  not dispatched. The first dispatcher wins; the other gets "already
-  dispatched by …". Dispatching starts no timer.
-- **Stages 2 → 5:** any production member assigned to the order advances it,
-  one step at a time, once the 3-minute stage timer has run out (a
-  conditional update stops two members double-advancing). Production can't
-  move an order out of Stage 1 (`awaiting_dispatch`).
+- **Production:** a punched order lands at **Stage 1 — Start** with the
+  assigned production members, who can start it straight away (1 → 2). Any
+  assigned member advances it one step at a time; each advance starts the
+  3-minute timer for the next one (a conditional update stops two members
+  double-advancing).
 - **Admin and head_admin** have no restrictions: next stage, or any other
-  stage forward or back, on any order (waiting ones too), no timer and no
-  dispatch step, after confirming "Are you sure you want to advance this
-  order to the next stage?" / "…move this order to Stage N?"
-  (`admin_set_order_stage`, 0023). The 3-minute timer is production's only:
-  an admin move never starts one (and clears a running one). A move back to
-  Stage 1 returns the order to the dispatchers as "Start".
+  stage forward or back, on any order (waiting ones too), no timer, after
+  confirming "Are you sure you want to advance this order to the next
+  stage?" / "…move this order to Stage N?" (`admin_set_order_stage`, 0023).
+  The 3-minute timer is production's only: an admin move never starts one
+  (and clears a running one).
 
 | # | Name |
 |---|---|
-| 1 | Dispatch review |
+| 1 | Start |
 | 2 | Mid |
 | 3 | Testing |
 | 4 | End of Production |
@@ -207,7 +199,12 @@ the dispatch step: `orders.review_started_at/_by`, dispatcher read policies,
 `start_order_review()`, `dispatch_order()`, `admin_set_order_stage()`, and
 production locked out of Stage 1. Orders already at Stage 1 when it went live
 were moved to Stage 2 by the one-off `scripts/0023_move_stage1_orders.sql`
-(except those whose production member had no phone linked).
+(except those whose production member had no phone linked). **0024 removes
+the dispatcher feature** — no row changes (`scripts/0024_snapshot.sql`
+before == after): the dispatch functions and policies are dropped and
+production may start Stage 1 again. Kept, so nothing is deleted: the
+dispatcher accounts and PINs (they can't sign in), the enum value and the
+(all-null on live) review columns. `scripts/0024_rollback.sql` re-runs 0023.
 
 `supabase/scripts/` holds one-off data scripts (not migrations): per-migration
 `*_verify.sql` / `*_rollback.sql`, `0021_snapshot.sql` (a read-only
@@ -298,6 +295,10 @@ What was causing the lag, and the fix:
 
 ## 6. PDF and CSV export
 
+Every PDF prints dark: all text is Helvetica-Bold in black (navy for
+headings, white on the navy group bands), for the office printer. Cell
+overflow is guarded with bold glyph widths (`lib/pdf/fit.ts`).
+
 - Order detail page → **Download PDF**: an order specification — a ruled
   Field | Value table, one field per row (client, ship to, products, order
   subtotal, expected delivery date, current stage "Stage 2 of 5", status,
@@ -309,7 +310,7 @@ What was causing the lag, and the fix:
   history.
 - Orders list → **Download All Orders** (admin and marketing): one PDF with
   a ruled table of every order the viewer can see, for **this / an earlier
-  week, month or year** (by dispatch date, IST, Monday–Sunday weeks) or all
+  week, month or year** (by punch date, IST, Monday–Sunday weeks) or all
   time. Rows are grouped — year → months, month → weeks, week → days, all
   time → months — each heading with its count (and value subtotal where the
   viewer may see prices). One row per order; its products sit in a block of
@@ -356,7 +357,7 @@ app/dashboard/orders/     list · new (punch order) · [id] (detail + stage cont
 app/dashboard/orders/*/pdf/  PDF export route handlers
 app/dashboard/settings/   production phone registration
 lib/auth/                 PIN login/logout actions · requireSession/requireRole
-lib/actions/orders.ts     dispatchOrder · advanceStage  (service-role, session-checked)
+lib/actions/orders.ts     punchOrder · advanceStage · setStage  (service-role, session-checked)
 lib/actions/production.ts saveProductionPhone
 lib/actions/admin.ts      deleteOrder · deleteStageEvent · resetAccount  (admin's own session, RLS-gated)
 app/dashboard/data/       data management (admin tier)

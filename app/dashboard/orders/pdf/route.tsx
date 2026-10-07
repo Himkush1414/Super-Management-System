@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     <OrdersReport
       orders={ordered}
       groups={groups}
-      showPuncher={ctx.isAdminTier || ctx.can("orders.dispatchReview")}
+      showPuncher={ctx.isAdminTier}
       showAssignees={ctx.role !== "production"}
       // Production never gets a value column, total or subtotal.
       showPrice={ctx.can("price.view")}

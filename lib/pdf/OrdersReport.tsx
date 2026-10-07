@@ -1,7 +1,7 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { OrderRow } from "@/lib/data/orders";
 import type { OrderItem } from "@/types/database.types";
-import { GST_PERCENT, MAX_STAGE, stageLabel, ORDER_STATUS_LABEL, itemTotal, orderAmounts } from "@/lib/orders";
+import { GST_PERCENT, MAX_STAGE, stageName, ORDER_STATUS_LABEL, itemTotal, orderAmounts } from "@/lib/orders";
 import { formatDate, formatDay } from "@/lib/utils";
 import { C, amount, base, inr } from "./theme";
 import { PdfHeader, PdfFooter, PdfSignature } from "./Chrome";
@@ -156,7 +156,7 @@ export function OrdersReport({
       label: "Current stage",
       width: W(46, 66),
       cell: (o) => `Stage ${o.stage} of ${MAX_STAGE}`,
-      sub: (o) => stageLabel(o),
+      sub: (o) => stageName(o.stage),
     },
     { key: "status", label: "Status", width: W(42, 52), cell: (o) => (o.status === "active" ? "Active" : ORDER_STATUS_LABEL[o.status] ?? o.status) },
     ...(showAssignees

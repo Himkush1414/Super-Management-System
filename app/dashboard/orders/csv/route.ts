@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { getOrders, type OrderRow } from "@/lib/data/orders";
 import type { OrderItem } from "@/types/database.types";
-import { GST_PERCENT, MAX_STAGE, stageName, ORDER_STATUS_LABEL, itemTotal, orderAmounts } from "@/lib/orders";
+import { MAX_STAGE, stageName, ORDER_STATUS_LABEL } from "@/lib/orders";
+import { GST_RATE, orderMoney, plainAmount, type OrderMoney } from "@/lib/money";
 import { formatCsvDateTime, formatDay } from "@/lib/utils";
 
 function csvField(value: string | number | null): string {
@@ -14,16 +15,18 @@ function csvField(value: string | number | null): string {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-type Line = { o: OrderRow; item: OrderItem };
+type Line = { o: OrderRow; item: OrderItem; k: number; money: OrderMoney };
 type Column = { header: string; value: (l: Line) => string | number | null };
 
 /**
  * One row per PRODUCT (an order with three products is three rows, its order
  * fields repeated), one field per column — headers match the order form's
- * labels, nothing is combined into one cell. Per product: price, 18% GST and
- * price + GST. The order-level Additional Amount and Order subtotal are
- * filled on the order's FIRST product row only (blank on the others), so
- * summing any money column never double-counts. Dates are DD/MM/YYYY like
+ * labels, nothing is combined into one cell. Per product row (lib/money.ts,
+ * the same figures as the PDFs): unit price, additional amount (the order's
+ * Additional Amount on its first product, 0.00 on the others), row subtotal
+ * before GST, 18% GST and row total incl. GST — so summing any of these
+ * columns never double-counts. The order's grand total is filled on its
+ * FIRST product row only (blank on the others). Dates are DD/MM/YYYY like
  * the rest of the system (timestamps in IST as DD/MM/YYYY HH:MM). Production
  * gets no money column at all.
  */
@@ -40,16 +43,14 @@ export async function GET() {
     { header: "Quantity", value: ({ item }) => item.quantity },
     ...(ctx.can("price.view")
       ? ([
-          { header: "Price (INR)", value: ({ item }: Line) => item.price },
-          { header: `GST ${GST_PERCENT}% (INR)`, value: ({ item }: Line) => item.gst },
-          { header: `Total incl. ${GST_PERCENT}% GST (INR)`, value: ({ item }: Line) => itemTotal(item) },
+          { header: "Unit price (INR)", value: ({ k, money }: Line) => plainAmount(money.rows[k].unit) },
+          { header: "Additional amount (INR)", value: ({ k, money }: Line) => plainAmount(money.rows[k].additional) },
+          { header: "Subtotal before GST (INR)", value: ({ k, money }: Line) => plainAmount(money.rows[k].base) },
+          { header: `GST ${GST_RATE}% (INR)`, value: ({ k, money }: Line) => plainAmount(money.rows[k].gst) },
+          { header: `Total (incl. ${GST_RATE}% GST) (INR)`, value: ({ k, money }: Line) => plainAmount(money.rows[k].total) },
           {
-            header: "Additional Amount (INR, per order)",
-            value: ({ o, item }: Line) => (item.position === o.items[0]?.position ? orderAmounts(o).additional : null),
-          },
-          {
-            header: `Order subtotal (INR, incl. ${GST_PERCENT}% GST + Additional Amount, per order)`,
-            value: ({ o, item }: Line) => (item.position === o.items[0]?.position ? orderAmounts(o).subtotal : null),
+            header: `Order grand total (incl. ${GST_RATE}% GST) (INR, per order)`,
+            value: ({ k, money }: Line) => (k === 0 ? plainAmount(money.grandTotal) : null),
           },
         ] satisfies Column[])
       : []),
@@ -67,7 +68,10 @@ export async function GET() {
     { header: "Description", value: ({ item }) => item.description },
   ];
 
-  const rows: Line[] = orders.flatMap((o) => o.items.map((item) => ({ o, item })));
+  const rows: Line[] = orders.flatMap((o) => {
+    const money = orderMoney(o);
+    return o.items.map((item, k) => ({ o, item, k, money }));
+  });
   const lines = [
     columns.map((c) => csvField(c.header)).join(","),
     ...rows.map((l) => columns.map((c) => csvField(c.value(l))).join(",")),

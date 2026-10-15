@@ -9,11 +9,19 @@ import { Input, Select } from "@/components/ui/Field";
 import { StageBadge, OrderStatusBadge } from "@/components/shared/Badge";
 import { StageTracker } from "@/components/dashboard/StageTracker";
 import { STAGES, orderTitle, totalQuantity } from "@/lib/orders";
-import { formatCurrency, formatDate, formatDay } from "@/lib/utils";
+import { GST_RATE, formatINR, orderMoney } from "@/lib/money";
+import { formatDate, formatDay } from "@/lib/utils";
 
 const STAGE_FILTER_ALL = "all";
 
 const names = (o: OrderRow) => o.assignees.map((a) => a.label).join(", ");
+
+/**
+ * The order's grand total incl. 18% GST, from its products (lib/money.ts) —
+ * the same figure as the order page and PDFs. "—" when the viewer gets no
+ * prices for it (order_feed nulls them).
+ */
+const grandTotal = (o: OrderRow) => formatINR(orderMoney(o).grandTotal);
 
 /** Second line under the title: client, then the rating (one product) or the product count. */
 const subline = (o: OrderRow) =>
@@ -110,7 +118,7 @@ export function OrdersTable({
                     </div>
                     {showPrice && (
                       <span className="shrink-0 text-[13px] font-medium tnum">
-                        {formatCurrency(o.price)}
+                        {grandTotal(o)}
                       </span>
                     )}
                   </div>
@@ -143,7 +151,7 @@ export function OrdersTable({
                   {showAssignees && <TH>Production</TH>}
                   <TH numeric>Qty</TH>
                   <TH>Stage</TH>
-                  {showPrice && <TH numeric>Subtotal</TH>}
+                  {showPrice && <TH numeric>Grand total (incl. {GST_RATE}% GST)</TH>}
                   <TH numeric>Delivery</TH>
                 </TR>
               </THead>
@@ -178,7 +186,7 @@ export function OrdersTable({
                     <TD>
                       <StageBadge stage={o.stage} />
                     </TD>
-                    {showPrice && <TD numeric className="whitespace-nowrap font-medium">{formatCurrency(o.price)}</TD>}
+                    {showPrice && <TD numeric className="whitespace-nowrap font-medium">{grandTotal(o)}</TD>}
                     <TD numeric className="whitespace-nowrap text-text-secondary">
                       {formatDay(o.expected_delivery)}
                       <span className="block text-[11px] text-text-tertiary">

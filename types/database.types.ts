@@ -49,7 +49,9 @@ export interface Order {
   description: string;
   /**
    * Order subtotal = Σ(product price + 18% GST) + Additional Amount (0021).
-   * null when the viewer isn't allowed to see it (production).
+   * null when the viewer isn't allowed to see it (production). The old
+   * formula (quantity ignored): no screen shows it — they all work the
+   * money out from the products with lib/money.ts.
    */
   price: number | null;
   /**
@@ -90,6 +92,12 @@ export interface OrderItem {
   price: number | null;
   /** 18% GST on this product's price (0021). Same visibility as price. */
   gst: number | null;
+  /**
+   * Orders punched before 0021 only: this product's own extra amount (FEAT).
+   * order_feed reads their Σ FEAT as the order's additional_amount; the PDFs
+   * show each on its own product row. Same visibility as price.
+   */
+  feat?: number | null;
   description: string;
 }
 

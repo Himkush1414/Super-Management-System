@@ -1,7 +1,8 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
-import { GST_PERCENT, MAX_STAGE, stageName, ORDER_STATUS_LABEL, itemTotal } from "@/lib/orders";
+import { MAX_STAGE, stageName, ORDER_STATUS_LABEL } from "@/lib/orders";
+import { GST_RATE, formatAmount, orderMoney, type RowMoney } from "@/lib/money";
 import { formatDateTime, formatDay } from "@/lib/utils";
-import { C, amount, base } from "./theme";
+import { C, base } from "./theme";
 import { PdfHeader, PdfFooter } from "./Chrome";
 import { fitWords } from "./fit";
 
@@ -38,6 +39,8 @@ export type AccountExport = {
       price: number | null;
       /** 0021+: 18% GST on price */
       gst?: number | null;
+      /** 0020+: the product's own extra amount (orders punched before 0021) */
+      feat?: number | null;
       description: string;
     }[];
   }[];
@@ -113,14 +116,17 @@ function Grid<T>({ cols, rows, compact }: { cols: Col<T>[]; rows: T[]; compact?:
  */
 export function AccountArchive({ data, generatedAt }: { data: AccountExport; generatedAt: Date }) {
   type O = AccountExport["orders"][number];
-  // One row per product (order fields repeated), like the CSV export.
-  type P = O & { line: string; item: NonNullable<O["items"]>[number] };
+  // One row per product (order fields repeated), like the CSV export. Its
+  // money is that product's row in lib/money.ts — the same figures as the
+  // order PDFs (the Additional Amount on the order's first product).
+  type P = O & { line: string; item: NonNullable<O["items"]>[number]; money: RowMoney };
   const productRows: P[] = data.orders.flatMap((o) => {
     const items = o.items?.length
       ? o.items
       : [{ position: 1, product_name: o.product_name, transformer_rating: o.transformer_rating,
            quantity: o.quantity, price: o.price, gst: null, description: o.description }];
-    return items.map((item) => ({ ...o, item, line: `${item.position} of ${items.length}` }));
+    const money = orderMoney({ items, additional_amount: o.additional_amount ?? null });
+    return items.map((item, k) => ({ ...o, item, money: money.rows[k], line: `${item.position} of ${items.length}` }));
   });
   type E = AccountExport["stage_updates"][number];
   type N = AccountExport["notifications"][number];
@@ -164,12 +170,13 @@ export function AccountArchive({ data, generatedAt }: { data: AccountExport; gen
                 { label: "Ship To", width: 56, cell: (r) => r.ship_to || "—" },
                 { label: "Transformer rating", width: 54, cell: (r) => r.item.transformer_rating || "—" },
                 { label: "Qty", width: 26, right: true, cell: (r) => String(r.item.quantity) },
-                { label: "Price (INR)", width: 50, right: true, cell: (r) => amount(r.item.price) },
+                { label: "Unit price (INR)", width: 50, right: true, cell: (r) => formatAmount(r.money.unit) },
+                { label: "Additional amount (INR)", width: 50, right: true, cell: (r) => formatAmount(r.money.additional) },
                 {
-                  label: `Total incl. ${GST_PERCENT}% GST (INR)`,
+                  label: `Total (incl. ${GST_RATE}% GST) (INR)`,
                   width: 52,
                   right: true,
-                  cell: (r) => amount(itemTotal({ price: r.item.price, gst: r.item.gst ?? null })),
+                  cell: (r) => formatAmount(r.money.total),
                 },
                 { label: "Expected delivery", width: 44, cell: (r) => formatDay(r.expected_delivery) },
                 { label: "Current stage", width: 46, cell: (r) => `Stage ${r.stage} of ${MAX_STAGE}` },
@@ -177,7 +184,6 @@ export function AccountArchive({ data, generatedAt }: { data: AccountExport; gen
                 { label: "Production", width: 50, cell: (r) => r.production.join(", ") || "—" },
                 { label: "Punched by", width: 46, cell: (r) => r.dispatched_by || "—" },
                 { label: "Punched on", width: 50, cell: (r) => formatDateTime(r.created_at) },
-                { label: "Additional Amount (INR)", width: 50, right: true, cell: (r) => amount(r.additional_amount ?? null) },
                 { label: "Description", width: 66, cell: (r) => r.item.description || "—" },
               ]}
               rows={productRows}

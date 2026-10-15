@@ -54,3 +54,6 @@ supabase/hosted-dispatchers.sql
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+
+# sample PDFs generated from fixtures for review (never real data)
+sample-pdfs/

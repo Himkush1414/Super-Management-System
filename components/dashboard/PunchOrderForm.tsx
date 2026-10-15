@@ -7,8 +7,9 @@ import { FormAlert } from "@/components/shared/FormAlert";
 import { Input, Textarea, Label, FormRow } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { DateField } from "@/components/ui/DateField";
-import { cn, formatCurrency } from "@/lib/utils";
-import { GST_PERCENT, MAX_ORDER_ITEMS, gstOf } from "@/lib/orders";
+import { cn } from "@/lib/utils";
+import { MAX_ORDER_ITEMS } from "@/lib/orders";
+import { GST_RATE, formatINR, orderMoney } from "@/lib/money";
 
 type Prod = { id: string; label: string; ready: boolean };
 
@@ -31,9 +32,11 @@ export function PunchOrderForm({
   // typed in the others; only the values are tracked for the running total.
   const nextKey = useRef(1);
   const [items, setItems] = useState<number[]>([0]);
-  // typed price per card + the Additional Amount, for the GST preview and
-  // the running subtotal (the database recomputes all of it on save)
+  // typed unit price + quantity per card and the Additional Amount, for the
+  // GST preview and the running totals (lib/money.ts — the same formula the
+  // order page and PDFs use; nothing here is saved)
   const [prices, setPrices] = useState<Record<number, string>>({});
+  const [quantities, setQuantities] = useState<Record<number, string>>({});
   const [additional, setAdditional] = useState("");
   const nameRefs = useRef(new Map<number, HTMLInputElement>());
   const [focusKey, setFocusKey] = useState<number | null>(null);
@@ -50,31 +53,27 @@ export function PunchOrderForm({
   };
   const remove = (key: number) => {
     setItems((prev) => prev.filter((k) => k !== key));
-    setPrices((prev) => {
+    const drop = (prev: Record<number, string>) => {
       const next = { ...prev };
       delete next[key];
       return next;
-    });
+    };
+    setPrices(drop);
+    setQuantities(drop);
   };
 
-  const amount = (v: string | undefined): number | null =>
-    v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v);
-  /** one card's price, its GST and price + GST; null until a price is typed */
-  const productAmounts = (key: number) => {
-    const price = amount(prices[key]);
-    if (price === null) return null;
-    const gst = gstOf(price);
-    return { price, gst, total: Math.round((price + gst) * 100) / 100 };
-  };
-  const productTotals = items.map((k) => productAmounts(k)?.total).filter((v): v is number => v !== undefined);
-  const productsSum = productTotals.length
-    ? Math.round(productTotals.reduce((a, b) => a + b, 0) * 100) / 100
-    : null;
-  const additionalAmount = amount(additional);
-  const subtotal =
-    productsSum === null && additionalAmount === null
-      ? null
-      : Math.round(((productsSum ?? 0) + (additionalAmount ?? 0)) * 100) / 100;
+  // a typed amount (up to 2 decimals) or quantity (a whole number ≥ 1);
+  // anything else counts as not entered yet
+  const amount = (v = "") => (/^\d+(\.\d{1,2})?$/.test(v.trim()) ? v.trim() : null);
+  const qty = (v = "1") => (/^\d+$/.test(v.trim()) && Number(v) >= 1 ? Number(v) : null);
+  // per card: (unit price × qty + the Additional Amount on product 1) + 18% GST
+  const money = orderMoney({
+    items: items.map((k) => ({
+      quantity: qty(quantities[k]) ?? 1,
+      price: qty(quantities[k]) === null ? null : amount(prices[k]),
+    })),
+    additional_amount: amount(additional),
+  });
 
   const toggle = (id: string) =>
     setPicked((prev) => {
@@ -110,12 +109,6 @@ export function PunchOrderForm({
           <Label htmlFor="ship_to">Ship To</Label>
           <Textarea id="ship_to" name="ship_to" rows={2} maxLength={2000} />
         </FormRow>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FormRow>
-            <Label htmlFor="expected_delivery">Expected delivery</Label>
-            <DateField id="expected_delivery" name="expected_delivery" min={today} />
-          </FormRow>
-        </div>
       </fieldset>
 
       <fieldset className="space-y-3">
@@ -176,11 +169,12 @@ export function PunchOrderForm({
                     defaultValue={1}
                     inputMode="numeric"
                     required
+                    onChange={(e) => setQuantities((prev) => ({ ...prev, [key]: e.target.value }))}
                   />
                 </FormRow>
                 <FormRow>
-                  <Label htmlFor={`price-${key}`} hint="hidden from production">
-                    Price
+                  <Label htmlFor={`price-${key}`} hint="one product · hidden from production">
+                    Unit price
                   </Label>
                   <MoneyInput
                     id={`price-${key}`}
@@ -190,18 +184,25 @@ export function PunchOrderForm({
                 </FormRow>
                 <FormRow>
                   <p className="mb-1.5 text-[13px] font-medium text-text-secondary">
-                    Total incl. {GST_PERCENT}% GST
+                    Total (incl. {GST_RATE}% GST)
                   </p>
                   <div
                     className="flex h-9 items-center justify-end rounded-lg border border-border bg-bg-subtle/60 px-3 text-sm font-medium tnum"
                     aria-live="polite"
                   >
-                    {formatCurrency(productAmounts(key)?.total)}
+                    {formatINR(money.rows[i].total)}
                   </div>
                   <p className="text-right text-[12px] text-text-tertiary tnum">
-                    {productAmounts(key)
-                      ? `${formatCurrency(productAmounts(key)!.price)} + GST ${formatCurrency(productAmounts(key)!.gst)}`
-                      : `Price + ${GST_PERCENT}% GST`}
+                    {money.rows[i].base !== null
+                      ? [
+                          money.rows[i].unit !== null &&
+                            `${qty(quantities[key])} × ${formatINR(money.rows[i].unit)}`,
+                          money.rows[i].additional > BigInt(0) &&
+                            `${formatINR(money.rows[i].additional)} additional`,
+                        ]
+                          .filter(Boolean)
+                          .join(" + ") + ` + GST ${formatINR(money.rows[i].gst)}`
+                      : `Unit price × qty + ${GST_RATE}% GST`}
                   </p>
                 </FormRow>
               </div>
@@ -236,11 +237,19 @@ export function PunchOrderForm({
         </div>
       </fieldset>
 
+      {/* order-level, but asked for below the products' descriptions */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormRow>
+          <Label htmlFor="expected_delivery">Expected delivery</Label>
+          <DateField id="expected_delivery" name="expected_delivery" min={today} />
+        </FormRow>
+      </div>
+
       <fieldset className="space-y-3">
         <legend className="nr-section-label">Amounts</legend>
         <div className="grid gap-4 sm:grid-cols-2">
           <FormRow>
-            <Label htmlFor="additional_amount" hint="no GST · hidden from production">
+            <Label htmlFor="additional_amount" hint={`on product 1 · ${GST_RATE}% GST applies · hidden from production`}>
               Additional Amount
             </Label>
             <MoneyInput id="additional_amount" name="additional_amount" onChange={setAdditional} />
@@ -249,18 +258,17 @@ export function PunchOrderForm({
         <dl className="space-y-1.5 rounded-xl border border-border bg-bg-subtle/40 p-4 text-[13px]">
           <div className="flex justify-between gap-3">
             <dt className="text-text-secondary">
-              Products (price + {GST_PERCENT}% GST
-              {items.length > 1 ? `, ${items.length} products` : ""})
+              Subtotal (before GST{items.length > 1 ? `, ${items.length} products` : ""})
             </dt>
-            <dd className="tnum">{formatCurrency(productsSum)}</dd>
+            <dd className="tnum">{formatINR(money.subtotal)}</dd>
           </div>
           <div className="flex justify-between gap-3">
-            <dt className="text-text-secondary">Additional Amount added</dt>
-            <dd className="tnum">{additionalAmount === null ? "—" : `+ ${formatCurrency(additionalAmount)}`}</dd>
+            <dt className="text-text-secondary">GST @ {GST_RATE}%</dt>
+            <dd className="tnum">{formatINR(money.gst)}</dd>
           </div>
           <div className="flex justify-between gap-3 border-t border-border pt-1.5 font-medium">
-            <dt>Order subtotal (incl. {GST_PERCENT}% GST, Additional Amount added)</dt>
-            <dd className="tnum">{formatCurrency(subtotal)}</dd>
+            <dt>Grand total (incl. {GST_RATE}% GST)</dt>
+            <dd className="tnum">{formatINR(money.grandTotal)}</dd>
           </div>
         </dl>
       </fieldset>

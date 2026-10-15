@@ -5,8 +5,9 @@ import { requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader, EmptyState } from "@/components/shared/Page";
 import { Badge } from "@/components/shared/Badge";
-import { formatDateTime, formatCurrency, formatDay } from "@/lib/utils";
+import { formatDateTime, formatDay } from "@/lib/utils";
 import { stageName } from "@/lib/orders";
+import { GST_RATE, formatINR, orderMoney, plainAmount, toPaise } from "@/lib/money";
 import type { Json } from "@/types/database.types";
 
 export const metadata = { title: "Activity log" };
@@ -143,6 +144,32 @@ function EntryRow({ entry, items }: { entry: Entry; items?: Entry[] }) {
   );
 }
 
+type SnapItem = { quantity: number; price: number | null; feat?: number | null };
+
+/**
+ * A deleted order's grand total incl. 18% GST, worked out from its snapshot
+ * exactly as lib/money.ts does for live orders (the stored orders.price was
+ * the old formula). Products: the snapshot's items (0019+), else the order
+ * row itself. Additional Amount: the snapshot's own (0021+), else the
+ * products' FEAT amounts (0020).
+ */
+function snapshotGrandTotal(d: Record<string, never>): string {
+  try {
+    const o = d.order as Record<string, never>;
+    const snap = (d.items as unknown as SnapItem[] | undefined) ?? [];
+    const items: SnapItem[] = snap.length
+      ? snap.map((i) => ({ quantity: Number(i.quantity), price: i.price ?? null, feat: i.feat ?? null }))
+      : [{ quantity: Number(o.quantity), price: (o.price as number | null) ?? null }];
+    const feats = items.map((i) => toPaise(i.feat)).filter((v): v is bigint => v !== null);
+    const additional =
+      (d.additional_amount as number | null | undefined) ??
+      (feats.length ? plainAmount(feats.reduce((a, b) => a + b)) : null);
+    return formatINR(orderMoney({ items, additional_amount: additional }).grandTotal);
+  } catch {
+    return "—"; // a malformed old snapshot never breaks the log
+  }
+}
+
 function Snapshot({ entry }: { entry: Entry }) {
   const d = entry.details as Record<string, never>;
   let rows: [string, string][] = [];
@@ -162,7 +189,7 @@ function Snapshot({ entry }: { entry: Entry }) {
             ["Quantity", String(o.quantity ?? "—")],
           ] as [string, string][])),
       ["Client", String(o.client_name || "—")],
-      ["Order value", formatCurrency(o.price === null ? null : Number(o.price))],
+      [`Grand total (incl. ${GST_RATE}% GST)`, snapshotGrandTotal(d)],
       ["Expected delivery", formatDay(o.expected_delivery ?? null)],
       ["Stage at deletion", `${o.stage} — ${stageName(Number(o.stage))}`],
       ["Punched by", String(d.dispatched_by ?? "—")],

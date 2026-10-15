@@ -32,42 +32,6 @@ export function orderTitle(o: { product_name: string; items?: { product_name: st
   return items.length > 1 ? `${first} +${items.length - 1} more` : first;
 }
 
-/** GST on every product's price (never on the Additional Amount). */
-export const GST_PERCENT = 18;
-
-/**
- * 18% GST on a price, to the paisa, rounded half up — the same as the
- * database's gst_of(). Only the form's live preview uses this; stored orders
- * read their GST from the database.
- */
-export function gstOf(price: number): number {
-  return Math.round((Math.round(price * 100) * GST_PERCENT) / 100) / 100;
-}
-
-/** A product's total = price + GST; null when it has no price (or it's hidden). */
-export function itemTotal(i: { price: number | null; gst: number | null }): number | null {
-  return i.price === null ? null : i.price + (i.gst ?? 0);
-}
-
-/**
- * The order's money, in the order it is added up:
- *   products  = Σ(price + GST)          — "including 18% GST"
- *   additional = the Additional Amount   — "Additional Amount added"
- *   subtotal  = products + additional    (= order.price from the database)
- */
-export function orderAmounts(o: {
-  items: { price: number | null; gst: number | null }[];
-  additional_amount: number | null;
-}) {
-  const totals = o.items.map(itemTotal).filter((v): v is number => v !== null);
-  const products = totals.length ? round2(totals.reduce((a, b) => a + b, 0)) : null;
-  const additional = o.additional_amount;
-  const subtotal = products === null && additional === null ? null : round2((products ?? 0) + (additional ?? 0));
-  return { products, additional, subtotal };
-}
-
-const round2 = (n: number) => Math.round(n * 100) / 100;
-
 /** Total units across the order's products. */
 export function totalQuantity(o: { quantity: number; items?: { quantity: number }[] }): number {
   return o.items?.length ? o.items.reduce((n, i) => n + i.quantity, 0) : o.quantity;

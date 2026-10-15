@@ -14,17 +14,10 @@ import { AdminStageControl } from "@/components/dashboard/AdminStageControl";
 import { StageTimerBar } from "@/components/dashboard/StageTimerBar";
 import { LiveRefresh } from "@/components/dashboard/LiveRefresh";
 import { DeleteButton } from "@/components/dashboard/DeleteButton";
-import {
-  GST_PERCENT,
-  MAX_STAGE,
-  itemTotal,
-  orderAmounts,
-  orderTitle,
-  stageName,
-  totalQuantity,
-} from "@/lib/orders";
+import { MAX_STAGE, orderTitle, stageName, totalQuantity } from "@/lib/orders";
+import { GST_RATE, formatINR, orderMoney } from "@/lib/money";
 import { perf } from "@/lib/perf";
-import { formatCurrency, formatDateTime, formatDay } from "@/lib/utils";
+import { formatDateTime, formatDay } from "@/lib/utils";
 
 export async function generateMetadata({
   params,
@@ -65,7 +58,7 @@ export default async function OrderDetailPage({
   const showAssignees = ctx.role !== "production";
   // Admin tier moves any order to any stage, without the timer, after confirming.
   const canOverrideStage = ctx.can("orders.overrideStage");
-  const amounts = orderAmounts(order);
+  const money = orderMoney(order);
 
   pf.end({ role: ctx.role });
 
@@ -129,10 +122,10 @@ export default async function OrderDetailPage({
                 <Field label="Ship To" value={order.ship_to || "—"} wide />
                 <Field label="Expected delivery" value={formatDay(order.expected_delivery)} />
                 {canSeePrice && (
-                  <Field label="Order subtotal" value={formatCurrency(amounts.subtotal)} />
+                  <Field label={`Grand total (incl. ${GST_RATE}% GST)`} value={formatINR(money.grandTotal)} />
                 )}
                 {canSeePrice && (
-                  <Field label="Additional Amount" value={formatCurrency(amounts.additional)} />
+                  <Field label="Additional Amount" value={formatINR(money.additional)} />
                 )}
                 <Field
                   label="Products"
@@ -158,45 +151,52 @@ export default async function OrderDetailPage({
               description={order.items.length === 1 ? "1 product" : `${order.items.length} products`}
             />
             <ol className="divide-y divide-border">
-              {order.items.map((it) => (
+              {order.items.map((it, k) => (
                 <li key={it.id} className="flex gap-3 px-5 py-4 text-[13px]">
                   <span className="mt-px w-5 shrink-0 text-text-tertiary tnum">{it.position}.</span>
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-text">{it.product_name}</p>
                     <p className="mt-0.5 text-text-secondary">
-                      {[it.transformer_rating, `Qty ${it.quantity}`].filter(Boolean).join(" · ")}
+                      {/* with prices, Qty is the first money column below */}
+                      {[it.transformer_rating, canSeePrice ? null : `Qty ${it.quantity}`].filter(Boolean).join(" · ")}
                     </p>
                     {it.description && (
                       <p className="mt-1.5 whitespace-pre-wrap text-text-tertiary">{it.description}</p>
                     )}
+                    {canSeePrice && (
+                      // the single-order PDF's columns, same figures (lib/money.ts)
+                      <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+                        {(
+                          [
+                            ["Qty", String(it.quantity)],
+                            ["Unit price", formatINR(money.rows[k].unit)],
+                            ["Additional amount", formatINR(money.rows[k].additional)],
+                            [`Total (incl. ${GST_RATE}% GST)`, formatINR(money.rows[k].total)],
+                          ] as const
+                        ).map(([label, value], j) => (
+                          <div key={label} className="sm:text-right">
+                            <dt className="text-[11px] text-text-tertiary">{label}</dt>
+                            <dd className={j === 3 ? "font-medium tnum text-text" : "tnum text-text-secondary"}>{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
                   </div>
-                  {canSeePrice && (
-                    <div className="shrink-0 text-right">
-                      <p className="font-medium tnum">{formatCurrency(itemTotal(it))}</p>
-                      {it.price !== null && (
-                        <p className="mt-0.5 text-[12px] text-text-tertiary tnum">
-                          Price {formatCurrency(it.price)} + GST {GST_PERCENT}% {formatCurrency(it.gst)}
-                        </p>
-                      )}
-                    </div>
-                  )}
                 </li>
               ))}
               {canSeePrice && (
                 <li className="space-y-1.5 px-5 py-3 text-[13px]">
                   <div className="flex justify-between gap-3">
-                    <span className="pl-8 text-text-secondary">Products, including {GST_PERCENT}% GST</span>
-                    <span className="tnum">{formatCurrency(amounts.products)}</span>
+                    <span className="pl-8 text-text-secondary">Subtotal (before GST)</span>
+                    <span className="tnum">{formatINR(money.subtotal)}</span>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <span className="pl-8 text-text-secondary">Additional Amount added</span>
-                    <span className="tnum">
-                      {amounts.additional === null ? "—" : `+ ${formatCurrency(amounts.additional)}`}
-                    </span>
+                    <span className="pl-8 text-text-secondary">GST @ {GST_RATE}%</span>
+                    <span className="tnum">{formatINR(money.gst)}</span>
                   </div>
                   <div className="flex justify-between gap-3 font-semibold">
-                    <span className="pl-8">Order subtotal</span>
-                    <span className="tnum">{formatCurrency(amounts.subtotal)}</span>
+                    <span className="pl-8">Grand total (incl. {GST_RATE}% GST)</span>
+                    <span className="tnum">{formatINR(money.grandTotal)}</span>
                   </div>
                 </li>
               )}

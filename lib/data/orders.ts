@@ -76,6 +76,7 @@ function items(o: Order): OrderItem[] {
       quantity: Number(i.quantity),
       price: i.price === null || i.price === undefined ? null : Number(i.price),
       gst: i.gst === null || i.gst === undefined ? null : Number(i.gst),
+      feat: i.feat === null || i.feat === undefined ? null : Number(i.feat),
     }))
     .sort((a, b) => a.position - b.position);
 }

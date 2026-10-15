@@ -1,19 +1,13 @@
+import type { ReactNode } from "react";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { OrderRow } from "@/lib/data/orders";
 import type { OrderItem } from "@/types/database.types";
-import {
-  GST_PERCENT,
-  MAX_STAGE,
-  stageName,
-  ORDER_STATUS_LABEL,
-  itemTotal,
-  orderAmounts,
-  orderTitle,
-  totalQuantity,
-} from "@/lib/orders";
+import { MAX_STAGE, stageName, ORDER_STATUS_LABEL, orderTitle, totalQuantity } from "@/lib/orders";
+import { GST_RATE, orderMoney, type Paise } from "@/lib/money";
 import { formatDateTime, formatDay } from "@/lib/utils";
-import { C, base, inr } from "./theme";
+import { C, base } from "./theme";
 import { PdfHeader, PdfFooter, PdfSignature } from "./Chrome";
+import { Rupees } from "./Rupees";
 
 const cellRule = { borderRight: `0.75 solid ${C.rule}`, borderBottom: `0.75 solid ${C.rule}` };
 
@@ -47,21 +41,31 @@ const s = StyleSheet.create({
   totalLabel: { fontFamily: "Helvetica-Bold", textAlign: "right", backgroundColor: C.head },
   totalValue: { fontFamily: "Helvetica-Bold", textAlign: "right" },
   // the breakdown lines above the subtotal: same cells, regular weight
-  sumLabel: { textAlign: "right", backgroundColor: C.head },
   sumCell: { paddingVertical: 4 },
   // pushes the signature to the foot of the (last) page
   fill: { flexGrow: 1 },
 });
 
-type PCol = { key: string; label: string; width: number; align?: "right" | "center"; cell: (i: OrderItem) => string };
+type PCol = {
+  key: string;
+  label: string;
+  width: number;
+  align?: "right" | "center";
+  cell: (i: OrderItem, k: number) => ReactNode;
+};
+
+/** The A4 portrait line between the page margins, in points. */
+const LINE = 595.28 - 2 * 36;
 
 /**
  * One order: an order-details table (one field per row — nothing shares a
  * cell), then a ruled products table (no descriptions — those stay on the
  * order page), then the signature. Only the CURRENT
- * stage is shown (no stage-by-stage history). The price / GST / total
- * columns, the subtotal breakdown and the subtotal + Additional Amount rows
- * only exist when `showPrice` (never for production).
+ * stage is shown (no stage-by-stage history). The money — Unit price /
+ * Additional amount / Total (incl. 18% GST) columns, the Grand total
+ * (incl. 18% GST) row under them and the details-table rows — only exists
+ * when `showPrice` (never for production). Every figure comes from
+ * lib/money.ts, and the row totals add up to the grand total to the paisa.
  */
 export function OrderSpecSheet({
   order,
@@ -77,12 +81,14 @@ export function OrderSpecSheet({
   generatedAt: Date;
 }) {
   const units = totalQuantity(order);
-  const amounts = orderAmounts(order);
-  const rows: [string, string][] = [
+  const money = orderMoney(order);
+  const rows: [string, ReactNode][] = [
     ["Client name", order.client_name || "—"],
     ["Ship To", order.ship_to || "—"],
     ["Products", `${order.items.length} (${units} unit${units === 1 ? "" : "s"})`],
-    ...(showPrice ? ([["Order subtotal", inr(amounts.subtotal)]] as [string, string][]) : []),
+    ...(showPrice
+      ? ([[`Grand total (incl. ${GST_RATE}% GST)`, <Rupees key="g" value={money.grandTotal} />]] as [string, ReactNode][])
+      : []),
     ["Expected delivery date", formatDay(order.expected_delivery)],
     ["Current stage", `Stage ${order.stage} of ${MAX_STAGE} — ${stageName(order.stage)}`],
     ["Status", ORDER_STATUS_LABEL[order.status] ?? order.status],
@@ -93,37 +99,37 @@ export function OrderSpecSheet({
       ? ([["Punched by", order.puncher?.label ?? "—"]] as [string, string][])
       : []),
     ["Punched on", formatDateTime(order.created_at)],
-    ...(showPrice ? ([["Additional Amount", inr(amounts.additional)]] as [string, string][]) : []),
+    ...(showPrice ? ([["Additional Amount", <Rupees key="a" value={money.additional} />]] as [string, ReactNode][]) : []),
   ];
 
-  // No description in the PDF (it stays on the order page). Total = price + GST.
-  // Amount columns fit crore-sized values on one line ("INR 1,17,99,999.99";
-  // the total column up to "INR 99,99,99,999.99"); anything larger wraps
-  // after "INR", never past the cell.
+  // No description in the PDF (it stays on the order page).
+  // Qty | Unit price | Additional amount | Total (incl. 18% GST), per product
+  // row: (unit price × qty + the row's Additional Amount) + 18% GST on that.
+  // The order's Additional Amount sits on its first product row (lib/money).
+  // Amounts fit up to "₹99,99,99,999.99" on one line; anything larger breaks
+  // after a comma, never past the cell.
   const cols: PCol[] = [
     { key: "n", label: "#", width: 4, align: "center", cell: (i) => String(i.position) },
-    { key: "name", label: "Product name", width: showPrice ? 22 : 30, cell: (i) => i.product_name },
-    { key: "rating", label: "Transformer rating", width: showPrice ? 16 : 22, cell: (i) => i.transformer_rating || "—" },
+    { key: "name", label: "Product name", width: showPrice ? 20 : 30, cell: (i) => i.product_name },
+    { key: "rating", label: "Transformer rating", width: showPrice ? 15 : 22, cell: (i) => i.transformer_rating || "—" },
     { key: "qty", label: "Qty", width: 6, align: "right", cell: (i) => String(i.quantity) },
     ...(showPrice
       ? [
-          { key: "price", label: "Price", width: 17.5, align: "right" as const, cell: (i: OrderItem) => inr(i.price) },
-          { key: "gst", label: `GST ${GST_PERCENT}%`, width: 15, align: "right" as const, cell: (i: OrderItem) => inr(i.gst) },
-          { key: "value", label: `Total incl. GST`, width: 19.5, align: "right" as const, cell: (i: OrderItem) => inr(itemTotal(i)) },
+          { key: "unit", label: "Unit price", width: 18, align: "right" as const, cell: (_: OrderItem, k: number) => rupees(money.rows[k].unit, 18) },
+          { key: "additional", label: "Additional amount", width: 17, align: "right" as const, cell: (_: OrderItem, k: number) => rupees(money.rows[k].additional, 17) },
+          { key: "value", label: `Total (incl. ${GST_RATE}% GST)`, width: 20, align: "right" as const, cell: (_: OrderItem, k: number) => rupees(money.rows[k].total, 20) },
         ]
       : []),
   ];
   const total = cols.reduce((n, c) => n + c.width, 0);
   const w = (width: number) => ({ width: `${(width / total) * 100}%` });
+  // an amount sized to its column (cell padding 6 + 6, a hairline to spare)
+  const rupees = (v: Paise | null, width: number) => (
+    <Rupees value={v} fit={{ width: (width / total) * LINE - 12 - 0.5, fontSize: 9 }} />
+  );
   const align = (c: PCol) => (c.align === "right" ? s.right : c.align === "center" ? s.center : {});
-  // The breakdown rows' labels span every column before the total column.
-  const valueCol = cols.find((c) => c.key === "value");
-  const beforeValue = cols.slice(0, cols.findIndex((c) => c.key === "value")).reduce((n, c) => n + c.width, 0);
-  const breakdown: [string, string, boolean][] = [
-    [`Products, including ${GST_PERCENT}% GST`, inr(amounts.products), false],
-    ["Additional Amount added", amounts.additional === null ? "—" : `+ ${inr(amounts.additional)}`, false],
-    ["Order subtotal", inr(amounts.subtotal), true],
-  ];
+  const widthOf = (key: string) => cols.find((c) => c.key === key)?.width ?? 0;
+  const before = (key: string) => cols.slice(0, cols.findIndex((c) => c.key === key)).reduce((n, c) => n + c.width, 0);
 
   return (
     <Document title={`${orderTitle(order)} — Order specification`} author="NR Industries">
@@ -157,19 +163,21 @@ export function OrderSpecSheet({
             <View key={it.id} style={[s.row, ri % 2 === 1 ? { backgroundColor: C.zebra } : {}]} wrap={false}>
               {cols.map((c) => (
                 <Text key={c.key} style={[s.pCell, w(c.width), align(c)]}>
-                  {c.cell(it)}
+                  {c.cell(it, ri)}
                 </Text>
               ))}
             </View>
           ))}
-          {showPrice && valueCol && (
-            <View wrap={false}>
-              {breakdown.map(([label, value, bold]) => (
-                <View key={label} style={s.row}>
-                  <Text style={[s.pCell, s.sumCell, bold ? s.totalLabel : s.sumLabel, w(beforeValue)]}>{label}</Text>
-                  <Text style={[s.pCell, s.sumCell, bold ? s.totalValue : s.right, w(valueCol.width)]}>{value}</Text>
-                </View>
-              ))}
+          {/* Grand total = Σ the row totals above (lib/money.ts); its label spans
+              every column before the Total column. */}
+          {showPrice && (
+            <View style={s.row} wrap={false}>
+              <Text style={[s.pCell, s.sumCell, s.totalLabel, w(before("value"))]}>
+                Grand total (incl. {GST_RATE}% GST)
+              </Text>
+              <Text style={[s.pCell, s.sumCell, s.totalValue, w(widthOf("value"))]}>
+                {rupees(money.grandTotal, widthOf("value"))}
+              </Text>
             </View>
           )}
         </View>

@@ -48,7 +48,7 @@ const s = StyleSheet.create({
   right: { textAlign: "right" },
   center: { textAlign: "center" },
   sub: { fontSize: 6.8, color: C.muted, marginTop: 1 },
-  // With the money columns (admin / marketing) the row holds 16 columns:
+  // With the money columns (admin / marketing) the row holds 15 columns:
   // slightly smaller text and padding so long words and amounts never cross
   // a cell rule. Production's report keeps the regular size.
   cellCompact: { paddingHorizontal: 4, fontSize: 7 },
@@ -96,13 +96,18 @@ const shipTo = (o: OrderRow) =>
  * columns form a block inside the row with one ruled line per product, so a
  * product's name, rating and quantity always line up (no descriptions in
  * the PDF — they stay on the order page). Stage = current stage only. The
- * money is per product line: Qty | Unit price | Additional amount | Total
- * (incl. 18% GST) = (unit price × qty + the line's Additional Amount) + 18%
- * GST on that — an order's Additional Amount sits on its first product
- * (lib/money.ts). Subtotal (before GST) / GST @ 18% / Grand total (incl. 18%
- * GST) under the table are the sums of those lines, so the rows add up to
- * the totals to the paisa. All of it exists only when `showPrice` (never
- * for production).
+ * money is per product line: Qty | Unit price | Total (incl. 18% GST) =
+ * (unit price × qty + the line's Additional Amount) + 18% GST on that — an
+ * order's Additional Amount sits on its first product (lib/money.ts). The
+ * Additional Amount has no column of its own (room for Remarks): its sum
+ * over the report is printed by the totals, as "Additional cost". Under the
+ * table: Additional cost (included in the subtotal) / Subtotal (before GST) /
+ * GST @ 18% / Grand total (incl. 18% GST) — the sums of those lines, so the
+ * rows add up to the totals to the paisa. All of it exists only when
+ * `showPrice` (never for production).
+ *
+ * The last column, Remarks, is always blank: room to write by hand on the
+ * printed copy. Nothing in the system fills it.
  *
  * Widths are in points of the 770pt landscape line (scaled to fit when some
  * columns are hidden). Money cells read "₹2,51,50,000.00": one line up to
@@ -137,17 +142,16 @@ export function OrdersReport({
   const W = (c: number, r: number) => (compact ? c : r);
   const lead: Col[] = [
     { key: "n", label: "#", width: 20, align: "center", cell: () => "" },
-    { key: "client", label: "Client name", width: W(62, 70), cell: (o) => o.client_name || "—" },
-    { key: "ship", label: "Ship To", width: W(61, 70), cell: shipTo },
+    { key: "client", label: "Client name", width: W(57, 70), cell: (o) => o.client_name || "—" },
+    { key: "ship", label: "Ship To", width: W(56, 70), cell: shipTo },
   ];
   const itemCols: ItemCol[] = [
-    { key: "product", label: "Product name", width: W(77, 84), cell: (i) => i.product_name },
+    { key: "product", label: "Product name", width: W(71, 84), cell: (i) => i.product_name },
     { key: "rating", label: "Transformer rating", width: W(58, 70), cell: (i) => i.transformer_rating || "—" },
     { key: "qty", label: "Qty", width: W(26, 28), align: "right", cell: (i) => String(i.quantity) },
     ...(showPrice
       ? [
           { key: "unit", label: "Unit price", width: 64, align: "right" as const, cell: () => "", money: (o: OrderRow, k: number) => m(o).rows[k].unit },
-          { key: "additional", label: "Additional amount", width: 64, align: "right" as const, cell: () => "", money: (o: OrderRow, k: number) => m(o).rows[k].additional },
           { key: "value", label: `Total (incl. ${GST_RATE}% GST)`, width: 66, align: "right" as const, cell: () => "", money: (o: OrderRow, k: number) => m(o).rows[k].total },
         ]
       : []),
@@ -172,6 +176,8 @@ export function OrdersReport({
       ? [{ key: "by", label: "Punched by", width: 46, cell: (o: OrderRow) => o.puncher?.label ?? "—" }]
       : []),
     { key: "date", label: "Punched on", width: W(44, 62), cell: (o) => formatDate(o.created_at) },
+    // blank on purpose: written on by hand after printing
+    { key: "remarks", label: "Remarks", width: W(80, 100), cell: () => "" },
   ];
   const cell = compact ? [s.cell, s.cellCompact] : [s.cell];
   // a word wider than its column is hyphenated instead of crossing the rule
@@ -188,6 +194,8 @@ export function OrdersReport({
     c.align === "right" ? s.right : c.align === "center" ? s.center : {};
   const sumOf = (os: OrderRow[]) => sumMoney(os.map(m));
   const totals = sumOf(orders);
+  // Σ the orders' Additional Amounts — already inside the subtotal
+  const additionalCost = orders.reduce((n, o) => n + m(o).additional, BigInt(0));
   // an amount sized to its column (the inner width fit() uses)
   const rupees = (v: Paise | null, width: number) => (
     <Rupees value={v} fit={{ width: (width / total) * LINE - 2 * (compact ? 4 : 5) - 0.5, fontSize }} />
@@ -252,6 +260,14 @@ export function OrdersReport({
           </Text>
           {showPrice && (
             <Text style={s.summaryItem}>
+              Additional cost:{" "}
+              <Text style={s.bold}>
+                <Rupees value={additionalCost} />
+              </Text>
+            </Text>
+          )}
+          {showPrice && (
+            <Text style={s.summaryItem}>
               Grand total (incl. {GST_RATE}% GST):{" "}
               <Text style={s.bold}>
                 <Rupees value={totals.grandTotal} />
@@ -312,14 +328,15 @@ export function OrdersReport({
           <View style={[s.totals, s.top]} wrap={false}>
             {(
               [
+                ["Additional cost (included in subtotal)", additionalCost],
                 ["Subtotal (before GST)", totals.subtotal],
                 [`GST @ ${GST_RATE}%`, totals.gst],
                 [`Grand total (incl. ${GST_RATE}% GST)`, totals.grandTotal],
               ] as const
             ).map(([label, value], k) => (
               <View key={label} style={s.row}>
-                <Text style={[s.cell, s.first, s.totalsLabel, k === 2 ? s.totalsGrand : {}]}>{label}</Text>
-                <Text style={[s.cell, s.totalsValue, k === 2 ? s.totalsGrand : {}]}>
+                <Text style={[s.cell, s.first, s.totalsLabel, k === 3 ? s.totalsGrand : {}]}>{label}</Text>
+                <Text style={[s.cell, s.totalsValue, k === 3 ? s.totalsGrand : {}]}>
                   <Rupees value={value} />
                 </Text>
               </View>

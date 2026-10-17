@@ -51,7 +51,7 @@ export function StageTimerBar({
         </span>
         <span className="tnum font-semibold text-text">{formatCountdown(remaining)}</span>
       </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-overlay/10">
         <div
           className="h-full rounded-full bg-accent transition-[width] duration-1000 ease-linear"
           style={{ width: `${Math.min(100, (remaining / STAGE_TIMER_MS) * 100)}%` }}

@@ -64,7 +64,7 @@ export function NotificationsBell({
           setOpen((v) => !v);
           if (!open) load();
         }}
-        className="nr-interactive relative inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] hover:text-text"
+        className="nr-interactive relative inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-overlay/[0.06] hover:text-text"
         aria-label="Notifications"
       >
         <Bell size={16} />
@@ -120,7 +120,7 @@ export function NotificationsBell({
                 const className = cn(
                   "block border-b border-border px-4 py-3 text-left last:border-0",
                   !n.read_at && "bg-accent/[0.04]",
-                  href && "nr-interactive hover:bg-white/[0.03]",
+                  href && "nr-interactive hover:bg-overlay/[0.03]",
                 );
                 return href ? (
                   <Link

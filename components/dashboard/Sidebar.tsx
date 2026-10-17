@@ -46,8 +46,8 @@ function NavList({ role, onNavigate }: { role: Role; onNavigate?: () => void }) 
             className={cn(
               "nr-interactive flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium hover:translate-x-0.5",
               active
-                ? "bg-white/[0.08] text-text"
-                : "text-text-secondary hover:bg-white/[0.04] hover:text-text",
+                ? "bg-overlay/[0.08] text-text"
+                : "text-text-secondary hover:bg-overlay/[0.04] hover:text-text",
             )}
           >
             <item.icon size={16} strokeWidth={1.75} />
@@ -127,7 +127,7 @@ export function Sidebar({
                 <Logo />
                 <button
                   onClick={onClose}
-                  className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06]"
+                  className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-overlay/[0.06]"
                   aria-label="Close menu"
                 >
                   <X size={16} />

@@ -11,7 +11,7 @@ export default function NotFound() {
       <p className="mt-2 text-[15px] text-text-secondary">That page doesn&apos;t exist.</p>
       <Link
         href="/dashboard/orders"
-        className="mt-6 rounded-lg border border-border-strong px-4 py-2 text-sm font-medium hover:bg-white/[0.05]"
+        className="mt-6 rounded-lg border border-border-strong px-4 py-2 text-sm font-medium hover:bg-overlay/[0.05]"
       >
         Go to orders
       </Link>

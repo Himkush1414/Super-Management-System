@@ -21,7 +21,7 @@ export function StageTracker({
               "h-1.5 flex-1 rounded-full",
               s.n < stage && "bg-status-success",
               s.n === stage && "bg-accent",
-              s.n > stage && "bg-white/10",
+              s.n > stage && "bg-overlay/10",
             )}
           />
         ))}

@@ -292,7 +292,7 @@ export function PunchOrderForm({
                     "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent/50",
                     on
                       ? "border-accent/60 bg-accent/[0.07]"
-                      : "border-border-strong bg-bg-subtle hover:border-white/25",
+                      : "border-border-strong bg-bg-subtle hover:border-overlay/25",
                   )}
                 >
                   <input

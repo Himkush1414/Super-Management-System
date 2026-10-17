@@ -5,7 +5,7 @@ import { stageName } from "@/lib/orders";
 type Tone = "neutral" | "success" | "warning" | "danger" | "info" | "accent";
 
 const tones: Record<Tone, string> = {
-  neutral: "bg-white/[0.09] text-text ring-white/15",
+  neutral: "bg-overlay/[0.09] text-text ring-overlay/15",
   success: "bg-status-success/15 text-status-success ring-status-success/30",
   warning: "bg-status-warning/15 text-status-warning ring-status-warning/30",
   danger: "bg-status-danger/15 text-status-danger ring-status-danger/30",

@@ -38,6 +38,47 @@
   /* solid destructive buttons (white text needs a darker red than --status-danger) */
   --danger-solid: #dc2626;
   --danger-solid-hover: #b91c1c;
+
+  /* translucent hover / active / track fills: white on dark, black on light */
+  --overlay: #ffffff;
+}
+
+/*
+  Light mode — the dashboard's opt-in theme (the sun/moon toggle in its
+  header; dark stays the default). Set as data-theme="light" on <html>
+  before the first paint (app/layout.tsx), and only on /dashboard pages.
+  Every component colours itself through the tokens above, so swapping
+  them is the whole theme.
+*/
+:root[data-theme="light"] {
+  --bg: #f5f5f6;
+  --bg-subtle: #efeff1;
+  --panel: #ffffff;
+  --panel-2: #f4f4f5;
+  --elevated: #ffffff;
+
+  --border: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.18);
+
+  --text: #171717;
+  --text-secondary: #4b4b4b;
+  --text-tertiary: #6b6b6b;
+
+  --accent: #1d4ed8;
+  --accent-hover: #1e40af;
+  --accent-fg: #ffffff;
+
+  /* darker shades so status text (badges included) stays readable on white */
+  --status-success: #166534;
+  --status-warning: #92400e;
+  --status-danger: #b91c1c;
+  --status-info: #1d4ed8;
+  --status-neutral: #4b5563;
+
+  --danger-solid: #dc2626;
+  --danger-solid-hover: #b91c1c;
+
+  --overlay: #000000;
 }
 
 /*
@@ -76,6 +117,7 @@
   --color-status-neutral: var(--status-neutral);
   --color-danger-solid: var(--danger-solid);
   --color-danger-solid-hover: var(--danger-solid-hover);
+  --color-overlay: var(--overlay);
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
@@ -134,7 +176,7 @@ p {
   margin-bottom: 0.25rem;
 }
 
-/* thin custom scrollbars to match the dark shell */
+/* thin custom scrollbars to match the shell */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -143,12 +185,12 @@ p {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--overlay) 10%, transparent);
   border-radius: 999px;
   border: 2px solid var(--bg);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: color-mix(in srgb, var(--overlay) 18%, transparent);
 }
 
 @keyframes nr-fade-in {

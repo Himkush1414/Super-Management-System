@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Menu, LogOut, ChevronRight } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { NotificationsBell } from "./NotificationsBell";
+import { ThemeToggle } from "./ThemeToggle";
 import { logoutAction } from "@/lib/auth/actions";
 import type { Role } from "@/lib/permissions";
 
@@ -78,18 +79,19 @@ export function Shell({
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-bg/80 px-4 backdrop-blur">
           <button
             onClick={() => setMobileOpen(true)}
-            className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] md:hidden"
+            className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-overlay/[0.06] md:hidden"
             aria-label="Open menu"
           >
             <Menu size={16} />
           </button>
           <Breadcrumbs />
           <div className="ml-auto flex items-center gap-1.5">
+            <ThemeToggle />
             <NotificationsBell userId={userId} initialUnread={initialUnread} />
             <form action={logoutAction}>
               <button
                 type="submit"
-                className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06] hover:text-text"
+                className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-overlay/[0.06] hover:text-text"
                 aria-label="Sign out"
                 title="Sign out"
               >

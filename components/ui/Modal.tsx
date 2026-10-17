@@ -70,7 +70,7 @@ export function Modal({
               </div>
               <button
                 onClick={onClose}
-                className="inline-flex size-7 items-center justify-center rounded-lg text-text-secondary hover:bg-white/[0.06]"
+                className="inline-flex size-7 items-center justify-center rounded-lg text-text-secondary hover:bg-overlay/[0.06]"
                 aria-label="Close"
               >
                 <X size={15} />

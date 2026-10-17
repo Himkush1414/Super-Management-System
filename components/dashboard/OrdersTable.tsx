@@ -109,7 +109,7 @@ export function OrdersTable({
               <li key={o.id}>
                 <Link
                   href={`/dashboard/orders/${o.id}`}
-                  className="nr-interactive block rounded-xl border border-border bg-panel/60 p-4 active:bg-white/[0.03]"
+                  className="nr-interactive block rounded-xl border border-border bg-panel/60 p-4 active:bg-overlay/[0.03]"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">

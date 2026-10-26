@@ -70,6 +70,14 @@ const config = {
         android: { usesCleartextTraffic: false },
       },
     ],
+    [
+      "expo-notifications",
+      {
+        icon: "./assets/notification-icon.png",
+        color: "#3b82f6",
+        defaultChannel: "new_orders",
+      },
+    ],
     "expo-sharing",
   ],
   extra: {

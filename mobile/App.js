@@ -56,8 +56,11 @@ export default function App() {
   const [checking, setChecking] = useState(false);
   const [stillOffline, setStillOffline] = useState(false);
   const [errorDetail, setErrorDetail] = useState(/** @type {string | undefined} */ (undefined));
+  // read by the AppState/NetInfo/BackHandler listeners, which are set up once
   const offlineRef = useRef(false);
-  offlineRef.current = offline;
+  useEffect(() => {
+    offlineRef.current = offline;
+  }, [offline]);
 
   const colors = COLORS[theme];
 

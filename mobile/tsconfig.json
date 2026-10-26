@@ -5,7 +5,8 @@
     "checkJs": true,
     "strict": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "allowImportingTsExtensions": true
   },
   "include": ["App.js", "index.js", "app.config.js", "src/**/*.js", "test/**/*.mjs", "scripts/**/*.mjs"]
 }

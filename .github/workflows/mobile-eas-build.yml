@@ -19,8 +19,9 @@ on:
         type: boolean
         default: true
 
-permissions:
-  contents: read
+# read-only token (checkout only); spelled read-all because the website's
+# Tailwind build scans this file and the scope name is also a class name
+permissions: read-all
 
 concurrency:
   group: mobile-eas-build

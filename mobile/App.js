@@ -4,6 +4,7 @@ import { Alert, AppState, BackHandler, Linking, Platform, StyleSheet, View } fro
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import NetInfo from "@react-native-community/netinfo";
+import * as Notifications from "expo-notifications";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { WebView as RNWebView } from "react-native-webview";
 import { COLORS, POLICY, START_URL } from "./src/config";
@@ -11,6 +12,7 @@ import { decide, deepLink, isRootPage } from "./src/links";
 import { buildInjectedScript } from "./src/injected";
 import { OfflineScreen } from "./src/OfflineScreen";
 import { saveAndShareFile } from "./src/files";
+import { createPushRegistrar, ensureChannel } from "./src/push";
 
 // react-native-webview's class typing defaults its generic to `undefined`, and
 // `Props & undefined` is `never` under strict mode; re-type it once here.
@@ -35,6 +37,15 @@ NetInfo.configure({ reachabilityShouldRun: () => false, useNativeReachability: f
 const isOnline = (s) => s.isConnected !== false;
 
 /**
+ * The website page a notification should open, or null.
+ * @param {Notifications.NotificationResponse | null | undefined} response
+ */
+function urlFromNotification(response) {
+  const data = response?.notification.request.content.data;
+  return data && typeof data.url === "string" ? deepLink(data.url, POLICY) : null;
+}
+
+/**
  * App deep links: nrmanagement:///dashboard/orders/<id> opens that page.
  * @param {string | null | undefined} url
  */
@@ -50,7 +61,10 @@ export default function App() {
   const currentUrl = useRef(START_URL);
   const backgroundedAt = useRef(/** @type {number | null} */ (null));
 
-  const [startUrl] = useState(START_URL);
+  // cold start from a notification tap: open that order directly
+  const [startUrl] = useState(() => urlFromNotification(Notifications.getLastNotificationResponse()) ?? START_URL);
+  const registrar = useRef(/** @type {ReturnType<typeof createPushRegistrar> | null} */ (null));
+  if (registrar.current === null) registrar.current = createPushRegistrar();
   const [theme, setTheme] = useState(/** @type {"dark" | "light"} */ ("dark"));
   const [offline, setOffline] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -144,6 +158,21 @@ export default function App() {
     return () => sub.remove();
   }, []);
 
+  // push: channel up front, token rotation, taps while running
+  useEffect(() => {
+    void ensureChannel().catch(() => {});
+    Notifications.clearLastNotificationResponse();
+    const tokenSub = Notifications.addPushTokenListener(() => void registrar.current?.onTokenChanged());
+    const tapSub = Notifications.addNotificationResponseReceivedListener((r) => {
+      const url = urlFromNotification(r);
+      if (url) navigate(url);
+    });
+    return () => {
+      tokenSub.remove();
+      tapSub.remove();
+    };
+  }, [navigate]);
+
   // nrmanagement:// links (cold start and while running)
   useEffect(() => {
     const open = (/** @type {string | null | undefined} */ url) => {
@@ -171,6 +200,14 @@ export default function App() {
       return;
     }
     switch (msg?.type) {
+      case "session":
+        // trust session reports only from the website itself
+        if (!String(e.nativeEvent.url || "").startsWith(`${POLICY.webOrigin}/`)) break;
+        void registrar.current?.onSession({
+          userId: typeof msg.userId === "string" ? msg.userId : null,
+          accessToken: typeof msg.accessToken === "string" ? msg.accessToken : undefined,
+        });
+        break;
       case "theme":
         setTheme(msg.value === "light" ? "light" : "dark");
         break;

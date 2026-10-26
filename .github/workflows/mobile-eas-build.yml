@@ -1,0 +1,78 @@
+# Builds the NR Management Android app on EAS. Manual only: it never runs
+# on pushes or pull requests (so website-only changes never trigger it),
+# and it never touches Vercel or the website.
+#
+# One-time: add the repository secret EXPO_TOKEN
+# (GitHub -> Settings -> Secrets and variables -> Actions -> New repository secret).
+name: Mobile · EAS Android build
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile (preview = installable APK)"
+        type: choice
+        options: [preview, production]
+        default: preview
+      wait:
+        description: "Wait for the build to finish and print its link"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-eas-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Check and build (${{ inputs.profile }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Require the EXPO_TOKEN secret
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Add the EXPO_TOKEN repository secret first (see the top of this workflow)."
+            exit 1
+          fi
+
+      - name: Set up EAS
+        uses: expo/expo-github-action@v9
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck, lint, test
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+
+      - name: Build on EAS
+        env:
+          PROFILE: ${{ inputs.profile }}
+          WAIT_FOR_BUILD: ${{ inputs.wait }}
+        run: |
+          if [ "$WAIT_FOR_BUILD" = "true" ]; then WAIT=--wait; else WAIT=--no-wait; fi
+          eas build --platform android --profile "$PROFILE" --non-interactive "$WAIT"

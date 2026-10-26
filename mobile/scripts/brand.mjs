@@ -18,12 +18,19 @@ export const PALETTE = {
  * @param {{ ink?: string, accent?: string, scale?: number }} [o]
  */
 export function glyph({ ink = PALETTE.ink, accent = PALETTE.accent, scale = 1 } = {}) {
-  const t = `translate(512 512) scale(${scale}) translate(-512 -512)`;
-  return `<g transform="${t}" fill="none" stroke-width="64" stroke-linecap="round" stroke-linejoin="round">
+  // Scaled about the centre with a nested viewport, not a geometry
+  // attribute: the website's Tailwind build scans every committed text
+  // file, and that attribute's name is also a utility class, which would
+  // add an unused rule to the website's CSS.
+  const size = 1024 * scale;
+  const at = 512 - size / 2;
+  return `<svg x="${at}" y="${at}" width="${size}" height="${size}" viewBox="0 0 1024 1024" overflow="visible">
+  <g fill="none" stroke-width="64" stroke-linecap="round" stroke-linejoin="round">
     <path d="M232 692V332L452 692V332" stroke="${ink}"/>
     <path d="M572 692V332H682a108 108 0 0 1 0 216H572" stroke="${ink}"/>
     <path d="M672 548L792 692" stroke="${accent}"/>
-  </g>`;
+  </g>
+  </svg>`;
 }
 
 /** Full app icon: rounded ground with a faint rim, glyph inside. */
@@ -67,10 +74,10 @@ export function socialPreviewSvg() {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
   <rect width="1280" height="640" fill="${PALETTE.ground}"/>
   <rect x="24" y="24" width="1232" height="592" rx="28" fill="none" stroke="${PALETTE.ink}" stroke-opacity="0.08" stroke-width="2"/>
-  <g transform="translate(96 152) scale(0.328)">
+  <svg x="96" y="152" width="335.872" height="335.872" viewBox="0 0 1024 1024">
     <rect width="1024" height="1024" rx="220" fill="${PALETTE.panel}" stroke="${PALETTE.ink}" stroke-opacity="0.16" stroke-width="8"/>
     ${glyph({ scale: 0.92 })}
-  </g>
+  </svg>
   <g font-family="Geist, DejaVu Sans, sans-serif">
     <text x="480" y="286" font-size="72" font-weight="600" fill="${PALETTE.ink}">NR Management</text>
     <text x="482" y="348" font-size="30" fill="${PALETTE.muted}">Order management for NR Industries</text>

@@ -8,7 +8,7 @@ repository changes the live database, Supabase settings or Firebase by
 itself.
 
 **What you get:** when an order is punched (on the website or in the
-app), these people's phones ring with a notification, even if the app is
+app), these people's phones get a notification with sound, even if the app is
 closed:
 
 * the production members the order was sent to
@@ -146,7 +146,7 @@ because the signing key is the same. On each phone, sign in and tap
 
 * Wait for the next real order, or punch one only if you choose to.
   Within a few seconds the assigned production member's phone and the
-  admins' phones should ring.
+  admins' phones should sound.
 * In the SQL Editor, run the second and third queries of `verify.sql`.
   `order_push_log` shows, per order, how many recipients and devices
   there were and how many notifications were sent or failed.

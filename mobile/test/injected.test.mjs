@@ -55,6 +55,7 @@ function page(opts = {}) {
     location: { pathname: opts.path ?? "/dashboard/orders", reload: () => reloads++ },
     document: {
       documentElement,
+      cookie: "",
       activeElement: opts.focused ? { tagName: opts.focused } : null,
       querySelector: () => (opts.dialog ? {} : null),
       addEventListener: () => {},
@@ -66,6 +67,8 @@ function page(opts = {}) {
       }
       observe() {}
     },
+    atob,
+    setInterval: () => 0,
   };
   vm.createContext(sandbox);
   vm.runInContext(injected.buildInjectedScript(), sandbox);
@@ -160,5 +163,100 @@ test("theme changes are reported once per change", () => {
   assert.deepEqual(
     p.posted.filter((m) => m.type === "theme").map((m) => m.value),
     ["dark", "light", "dark"],
+  );
+});
+
+// ── session bridge: cookies exactly as the website's @supabase/ssr writes them ──
+import { createRequire } from "node:module";
+const ssr = createRequire(import.meta.url)("../../node_modules/@supabase/ssr/dist/main/utils/index.js");
+
+/** @param {Record<string, unknown>} claims */
+const jwt = (claims) =>
+  ["h", Buffer.from(JSON.stringify(claims)).toString("base64url"), "sig"].join(".");
+
+/**
+ * document.cookie for a session, chunked/encoded like @supabase/ssr does.
+ * @param {Record<string, unknown>} session
+ */
+function ssrCookie(session, { key = "sb-ywzwzrzlittjiosskmcy-auth-token", base64 = true } = {}) {
+  const value = base64 ? "base64-" + ssr.stringToBase64URL(JSON.stringify(session)) : JSON.stringify(session);
+  return ssr
+    .createChunks(key, value)
+    .map((/** @type {{name: string, value: string}} */ c) => `${c.name}=${encodeURIComponent(c.value)}`)
+    .join("; ");
+}
+
+/** @param {string} cookie */
+function sessionPage(cookie) {
+  /** @type {any[]} */ const posted = [];
+  const doc = {
+    cookie,
+    documentElement: { getAttribute: () => null },
+    activeElement: null,
+    querySelector: () => null,
+    addEventListener: () => {},
+  };
+  const sandbox = {
+    window: { ReactNativeWebView: { postMessage: (/** @type {string} */ s) => posted.push(JSON.parse(s)) } },
+    HTMLAnchorElement: class { click() {} },
+    location: { pathname: "/dashboard/orders" },
+    document: doc,
+    MutationObserver: class { observe() {} },
+    atob,
+    setInterval: () => 0,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(injected.buildInjectedScript(), sandbox);
+  const w = /** @type {any} */ (sandbox.window);
+  return { posted, doc, report: () => w.__nrApp.reportSession(), sessions: () => posted.filter((m) => m.type === "session") };
+}
+
+const USER = "d27e48dd-5418-4ec7-a2ff-97c6a6b2d147";
+
+test("reads the signed-in user from the base64 @supabase/ssr cookie", () => {
+  const at = jwt({ sub: USER, role: "authenticated", exp: 2000000000 });
+  const p = sessionPage(`nr-theme=dark; ${ssrCookie({ access_token: at, refresh_token: "r-secret", expires_at: 2000000000, user: { id: USER } })}`);
+  assert.deepEqual(p.sessions(), [{ type: "session", userId: USER, accessToken: at, expiresAt: 2000000000 }]);
+  assert.doesNotMatch(JSON.stringify(p.posted), /r-secret|refresh/, "the refresh token never leaves the page");
+});
+
+test("reassembles a chunked cookie (.0, .1, …) with non-ASCII user data", () => {
+  const at = jwt({ sub: USER, pad: "x".repeat(5000) });
+  const cookie = ssrCookie({ access_token: at, refresh_token: "r", user: { id: USER, user_metadata: { full_name: "Rāj Kumār ✓" } } });
+  assert.match(cookie, /auth-token\.1=/, "the fixture really is chunked");
+  const p = sessionPage(`sb-ywzwzrzlittjiosskmcy-auth-token-code-verifier=abc; ${cookie}`);
+  assert.equal(p.sessions()[0].userId, USER);
+  assert.equal(p.sessions()[0].accessToken, at);
+});
+
+test("plain-JSON cookies (older encoding) work too", () => {
+  const at = jwt({ sub: USER });
+  const p = sessionPage(ssrCookie({ access_token: at, user: { id: USER } }, { base64: false }));
+  assert.equal(p.sessions()[0].userId, USER);
+});
+
+test("no session cookie, or a broken one, reports signed out", () => {
+  assert.deepEqual(sessionPage("nr-theme=light").sessions(), [{ type: "session", userId: null }]);
+  assert.deepEqual(sessionPage("sb-x-auth-token=base64-%%%broken").sessions(), [{ type: "session", userId: null }]);
+  assert.deepEqual(sessionPage(`sb-x-auth-token=${encodeURIComponent('{"access_token":"not-a-jwt"}')}`).sessions(), [
+    { type: "session", userId: null },
+  ]);
+});
+
+test("reports only on change: sign-in, token refresh, sign-out", () => {
+  const p = sessionPage("");
+  const a1 = jwt({ sub: USER, n: 1 });
+  const a2 = jwt({ sub: USER, n: 2 });
+  p.report();
+  p.doc.cookie = ssrCookie({ access_token: a1, user: { id: USER } });
+  p.report();
+  p.report();
+  p.doc.cookie = ssrCookie({ access_token: a2, user: { id: USER } });
+  p.report();
+  p.doc.cookie = "nr-theme=dark";
+  p.report();
+  assert.deepEqual(
+    p.sessions().map((m) => m.accessToken ?? null),
+    [null, a1, a2, null],
   );
 });

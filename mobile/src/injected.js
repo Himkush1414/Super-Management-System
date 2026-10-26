@@ -1,8 +1,9 @@
 // @ts-check
 // JavaScript the app injects into every page of the website, before the
 // page's own scripts run. It never changes what the website does on its
-// own; it only reports to the app (theme, blocked downloads, files) and
-// lets the app nudge the realtime connection after a resume.
+// own; it only reports to the app (theme, who is signed in, blocked
+// downloads, files) and lets the app nudge the realtime connection after
+// a resume.
 //
 // Pure string builder (no React Native imports) so tests can run it in a
 // sandbox with `node --test`.
@@ -132,6 +133,83 @@ const PAGE_SCRIPT = String.raw`(function () {
     }
     return anchorClick.apply(this, arguments);
   };
+
+  // ── session: who is signed in, read from the website's own cookie ──────
+  // @supabase/ssr keeps the session in sb-<project>-auth-token (split into
+  // .0, .1 … when long), as JSON or "base64-" + base64url(JSON). Only the
+  // user id and access token go to the app (to register this phone for
+  // that user's notifications); the refresh token never leaves the page.
+  function b64urlDecode(str) {
+    var b = str.replace(/-/g, "+").replace(/_/g, "/");
+    while (b.length % 4) b += "=";
+    var bin = atob(b);
+    try {
+      return decodeURIComponent(
+        bin
+          .split("")
+          .map(function (c) {
+            return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
+          })
+          .join(""),
+      );
+    } catch (e) {
+      return bin;
+    }
+  }
+  function readSession() {
+    var whole = null;
+    var chunks = {};
+    var found = false;
+    String(document.cookie || "")
+      .split(/;\s*/)
+      .forEach(function (pair) {
+        var i = pair.indexOf("=");
+        if (i < 1) return;
+        var m = /^sb-[A-Za-z0-9]+-auth-token(?:\.(\d+))?$/.exec(pair.slice(0, i));
+        if (!m) return;
+        found = true;
+        if (m[1] === undefined) whole = pair.slice(i + 1);
+        else chunks[m[1]] = pair.slice(i + 1);
+      });
+    if (!found) return null;
+    var raw = whole;
+    if (raw === null) {
+      raw = "";
+      for (var n = 0; chunks[n] !== undefined; n++) raw += chunks[n];
+    }
+    try {
+      raw = decodeURIComponent(raw);
+    } catch (e) {
+      /* already plain */
+    }
+    if (raw.indexOf("base64-") === 0) raw = b64urlDecode(raw.slice(7));
+    var s = JSON.parse(raw);
+    var at = s && s.access_token;
+    if (!at) return null;
+    var claims = JSON.parse(b64urlDecode(at.split(".")[1] || ""));
+    if (!claims || !claims.sub) return null;
+    return { userId: claims.sub, accessToken: at, expiresAt: s.expires_at || claims.exp || null };
+  }
+  var lastSession = null;
+  function reportSession() {
+    var s = null;
+    try {
+      s = readSession();
+    } catch (e) {
+      s = null;
+    }
+    var key = s ? s.userId + "|" + s.accessToken : "";
+    if (key === lastSession) return;
+    lastSession = key;
+    post(s ? { type: "session", userId: s.userId, accessToken: s.accessToken, expiresAt: s.expiresAt } : { type: "session", userId: null });
+  }
+  w.__nrApp.reportSession = reportSession;
+  document.addEventListener("DOMContentLoaded", reportSession);
+  document.addEventListener("visibilitychange", reportSession);
+  // the token refreshes in the background (about hourly): notice it. A
+  // local cookie read every 15 s; no network involved.
+  setInterval(reportSession, 15000);
+  reportSession();
 
   // ── iOS: fetch a same-site attachment with the session, hand it over ────
   w.__nrFetchFile = function (url) {

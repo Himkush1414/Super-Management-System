@@ -77,7 +77,8 @@ const config = {
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || "",
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "",
     pushConfigured: Boolean(googleServicesFile),
-    eas: process.env.EAS_PROJECT_ID ? { projectId: process.env.EAS_PROJECT_ID } : undefined,
+    // EAS project @midas-hq/nr-management (created by eas init); push tokens need it
+    eas: { projectId: "eb0bdd99-b5a8-4822-bf28-61185046267c" },
   },
 };
 

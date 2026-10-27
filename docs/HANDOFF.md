@@ -149,6 +149,11 @@ also as a QR code: [assets/qr-download.png](assets/qr-download.png).
 A newer APK installs over the old one and keeps you signed in. Every build
 is signed with the same EAS-held key.
 
+**Backup link (temporary):** the same APK straight from EAS, QR code
+[assets/qr-download-eas-backup.png](assets/qr-download-eas-backup.png).
+EAS deletes build files after a while; this one expires on **10 November
+2026**. After that, use the GitHub link above, which doesn't expire.
+
 ## Diagnostics (when a page is slow)
 
 The app keeps a list of its last 50 page loads and switches: time, kind,

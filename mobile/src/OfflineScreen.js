@@ -3,10 +3,35 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 
 /**
- * Shown instead of the website whenever it can't be reached. The app is
+ * Why the website isn't showing:
+ * - "offline": no connection (or the page couldn't be reached at all)
+ * - "server": the website answered with a server error
+ * - "slow": a page load took too long and was stopped
+ * @typedef {"offline" | "server" | "slow"} ErrorKind
+ */
+
+/** @type {Record<ErrorKind, { title: string, body: string }>} */
+const TEXT = {
+  offline: {
+    title: "You’re offline",
+    body: "NR Management needs an internet connection. Check your Wi-Fi or mobile data, then try again.",
+  },
+  server: {
+    title: "Something went wrong",
+    body: "The website had a problem answering. This is usually over in a moment; the app tries again by itself.",
+  },
+  slow: {
+    title: "This is taking too long",
+    body: "The page didn’t finish loading. Your connection may be slow. Try again.",
+  },
+};
+
+/**
+ * Shown instead of the website whenever it can't be shown. The app is
  * online-only: nothing here is cached or editable.
  *
  * @param {{
+ *   kind?: ErrorKind,
  *   colors: { bg: string, panel: string, text: string, muted: string, accent: string },
  *   checking: boolean,
  *   stillOffline: boolean,
@@ -14,7 +39,8 @@ import Svg, { Circle, Path, Rect } from "react-native-svg";
  *   onRetry: () => void,
  * }} props
  */
-export function OfflineScreen({ colors, checking, stillOffline, detail, onRetry }) {
+export function OfflineScreen({ kind = "offline", colors, checking, stillOffline, detail, onRetry }) {
+  const text = TEXT[kind] ?? TEXT.offline;
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }]} accessibilityRole="alert">
       <Svg width={72} height={72} viewBox="0 0 32 32" fill="none">
@@ -22,10 +48,8 @@ export function OfflineScreen({ colors, checking, stillOffline, detail, onRetry 
         <Path d="M9 23V9l7 9 7-9v14" stroke={colors.text} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
         <Circle cx={16} cy={24.5} r={1.6} fill={colors.accent} />
       </Svg>
-      <Text style={[styles.title, { color: colors.text }]}>You&apos;re offline</Text>
-      <Text style={[styles.body, { color: colors.muted }]}>
-        NR Management needs an internet connection. Check your Wi-Fi or mobile data, then try again.
-      </Text>
+      <Text style={[styles.title, { color: colors.text }]}>{text.title}</Text>
+      <Text style={[styles.body, { color: colors.muted }]}>{text.body}</Text>
       {stillOffline && !checking ? (
         <Text style={[styles.hint, { color: colors.muted }]}>Still no connection.</Text>
       ) : null}

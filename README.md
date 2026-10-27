@@ -7,7 +7,7 @@
 **Order management for NR Industries, on the web and on Android, live in real time.**
 
 [![Website](https://img.shields.io/badge/Web-live-0a0a0a?logo=vercel&logoColor=white)](https://super-management-system-tau.vercel.app)
-[![Android](https://img.shields.io/badge/Android-APK-3b82f6?logo=android&logoColor=white)](#download-the-android-app)
+[![Android](https://img.shields.io/badge/Android-private%20APK-3b82f6?logo=android&logoColor=white)](#the-android-app)
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)](https://react.dev)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%C2%B7%20Auth%20%C2%B7%20Realtime-3ecf8e?logo=supabase&logoColor=white)](https://supabase.com)
@@ -25,32 +25,19 @@ within seconds.
 
 ---
 
-## Download the Android app
+## The Android app
 
-<table>
-<tr>
-<td width="200" align="center">
-<img src="docs/assets/qr-download.png" alt="QR code: download NR-Management.apk" width="180">
-<br><sub>Scan with the phone's camera</sub>
-</td>
-<td>
-
-**[⬇ Download NR-Management.apk](https://github.com/Himkush1414/Super-Management-System/releases/latest/download/NR-Management.apk)**
-
-This link always points to the newest release. Android only; for iPhone,
-see [iOS](docs/ios.md).
+The Android app is **distributed privately** to NR Industries staff as a
+signed APK. It isn't on Google Play and isn't published here. Ask the
+administrator for the install link. For iPhone, see [iOS](docs/ios.md).
 
 The app is the live website, so every website update reaches it at once,
 with nothing to reinstall. Sign in with the same username and PIN as on
 the website.
 
-</td>
-</tr>
-</table>
-
 ### Install on Android
 
-1. Open the link above (or scan the QR code) on the phone, and download `NR-Management.apk`.
+1. Open the install link you were sent on the phone, and download the APK.
 2. Open the downloaded file. If Android says installs from this source
    aren't allowed, tap **Settings**, turn on **Allow from this source**
    for your browser (*Settings → Apps → Chrome → Install unknown apps*),
@@ -58,8 +45,7 @@ the website.
 3. Tap **Install**. If Play Protect warns about an unknown developer, tap
    **More details → Install anyway**. The app isn't on Google Play, so this
    is expected.
-4. Open **NR Management**, sign in, and tap **Allow** when it asks about
-   notifications.
+4. Open **NR Management** and sign in.
 
 **Updating:** install the newer APK over the old one. You stay signed in.
 
@@ -112,10 +98,15 @@ From the code as it is today:
 **Android app**
 - The live website in a locked-down WebView: HTTPS only, and only the
   website's and Supabase's domains open inside the app.
-- A branded offline screen with **Retry**, which clears by itself when the
-  network returns. Realtime reconnects immediately after the phone wakes.
-- The back button follows page history, PDF/CSV downloads go to
-  *Downloads*, and safe areas and the status bar match the theme.
+- Feels like an app, not a web page: no zoom, bounce or sideways drag, no
+  tap flash or long-press menus. The splash stays until the page has
+  painted, and the bars take the page's colour.
+- Native screens for offline, server errors and slow loads, with
+  **Retry** and automatic retries. Realtime reconnects immediately after
+  the phone wakes.
+- Back closes dialogs and the menu, then follows page history, then asks
+  before leaving. PDF/CSV downloads open in the phone's viewer or share
+  sheet (WhatsApp, Drive, print).
 
 ## Screenshots
 
@@ -178,12 +169,12 @@ supabase/migrations/      the website's database schema (applied)
 supabase/scripts/         one-off verify / snapshot / rollback scripts
 supabase/mobile/          push: additive SQL + Edge Function (applied by hand)
 mobile/                   the Android/iOS app (own package.json)
-  App.js                  WebView, offline screen, back button, push wiring
-  src/                    URL policy, page bridge, push, downloads
+  App.js                  WebView, error screens, back button, keyboard, push wiring
+  src/                    URL policy, page bridge, app feel, colours, downloads, push
   scripts/                logo, icons, QR code generators
-  test/                   node tests (URL policy, page bridge, Edge Function)
+  test/                   node tests (URL policy, page bridge, app feel, downloads, Edge Function)
 .github/workflows/        manual EAS build (workflow_dispatch only)
-docs/                     setup guides, website reference, images
+docs/                     setup guides, handoff, website reference, images
 ```
 
 ## Environment variables
@@ -194,7 +185,7 @@ Names only. Values live in Vercel, EAS and Supabase, never in git.
 |---|---|---|
 | Website (Vercel) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public |
 | Website (Vercel) | `SUPABASE_SERVICE_ROLE_KEY` | server only |
-| App (EAS, `preview`/`production`) | `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` | public; to register for push |
+| App (EAS, `preview`/`production`) | `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY` | public; to register for push (not set: push is dormant) |
 | App (EAS) | `EXPO_PUBLIC_WEB_URL` | optional; defaults to the production URL |
 | App (EAS, secret file) | `GOOGLE_SERVICES_JSON` | Firebase config; push is off without it |
 | Edge Function | `NR_WEBHOOK_SECRET` (+ optional `EXPO_ACCESS_TOKEN`) | Supabase function secrets |
@@ -227,12 +218,16 @@ More detail on the website (accounts, pipeline, schema, exports):
 
 1. Merge to `master`. The website deploys on Vercel as usual; the app
    needs nothing for website changes.
-2. Only when the app itself changed: tag `mobile-vX.Y.Z` and build, either
-   with `cd mobile && npx eas-cli build -p android --profile preview`
+2. Only when the app itself changed: build with
+   `cd mobile && npx eas-cli build -p android --profile production-apk`
    or with **Actions → Mobile · EAS Android build → Run workflow**.
-3. Download the APK from the EAS build page and publish a GitHub
-   Release for the tag with the file named exactly **`NR-Management.apk`**
-   and its SHA-256. The download link and QR code above then serve it.
+   The versionCode goes up by itself and the same signing key is used,
+   so the new APK installs over the old one.
+3. Send the install link from the EAS build page to the staff privately.
+   Don't publish the APK or its link in this public repository.
+
+Handoff, manual phone checklist and open items:
+[docs/HANDOFF.md](docs/HANDOFF.md).
 
 The Android signing key is kept by EAS. Back it up, because losing it
 means phones can't update over the installed app. See

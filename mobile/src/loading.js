@@ -43,6 +43,23 @@ function onStuck(last, href, now) {
 }
 
 /**
+ * How to retry a stuck page. When the WebView already shows the address
+ * to retry (the router moved there, back/forward, a full load of it), the
+ * WebView's own reload. A load started from page script (location.assign)
+ * passes through onShouldStartLoadWithRequest, and on the emulator most
+ * retries started that way were dropped without any error; a native
+ * reload doesn't pass through it. Only a page that never left the old
+ * address (a tap that never got going) still needs its link loaded.
+ *
+ * @param {string} href     the address to retry
+ * @param {string} current  the address the WebView is showing
+ * @returns {"reload" | "assign"}
+ */
+function retryHow(href, current) {
+  return current && pageKey(current) === pageKey(href) ? "reload" : "assign";
+}
+
+/**
  * The path of an address, never its query string (search terms and
  * filters stay out of the log).
  * @param {string} href
@@ -111,4 +128,4 @@ function formatReport(log, about) {
   return lines.join("\n");
 }
 
-module.exports = { RETRY_WINDOW_MS, LOG_MAX, onStuck, pathOnly, addEntry, parseLog, formatReport, clock };
+module.exports = { RETRY_WINDOW_MS, LOG_MAX, onStuck, retryHow, pathOnly, addEntry, parseLog, formatReport, clock };

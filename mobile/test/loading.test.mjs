@@ -3,8 +3,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import loading from "../src/loading.js";
 
-const { RETRY_WINDOW_MS, LOG_MAX, onStuck, pathOnly, addEntry, parseLog, formatReport } = loading;
+const { RETRY_WINDOW_MS, LOG_MAX, onStuck, retryHow, pathOnly, addEntry, parseLog, formatReport } = loading;
 const A = "https://site/dashboard/activity";
+
+test("a retry of the page already showing is a native reload; a page that never left loads its link", () => {
+  // the router already moved to the tab (push, back/forward, a tap that arrived) or a full load of it
+  assert.equal(retryHow(A, A), "reload");
+  assert.equal(retryHow(A, `${A}#top`), "reload", "a #fragment is the same page");
+  // never got going: the WebView is still on the old page, so load the target
+  assert.equal(retryHow(A, "https://site/dashboard/orders"), "assign");
+  // the address is unknown: load the target
+  assert.equal(retryHow(A, ""), "assign");
+});
 
 test("a stuck page is retried once, then the error screen (no loop)", () => {
   const first = onStuck(null, A, 1000);

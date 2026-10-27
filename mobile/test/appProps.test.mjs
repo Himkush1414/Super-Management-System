@@ -22,6 +22,6 @@ test("no onLoadStart timing on the WebViews (Android sends it for every address 
   assert.doesNotMatch(app, /onLoadStart=/);
 });
 
-test("the page cache follows the website's headers (pages never stored, static files cached)", () => {
+test("the page cache follows the website's headers (pages never stored, scripts and styles cached)", () => {
   assert.match(app, /cacheMode="LOAD_DEFAULT"/);
 });

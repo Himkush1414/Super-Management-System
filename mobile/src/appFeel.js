@@ -52,6 +52,11 @@ const APP_FEEL = Object.freeze({
 
 const VIEWPORT = "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover";
 
+// The website's Tailwind build reads every committed file for class names,
+// so a bare word that is also a Tailwind utility would add an unused rule
+// to the website's CSS. The viewport event name is put together instead.
+const VIEWPORT_CHANGE = ["re", "size"].join("");
+
 /** Elements a long press must not open a menu on. */
 const NO_CALLOUT = "a, button, img, svg, [role=button], [role=link], [role=menuitem], label";
 /** Where text can still be selected. */
@@ -64,7 +69,7 @@ function buildCss(f) {
   css.push("html{-webkit-text-size-adjust:100%;text-size-adjust:100%}");
   if (f.noOverscroll) css.push("html,body{overscroll-behavior:none!important}");
   // overflow-x on <html> moves to the viewport; clip on <body> does not make
-  // it a scroll container, so the site's sticky header keeps working
+  // the body scroll on its own, so the site's sticky header keeps working
   if (f.noHorizontalDrag) css.push("html{overflow-x:hidden!important}body{overflow-x:clip!important}");
   if (f.noTapHighlight) css.push("*{-webkit-tap-highlight-color:transparent}");
   if (f.fastTap) css.push("html,body{touch-action:manipulation!important}");
@@ -198,8 +203,9 @@ function buildScript(f) {
       setTimeout(reveal, 450);
     });
     d.addEventListener("focusout", function () { focused = null; });
-    if (w.visualViewport) w.visualViewport.addEventListener("resize", function () { setTimeout(reveal, 30); });
-    w.addEventListener("resize", function () { setTimeout(reveal, 30); });
+    var VIEWPORT_CHANGE = ${JSON.stringify(VIEWPORT_CHANGE)};
+    if (w.visualViewport) w.visualViewport.addEventListener(VIEWPORT_CHANGE, function () { setTimeout(reveal, 30); });
+    w.addEventListener(VIEWPORT_CHANGE, function () { setTimeout(reveal, 30); });
   }
   } catch (e) {
     /* a tweak failing must never break the website */

@@ -152,7 +152,7 @@ test("the CSS has one rule set per flag, and only for flags that are on", () => 
   assert.equal(none, "html{-webkit-text-size-adjust:100%;text-size-adjust:100%}");
 });
 
-test("the body is never made a scroll container (the sticky header keeps working)", () => {
+test("the body never scrolls on its own (the sticky header keeps working)", () => {
   assert.doesNotMatch(buildAppFeelCss({ ...APP_FEEL }), /body\{[^}]*overflow-x:(hidden|auto|scroll)/);
 });
 

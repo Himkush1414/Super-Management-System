@@ -114,11 +114,21 @@ function buildWatchdogScript() {
     });
   }
 
+  /** Note since when the skeleton has been on screen without a break. */
+  function trackSkeleton(t) {
+    if (!busy()) cur.skelSince = 0;
+    else if (!cur.skelSince) cur.skelSince = t;
+  }
+
   function check() {
     timer = null;
     if (!cur) return;
     if (isDone()) return report("ok");
     var t = now();
+    trackSkeleton(t);
+    // a skeleton counts on its own: the header's counter or a running
+    // timer can keep changing the page while the tab never arrives
+    if (cur.skelSince && t - cur.skelSince >= STALL_MS) return stuck("skeleton for " + Math.round((t - cur.skelSince) / 1000) + " s");
     if (t - cur.last >= STALL_MS) return stuck("no change for " + Math.round((t - cur.last) / 1000) + " s");
     if (t - cur.t0 >= MAX_MS) return stuck("not finished after " + Math.round((t - cur.t0) / 1000) + " s");
     timer = w.setTimeout(check, TICK_MS);
@@ -134,6 +144,7 @@ function buildWatchdogScript() {
       from: here(),
       t0: t,
       last: t,
+      skelSince: 0,
       changed: false,
       // these start at their new address already
       moved: kind !== "click",
@@ -153,6 +164,7 @@ function buildWatchdogScript() {
       cur.changed = true;
       cur.last = now();
       if (isDone()) report("ok");
+      else trackSkeleton(cur.last);
     }).observe(d, { childList: true, subtree: true, characterData: true });
   } catch (e) {
     /* no MutationObserver: only the timer checks remain, still bounded */

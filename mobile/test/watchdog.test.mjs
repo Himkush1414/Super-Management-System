@@ -185,11 +185,30 @@ test("stuck on the skeleton: reported once after STALL_MS without change, never 
   assert.equal(p.pending(), 0);
 });
 
-test("a page that keeps changing but never finishes is stuck after MAX_MS", () => {
+test("a skeleton still on screen after STALL_MS is stuck, even while the header keeps changing", () => {
   const p = loaded();
   p.tap("/dashboard/activity");
   p.push("/dashboard/activity");
   p.skeleton(true);
+  for (let t = 0; t < STALL_MS - 1000; t += 1000) {
+    p.advance(1000);
+    p.change(); // e.g. the header's live counter or a running timer
+  }
+  assert.equal(p.of("nav-stuck").length, 0, "not before STALL_MS");
+  p.advance(1000);
+  p.change();
+  p.advance(600);
+  const stuck = p.of("nav-stuck");
+  assert.equal(stuck.length, 1);
+  assert.equal(stuck[0].skeleton, true);
+  assert.match(stuck[0].reason, /skeleton/);
+  assert.ok(stuck[0].ms >= STALL_MS && stuck[0].ms < STALL_MS + 1000, `ms ${stuck[0].ms}`);
+});
+
+test("a page that keeps changing but never finishes is stuck after MAX_MS", () => {
+  const p = loaded();
+  p.tap("/dashboard/activity");
+  // the address never moves and no skeleton comes, but the page keeps changing
   for (let t = 0; t < MAX_MS; t += 2000) {
     p.advance(2000);
     p.change(); // e.g. the header's live counter

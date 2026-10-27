@@ -522,7 +522,9 @@ function Main() {
             overScrollMode="never"
             showsVerticalScrollIndicator={false}
             showsHorizontalScrollIndicator={false}
-            dataDetectorTypes="none"
+            // an array: Android passes this prop to native as-is and a plain
+            // string crashes it (iOS converts a string itself)
+            dataDetectorTypes={["none"]}
             automaticallyAdjustContentInsets={false}
             contentInsetAdjustmentBehavior="never"
             webviewDebuggingEnabled={__DEV__}

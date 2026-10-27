@@ -75,6 +75,16 @@ measured without signing in.
 - On launch and on resume the app wakes the server (`/api/health`), and on
   resume it checks the connection again. A page switch that was waiting
   when the phone slept is retried at once.
+- **Checked on the emulator** (2026-10-27, a build of PR #14 with
+  debugging on, a simulated stuck tab: the address moves, the skeleton
+  stays): reported as stuck after 8 s; the automatic reload worked in 4
+  of 5 runs. In the 5th the reload never started, and the app showed the
+  error screen 8 s later as designed. A second stuck on the same page
+  goes straight to the error screen, and **Retry** loads the page. The
+  first version retried with page script (`location.assign`), and most of
+  those retries were silently dropped by the WebView; the retry is now
+  the WebView's own reload. Why a load is sometimes dropped is not known
+  (**assumed**: a WebView quirk; it was never seen on a real phone).
 - Hidden **Diagnostics** screen: tap the version at the bottom of the
   offline screen five times. It shows the last 50 navigations with their
   time and result, the WebView settings and the version, and **Share**

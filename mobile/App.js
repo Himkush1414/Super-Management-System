@@ -1,15 +1,15 @@
 // @ts-check
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, BackHandler, Linking, Platform, StyleSheet, View } from "react-native";
+import { Alert, AppState, BackHandler, Keyboard, Linking, Platform, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import * as SystemUI from "expo-system-ui";
 import { NavigationBar } from "expo-navigation-bar";
 import NetInfo from "@react-native-community/netinfo";
 import * as Notifications from "expo-notifications";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView as RNWebView } from "react-native-webview";
-import { POLICY, START_URL } from "./src/config";
+import { POLICY, START_URL, WEB_URL } from "./src/config";
 import { DEFAULT_BG, cssColorToHex, shellColors } from "./src/colors";
 import { loadCachedBg, saveCachedBg } from "./src/shellCache";
 import { ProgressBar } from "./src/ProgressBar";
@@ -21,7 +21,7 @@ import { createPushRegistrar, ensureChannel } from "./src/push";
 
 // react-native-webview's class typing defaults its generic to `undefined`, and
 // `Props & undefined` is `never` under strict mode; re-type it once here.
-/** @typedef {{ reload(): void, goBack(): void, injectJavaScript(js: string): void }} WebViewHandle */
+/** @typedef {{ reload(): void, goBack(): void, stopLoading(): void, injectJavaScript(js: string): void }} WebViewHandle */
 const WebView = /** @type {import('react').ComponentType<import('react-native-webview').WebViewProps & { ref?: import('react').Ref<WebViewHandle> }>} */ (
   /** @type {unknown} */ (RNWebView)
 );
@@ -41,6 +41,12 @@ const RESUME_NUDGE_MS = 5000;
 const SPLASH_MAX_MS = 10000;
 /** A page switch inside the website that never reports back stops the bar. */
 const NAV_MAX_MS = 15000;
+/** A full page load still going after this shows the error screen with Retry. */
+const SLOW_LOAD_MS = 20000;
+/** Server errors retry by themselves after these waits, then wait for Retry. */
+const SERVER_RETRY_MS = [10000, 20000, 40000];
+/** The page answers the back button within this, or the app decides alone. */
+const BACK_REPLY_MS = 350;
 
 // Connectivity comes from the OS only. NetInfo's own reachability check
 // pings a Google URL on a timer; that is polling, and blocked by some
@@ -71,6 +77,15 @@ function pathFromAppLink(url) {
 }
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <Main />
+    </SafeAreaProvider>
+  );
+}
+
+function Main() {
+  const insets = useSafeAreaInsets();
   const webRef = useRef(/** @type {WebViewHandle | null} */ (null));
   const canGoBack = useRef(false);
   const currentUrl = useRef(START_URL);
@@ -89,6 +104,16 @@ export default function App() {
   const [checking, setChecking] = useState(false);
   const [stillOffline, setStillOffline] = useState(false);
   const [errorDetail, setErrorDetail] = useState(/** @type {string | undefined} */ (undefined));
+  // what the error screen says: no connection, the server failed, or too slow
+  const [errorKind, setErrorKind] = useState(/** @type {import('./src/OfflineScreen').ErrorKind} */ ("offline"));
+  // Android: the keyboard's height, and how much the window shrank for it
+  const [keyboard, setKeyboard] = useState(0);
+  const [rootHeight, setRootHeight] = useState(0);
+  const [openHeight, setOpenHeight] = useState(0);
+  // bumping this loads a tiny page in a hidden WebView, which makes Android
+  // write the session cookie to disk at once (see the CookieFlush below)
+  const [cookieFlush, setCookieFlush] = useState(0);
+  const lastUser = useRef(/** @type {string | null | undefined} */ (undefined));
   // read by the AppState/NetInfo/BackHandler listeners, which are set up once
   const offlineRef = useRef(false);
   useEffect(() => {
@@ -121,6 +146,27 @@ export default function App() {
     return () => clearTimeout(t);
   }, [navLoading]);
 
+  /** Cover the page with the error screen. */
+  const showError = useCallback((
+    /** @type {import('./src/OfflineScreen').ErrorKind} */ kind,
+    /** @type {string | undefined} */ detail = undefined,
+  ) => {
+    setErrorKind(kind);
+    setErrorDetail(detail);
+    setOffline(true);
+    setPageLoading(false);
+    setNavLoading(false);
+    hideSplash();
+  }, [hideSplash]);
+
+  // a full page load that takes too long: stop it and offer Retry
+  const slowTimer = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
+  const clearSlowTimer = useCallback(() => {
+    if (slowTimer.current) clearTimeout(slowTimer.current);
+    slowTimer.current = null;
+  }, []);
+  useEffect(() => clearSlowTimer, [clearSlowTimer]);
+
   /** Open a website URL inside the running WebView. */
   const navigate = useCallback((/** @type {string} */ url) => {
     webRef.current?.injectJavaScript(`location.assign(${JSON.stringify(url)});true;`);
@@ -141,6 +187,7 @@ export default function App() {
     setStillOffline(false);
     setErrorDetail(undefined);
     setOffline(false);
+    setErrorKind("offline");
     if (loadFailed.current) webRef.current?.reload();
     else webRef.current?.injectJavaScript("window.__nrResume&&window.__nrResume(0);true;");
   }, []);
@@ -153,7 +200,10 @@ export default function App() {
     let wasOnline = true;
     return NetInfo.addEventListener((s) => {
       const online = isOnline(s);
-      if (!online) setOffline(true);
+      if (!online) {
+        setErrorKind("offline");
+        setOffline(true);
+      }
       else if (!wasOnline && offlineRef.current) void retry();
       wasOnline = online;
     });
@@ -178,18 +228,89 @@ export default function App() {
     return () => sub.remove();
   }, [retry]);
 
-  // Android hardware back / back gesture: page history first, then leave
+  // a server error retries by itself a few times (the screen stays up
+  // with Retry meanwhile); a lost connection retries when it comes back
+  const serverRetries = useRef(0);
+  useEffect(() => {
+    if (!offline) {
+      serverRetries.current = 0;
+      return;
+    }
+    if (errorKind !== "server" || serverRetries.current >= SERVER_RETRY_MS.length) return;
+    const t = setTimeout(() => {
+      serverRetries.current++;
+      void retry();
+    }, SERVER_RETRY_MS[serverRetries.current]);
+    return () => clearTimeout(t);
+  }, [offline, errorKind, retry]);
+
+  // Android back: leaving the app always asks first
+  const exitAsked = useRef(false);
+  const confirmExit = useCallback(() => {
+    if (exitAsked.current) return;
+    exitAsked.current = true;
+    Alert.alert(
+      "Leave NR Management?",
+      undefined,
+      [
+        { text: "Stay", style: "cancel", onPress: () => (exitAsked.current = false) },
+        { text: "Leave", style: "destructive", onPress: () => BackHandler.exitApp() },
+      ],
+      { cancelable: true, onDismiss: () => (exitAsked.current = false) },
+    );
+  }, []);
+
+  /** Back after the page had nothing open: history first, then ask to leave. */
+  const historyBack = useCallback(() => {
+    if (canGoBack.current && !isRootPage(currentUrl.current)) webRef.current?.goBack();
+    else confirmExit();
+  }, [confirmExit]);
+
+  // Android hardware back / back gesture: first close what is open on the
+  // page (dialog, menu), then page history, then ask before leaving
+  const backTimer = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
+  const onBackReply = useCallback((/** @type {string} */ handled) => {
+    if (!backTimer.current) return; // too late: the app already went on
+    clearTimeout(backTimer.current);
+    backTimer.current = null;
+    if (!handled) historyBack();
+  }, [historyBack]);
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (offlineRef.current) return false;
-      if (canGoBack.current && !isRootPage(currentUrl.current)) {
-        webRef.current?.goBack();
+      if (offlineRef.current) {
+        confirmExit();
         return true;
       }
-      return false;
+      if (backTimer.current) return true; // still waiting for the page
+      backTimer.current = setTimeout(() => {
+        backTimer.current = null;
+        historyBack(); // the page didn't answer (busy or not ours)
+      }, BACK_REPLY_MS);
+      webRef.current?.injectJavaScript("window.__nrBack&&window.__nrBack();true;");
+      return true;
     });
-    return () => sub.remove();
+    return () => {
+      sub.remove();
+      if (backTimer.current) clearTimeout(backTimer.current);
+    };
+  }, [confirmExit, historyBack]);
+
+  // Android: keep the page above the keyboard. With edge-to-edge the window
+  // may not shrink for the keyboard, so the page is padded by whatever the
+  // window didn't give up itself (0 where it already shrank).
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const show = Keyboard.addListener("keyboardDidShow", (e) => setKeyboard(e.endCoordinates.height));
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboard(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
   }, []);
+  const keyboardPad =
+    Platform.OS === "android" && keyboard > 0
+      ? Math.max(0, keyboard - insets.bottom - Math.max(0, openHeight - rootHeight))
+      : 0;
 
   // push: channel up front, token rotation, taps while running
   useEffect(() => {
@@ -240,6 +361,18 @@ export default function App() {
           userId: typeof msg.userId === "string" ? msg.userId : null,
           accessToken: typeof msg.accessToken === "string" ? msg.accessToken : undefined,
         });
+        {
+          // signed in or out: make Android store the cookie change now, so
+          // killing the app right after doesn't undo it
+          const user = typeof msg.userId === "string" ? msg.userId : null;
+          if (lastUser.current !== undefined && lastUser.current !== user && Platform.OS === "android") {
+            setCookieFlush((n) => n + 1);
+          }
+          lastUser.current = user;
+        }
+        break;
+      case "back":
+        onBackReply(typeof msg.handled === "string" ? msg.handled : "");
         break;
       case "bg": {
         const hex = cssColorToHex(msg.value);
@@ -269,11 +402,19 @@ export default function App() {
       default:
         break;
     }
-  }, [hideSplash]);
+  }, [hideSplash, onBackReply]);
 
   return (
-    <SafeAreaProvider>
-      <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={["top", "bottom", "left", "right"]}>
+    <SafeAreaView
+      style={[styles.root, { backgroundColor: colors.bg, paddingBottom: insets.bottom + keyboardPad }]}
+      edges={["top", "left", "right"]}
+      onLayout={(e) => {
+        const h = e.nativeEvent.layout.height;
+        setRootHeight(h);
+        // portrait only: the tallest height seen is the window without a keyboard
+        setOpenHeight((o) => Math.max(o, h));
+      }}
+    >
         <StatusBar style={colors.bars} />
         <NavigationBar style={colors.bars} />
         <View style={[styles.root, { backgroundColor: colors.bg }]}>
@@ -289,8 +430,18 @@ export default function App() {
               canGoBack.current = nav.canGoBack;
               currentUrl.current = nav.url;
             }}
-            onLoadStart={() => setPageLoading(true)}
+            onLoadStart={() => {
+              setPageLoading(true);
+              clearSlowTimer();
+              slowTimer.current = setTimeout(() => {
+                slowTimer.current = null;
+                loadFailed.current = true;
+                webRef.current?.stopLoading();
+                showError("slow");
+              }, SLOW_LOAD_MS);
+            }}
             onLoadEnd={() => {
+              clearSlowTimer();
               setPageLoading(false);
               setNavLoading(false);
               hideSplash();
@@ -300,10 +451,17 @@ export default function App() {
             }}
             onError={(e) => {
               // the page itself failed to load (no network, DNS, TLS…)
+              clearSlowTimer();
               loadFailed.current = true;
-              setErrorDetail(e.nativeEvent.description);
-              setOffline(true);
-              hideSplash();
+              showError("offline", e.nativeEvent.description);
+            }}
+            onHttpError={(e) => {
+              // the website answered with a server error (main page only):
+              // a native screen instead of a raw error page
+              if (e.nativeEvent.statusCode < 500) return;
+              clearSlowTimer();
+              loadFailed.current = true;
+              showError("server", `Error ${e.nativeEvent.statusCode}`);
             }}
             // the offline screen covers failures; never flash the default red error text
             renderError={() => <View style={[styles.root, { backgroundColor: colors.bg }]} />}
@@ -348,6 +506,7 @@ export default function App() {
           <ProgressBar active={(pageLoading || navLoading) && !offline} color={colors.accent} />
           {offline ? (
             <OfflineScreen
+              kind={errorKind}
               colors={colors}
               checking={checking}
               stillOffline={stillOffline}
@@ -355,12 +514,45 @@ export default function App() {
               onRetry={retry}
             />
           ) : null}
+          {cookieFlush > 0 && Platform.OS === "android" ? (
+            <CookieFlush key={cookieFlush} onDone={() => setCookieFlush(0)} />
+          ) : null}
         </View>
-      </SafeAreaView>
-    </SafeAreaProvider>
+    </SafeAreaView>
+  );
+}
+
+/**
+ * Android keeps cookie changes in memory for up to ~30 s before writing
+ * them to disk, and only forces the write when a page finishes loading.
+ * Sign-in and sign-out happen without a full page load, so a hidden,
+ * zero-size WebView loads the website's dependency-free health check: its
+ * page-finished event writes the cookies at once. Nothing is shown and no
+ * data is read.
+ * @param {{ onDone: () => void }} props
+ */
+function CookieFlush({ onDone }) {
+  return (
+    <WebView
+      source={{ uri: `${WEB_URL}/api/health` }}
+      style={styles.hidden}
+      originWhitelist={["https://*"]}
+      onShouldStartLoadWithRequest={(req) => decide(req.url, POLICY) === "load"}
+      onLoadEnd={onDone}
+      onError={onDone}
+      javaScriptEnabled={false}
+      sharedCookiesEnabled
+      thirdPartyCookiesEnabled={false}
+      cacheEnabled={false}
+      mixedContentMode="never"
+      allowFileAccess={false}
+      setSupportMultipleWindows={false}
+      importantForAccessibility="no-hide-descendants"
+    />
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  hidden: { position: "absolute", width: 1, height: 1, opacity: 0 },
 });

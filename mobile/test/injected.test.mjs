@@ -276,27 +276,28 @@ const linkTarget = (a) => {
   return { closest: () => el };
 };
 
-test("a tap on a same-site page link starts the progress bar; the address change ends it", () => {
+test("the address changing still reaches the website's router; the bar is the watchdog's job", () => {
   const p = page({ path: "/dashboard/orders" });
   p.fire("click", { target: linkTarget({ href: "https://site/dashboard/activity" }), button: 0 });
-  assert.deepEqual(p.posted.at(-1), { type: "nav", state: "start" });
   p.history.pushState(null, "", "/dashboard/activity");
-  assert.deepEqual(p.historyCalls, ["push /dashboard/activity"]);
-  assert.ok(p.posted.some((m) => m.type === "nav" && m.state === "end"));
-  const ends = p.posted.filter((m) => m.type === "nav" && m.state === "end").length;
+  p.history.replaceState(null, "", "/dashboard/activity");
   p.fireWindow("popstate");
-  assert.equal(p.posted.filter((m) => m.type === "nav" && m.state === "end").length, ends + 1);
+  assert.deepEqual(p.historyCalls, ["push /dashboard/activity", "replace /dashboard/activity"]);
+  // the progress bar is driven by src/watchdog.js (not running in this sandbox)
+  assert.equal(p.posted.filter((m) => m.type === "nav").length, 0);
 });
 
-test("downloads, other sites, new tabs and same-page links don't start the bar", () => {
+test("page links: same-site pages only; downloads, other sites, new tabs and #anchors are not", () => {
   const p = page({ path: "/dashboard/orders" });
-  const before = p.posted.length;
-  p.fire("click", { target: linkTarget({ href: "https://site/dashboard/orders/csv", download: true }), button: 0 });
-  p.fire("click", { target: linkTarget({ href: "https://elsewhere.example/" }), button: 0 });
-  p.fire("click", { target: linkTarget({ href: "https://site/dashboard/activity", target: "_blank" }), button: 0 });
-  p.fire("click", { target: linkTarget({ href: "https://site/dashboard/orders#top" }), button: 0 });
-  p.fire("click", { target: { closest: () => null }, button: 0 });
-  assert.equal(p.posted.slice(before).filter((m) => m.type === "nav").length, 0);
+  /** @param {any} a @param {any} [ev] */
+  const isPage = (a, ev = { button: 0 }) => p.w.__nrApp.isPageLink(linkTarget(a).closest(), ev);
+  assert.equal(isPage({ href: "https://site/dashboard/activity" }), true);
+  assert.equal(isPage({ href: "https://site/dashboard/orders?x=1" }), true);
+  assert.equal(isPage({ href: "https://site/dashboard/orders/csv", download: true }), false);
+  assert.equal(isPage({ href: "https://elsewhere.example/" }), false);
+  assert.equal(isPage({ href: "https://site/dashboard/activity", target: "_blank" }), false);
+  assert.equal(isPage({ href: "https://site/dashboard/orders#top" }), false);
+  assert.equal(isPage({ href: "https://site/dashboard/activity" }, { button: 1 }), false);
 });
 
 test("back: an open dialog closes the website's way (Escape)", () => {

@@ -9,6 +9,7 @@
 // sandbox with `node --test`.
 
 const { buildAppFeelScript } = require("./appFeel");
+const { buildWatchdogScript } = require("./watchdog");
 
 // Hermes compiles release bundles to bytecode, so Function#toString() can't
 // be used to ship page code: it is a plain string. String.raw keeps the
@@ -71,9 +72,21 @@ const PAGE_SCRIPT = String.raw`(function () {
    * client's own close handler now: it reconnects after its first backoff
    * step (1 s) and rejoins every channel. Realtime does not replay events
    * missed while away, so read-only pages also reload; pages with a form
-   * keep what the user typed.
+   * keep what the user typed. A page switch that was still waiting when
+   * the phone slept is handed to the loading watchdog first (the app
+   * reloads that page itself), and the website's server is woken up.
    */
   w.__nrResume = function (awayMs) {
+    var watch = w.__nrWatch;
+    var retrying = false;
+    if (watch) {
+      try {
+        retrying = watch.resumed(awayMs);
+        if (awayMs > 0) watch.warm();
+      } catch (e) {
+        retrying = false;
+      }
+    }
     var n = 0;
     sockets.slice().forEach(function (ws) {
       var handler = ws.onclose;
@@ -91,7 +104,7 @@ const PAGE_SCRIPT = String.raw`(function () {
         }
       }
     });
-    var reload = awayMs >= 30000 && isReadOnlyView();
+    var reload = !retrying && awayMs >= 30000 && isReadOnlyView();
     post({ type: "resumed", sockets: n, reload: reload });
     if (reload) location.reload();
   };
@@ -178,10 +191,13 @@ const PAGE_SCRIPT = String.raw`(function () {
     /* no documentElement yet */
   }
 
-  // ── navigation inside the website: drive the app's progress bar ────────
+  // ── navigation inside the website ──────────────────────────────────────
   // The website switches pages without a full load (client-side routing),
-  // which the WebView doesn't see. A tap on a same-site link starts the
-  // bar; the address changing (pushState / back) ends it.
+  // which the WebView doesn't see. The loading watchdog (src/watchdog.js)
+  // follows each page switch and drives the app's progress bar; this only
+  // decides what a page link is, and refreshes what the app knows after
+  // the address changes. (The bar used to stop when the address changed,
+  // which is when the website shows its loading skeleton, not its page.)
   function isPageLink(a, e) {
     if (!a || !a.href || a.hasAttribute("download")) return false;
     if (w.__nrApp.fileUrl && w.__nrApp.fileUrl(a)) return false;
@@ -197,12 +213,8 @@ const PAGE_SCRIPT = String.raw`(function () {
     // a same-page #anchor is not a navigation
     return u.pathname + u.search !== location.pathname + location.search;
   }
-  document.addEventListener("click", function (e) {
-    var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
-    if (isPageLink(a, e)) post({ type: "nav", state: "start" });
-  }, true);
+  w.__nrApp.isPageLink = isPageLink;
   function navEnded() {
-    post({ type: "nav", state: "end" });
     reportSession();
     afterPaint(reportBg);
   }
@@ -399,11 +411,12 @@ true;`;
 
 /**
  * The script handed to `injectedJavaScriptBeforeContentLoaded`: the app
- * bridge, then the app-feel tweaks (src/appFeel.js).
+ * bridge, the loading watchdog (src/watchdog.js), then the app-feel tweaks
+ * (src/appFeel.js).
  * @param {Partial<import('./appFeel').AppFeelFlags>} [appFeel]
  */
 function buildInjectedScript(appFeel) {
-  return `${PAGE_SCRIPT}\n${buildAppFeelScript(appFeel)}`;
+  return `${PAGE_SCRIPT}\n${buildWatchdogScript()}\n${buildAppFeelScript(appFeel)}`;
 }
 
 module.exports = { buildInjectedScript };

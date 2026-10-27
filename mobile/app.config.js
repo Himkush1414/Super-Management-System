@@ -79,6 +79,11 @@ const config = {
       },
     ],
     "expo-sharing",
+    // the bar's buttons follow the page colour (set at runtime); no forced
+    // grey scrim behind them, so the page colour shows through
+    ["expo-navigation-bar", { enforceContrast: false, style: "light" }],
+    // root view colour (set at runtime from the page) instead of white
+    "expo-system-ui",
   ],
   extra: {
     webUrl: WEB_URL,

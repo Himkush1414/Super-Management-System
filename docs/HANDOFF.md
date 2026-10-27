@@ -59,7 +59,7 @@ injected viewport still sets `viewport-fit=cover`.
 ## Merging the open PRs
 
 All mobile work is in stacked PRs: **#5 → #6 → #7 → #8 → #9 → #10 → #11
-→ #12 → (docs PR)**. Each is based on the one before. #5 already targets
+→ #12 → #13**. Each is based on the one before. #5 already targets
 `master`.
 
 Two facts decide how to merge:
@@ -100,7 +100,7 @@ merge 9  feat/mobile-launch-colors;     check
 merge 10 feat/mobile-navigation-errors; check
 merge 11 feat/mobile-downloads;         check
 merge 12 chore/mobile-production-apk;   check
-# then the docs PR (its number is in the final report): merge <n> docs/mobile-handoff; check
+merge 13 docs/mobile-handoff;           check
 ```
 
 Wait for the Vercel production deployment to show **Ready** after each

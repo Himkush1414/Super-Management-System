@@ -8,23 +8,26 @@ const SHOW_AFTER_MS = 150;
 /**
  * A thin native bar across the top of the page while a page loads: a
  * short segment sliding across, like a native app's indeterminate bar.
+ * The segment moves by its `left` edge (a 3 px bar is cheap to lay out),
+ * which also keeps this file free of words the website's Tailwind build
+ * would pick up as class names.
  * @param {{ active: boolean, color: string }} props
  */
 export function ProgressBar({ active, color }) {
   const [visible, setVisible] = useState(false);
   const [width, setWidth] = useState(0);
-  // created once; Animated values are driven natively, not read in render
+  // created once; animated values, not read in render
   const [x] = useState(() => new Animated.Value(0));
   const [opacity] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     if (!active) {
-      Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }).start(() => setVisible(false));
+      Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: false }).start(() => setVisible(false));
       return;
     }
     const t = setTimeout(() => {
       setVisible(true);
-      Animated.timing(opacity, { toValue: 1, duration: 120, useNativeDriver: true }).start();
+      Animated.timing(opacity, { toValue: 1, duration: 120, useNativeDriver: false }).start();
     }, SHOW_AFTER_MS);
     return () => clearTimeout(t);
   }, [active, opacity]);
@@ -33,7 +36,7 @@ export function ProgressBar({ active, color }) {
     if (!visible || !width) return;
     x.setValue(0);
     const loop = Animated.loop(
-      Animated.timing(x, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(x, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
     );
     loop.start();
     return () => loop.stop();
@@ -56,7 +59,7 @@ export function ProgressBar({ active, color }) {
               width: segment,
               backgroundColor: color,
               opacity,
-              transform: [{ translateX: x.interpolate({ inputRange: [0, 1], outputRange: [-segment, width] }) }],
+              left: x.interpolate({ inputRange: [0, 1], outputRange: [-segment, width] }),
             },
           ]}
         />
@@ -67,5 +70,5 @@ export function ProgressBar({ active, color }) {
 
 const styles = StyleSheet.create({
   track: { position: "absolute", top: 0, left: 0, right: 0, height: 3, overflow: "hidden", zIndex: 10 },
-  bar: { height: 3, borderRadius: 2 },
+  bar: { position: "absolute", top: 0, height: 3, borderRadius: 2 },
 });

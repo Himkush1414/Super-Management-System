@@ -19,6 +19,11 @@ import { OfflineScreen } from "./src/OfflineScreen";
 import { saveAndOpenFile } from "./src/files";
 import { createAssembler } from "./src/fileAssembler";
 import { createPushRegistrar, ensureChannel } from "./src/push";
+import * as Application from "expo-application";
+import { MAX_MS as WATCH_MAX_MS, STALL_MS } from "./src/watchdog";
+import { addEntry, onStuck, pathOnly } from "./src/loading";
+import { loadLog, saveLog } from "./src/diagnosticsStore";
+import { Diagnostics } from "./src/Diagnostics";
 
 // react-native-webview's class typing defaults its generic to `undefined`, and
 // `Props & undefined` is `never` under strict mode; re-type it once here.
@@ -40,10 +45,39 @@ const INJECTED = buildInjectedScript();
 const RESUME_NUDGE_MS = 5000;
 /** The splash never stays longer than this, even on a very slow network. */
 const SPLASH_MAX_MS = 10000;
-/** A page switch inside the website that never reports back stops the bar. */
-const NAV_MAX_MS = 15000;
-/** A full page load still going after this shows the error screen with Retry. */
-const SLOW_LOAD_MS = 20000;
+/** A page switch that never reports back stops the bar (the watchdog reports first). */
+const NAV_MAX_MS = WATCH_MAX_MS + 5000;
+/**
+ * A full page load whose page never even started (no first byte, so the
+ * page watchdog isn't running) counts as stuck after the watchdog's own
+ * stall time. Once the page reports in, the watchdog takes over.
+ */
+const NO_START_MS = STALL_MS;
+/** Backstop: a full page load still going after this counts as stuck. */
+const SLOW_LOAD_MS = WATCH_MAX_MS + 5000;
+/** The warm-up ping to the website's health check gives up after this. */
+const WARMUP_TIMEOUT_MS = 8000;
+
+const APP_VERSION = `${Application.nativeApplicationVersion ?? "?"} (${Application.nativeBuildVersion ?? "?"})`;
+
+/**
+ * Wake the website's server (a cold start costs about a second) with its
+ * dependency-free health check: no cookies, no sign-in, no data.
+ * @returns {Promise<{ ms: number, ok: boolean, note: string }>}
+ */
+async function warmUp() {
+  const t = Date.now();
+  const ctl = new AbortController();
+  const stop = setTimeout(() => ctl.abort(), WARMUP_TIMEOUT_MS);
+  try {
+    const r = await fetch(`${WEB_URL}/api/health`, { cache: "no-store", credentials: "omit", signal: ctl.signal });
+    return { ms: Date.now() - t, ok: r.ok, note: `app, HTTP ${r.status}` };
+  } catch (e) {
+    return { ms: Date.now() - t, ok: false, note: `app, ${/** @type {any} */ (e)?.name ?? "failed"}` };
+  } finally {
+    clearTimeout(stop);
+  }
+}
 /** Server errors retry by themselves after these waits, then wait for Retry. */
 const SERVER_RETRY_MS = [10000, 20000, 40000];
 /** The page answers the back button within this, or the app decides alone. */
@@ -124,6 +158,17 @@ function Main() {
     offlineRef.current = offline;
   }, [offline]);
 
+  // the hidden Diagnostics screen: recent navigations, kept on the phone
+  const [navLog, setNavLog] = useState(loadLog);
+  const [diagnostics, setDiagnostics] = useState(false);
+  const [webAgent, setWebAgent] = useState("");
+  useEffect(() => saveLog(navLog), [navLog]);
+  const record = useCallback((/** @type {import('./src/loading').LogEntry} */ entry) => {
+    setNavLog((log) => addEntry(log, entry));
+  }, []);
+  // the last automatic retry of a stuck page (one per address per minute)
+  const lastRetry = useRef(/** @type {import('./src/loading').RetryMark | null} */ (null));
+
   const colors = useMemo(() => shellColors(bg), [bg]);
 
   const hideSplash = useCallback(() => {
@@ -180,6 +225,92 @@ function Main() {
   // under a page that is still there, with whatever the user typed)
   const loadFailed = useRef(false);
 
+  // ── full page loads ────────────────────────────────────────────────────
+  // Android's onLoadStart can't be used to time a load: react-native-webview
+  // sends it from doUpdateVisitedHistory, i.e. for every address change
+  // inside the website too (each tab switch, each live refresh), and no
+  // onLoadEnd follows those. (Before, each tab switch left the bar running
+  // and armed a 20 s timer that stopped all loading, the next tab's
+  // request included, and showed "taking too long".) So a full load is
+  // timed from where it is asked for (start, reload, a link that leaves
+  // the page, a retry) until the page reports in: its first byte has
+  // arrived and its watchdog (src/watchdog.js) takes over.
+  const noStartTimer = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
+  const clearNoStartTimer = useCallback(() => {
+    if (noStartTimer.current) clearTimeout(noStartTimer.current);
+    noStartTimer.current = null;
+  }, []);
+  useEffect(() => clearNoStartTimer, [clearNoStartTimer]);
+  // the page has been shown (its watchdog said so) since the last load began
+  const pageShown = useRef(false);
+  // the stuck handler below, for timers armed before it existed
+  const stuckRef = useRef((/** @type {{ kind: string, href: string, ms?: number, reason?: string }} */ _s) => {});
+
+  /** A full load of `url` is on its way (`how` starts it, if the app does). */
+  const startLoad = useCallback((/** @type {string} */ url, /** @type {"reload" | "assign" | null} */ how) => {
+    clearSlowTimer();
+    clearNoStartTimer();
+    pageShown.current = false;
+    setPageLoading(true);
+    noStartTimer.current = setTimeout(() => {
+      noStartTimer.current = null;
+      stuckRef.current({ kind: "load", href: url, ms: NO_START_MS, reason: "no answer from the website" });
+    }, NO_START_MS);
+    slowTimer.current = setTimeout(() => {
+      slowTimer.current = null;
+      // shown but still loading something (an image, a font): leave it be
+      if (pageShown.current) setPageLoading(false);
+      else stuckRef.current({ kind: "load", href: url, ms: SLOW_LOAD_MS, reason: "the page did not finish" });
+    }, SLOW_LOAD_MS);
+    if (how === "reload") webRef.current?.reload();
+    else if (how === "assign") navigate(url);
+  }, [clearSlowTimer, clearNoStartTimer, navigate]);
+
+  /**
+   * A page stuck loading (reported by the page watchdog, or a full load
+   * that never started): load that address once more, and if it sticks
+   * again within a minute, the error screen with Retry. Never a loop.
+   */
+  const onPageStuck = useCallback((
+    /** @type {{ kind: string, href: string, ms?: number, reason?: string }} */ s,
+  ) => {
+    clearSlowTimer();
+    clearNoStartTimer();
+    const href = decide(s.href, POLICY) === "load" ? s.href : currentUrl.current;
+    const { action, mark } = onStuck(lastRetry.current, href, Date.now());
+    lastRetry.current = mark;
+    record({
+      at: Date.now() - (s.ms ?? 0),
+      kind: s.kind,
+      path: pathOnly(href),
+      ms: s.ms ?? null,
+      result: action === "retry" ? "retried" : "stuck",
+      note: s.reason,
+    });
+    if (action === "retry") {
+      // a fresh full load of that address (a same-address load replaces
+      // the stuck page in history instead of adding to it)
+      startLoad(href, s.kind === "load" ? "reload" : "assign");
+      return;
+    }
+    loadFailed.current = true;
+    webRef.current?.stopLoading();
+    showError("slow");
+  }, [clearSlowTimer, clearNoStartTimer, record, showError, startLoad]);
+  useEffect(() => {
+    stuckRef.current = onPageStuck;
+  }, [onPageStuck]);
+
+  // the first page: the WebView starts it as it mounts
+  useEffect(() => {
+    startLoad(startUrl, null);
+  }, [startLoad, startUrl]);
+
+  // wake the website's server while the first page loads
+  useEffect(() => {
+    void warmUp().then((r) => record({ at: Date.now() - r.ms, kind: "warmup", path: "/api/health", ms: r.ms, result: r.ok ? "ok" : "failed", note: `${r.note}, launch` }));
+  }, [record]);
+
   const retry = useCallback(async () => {
     setChecking(true);
     const s = await NetInfo.fetch().catch(() => null);
@@ -192,9 +323,9 @@ function Main() {
     setErrorDetail(undefined);
     setOffline(false);
     setErrorKind("offline");
-    if (loadFailed.current) webRef.current?.reload();
+    if (loadFailed.current) startLoad(currentUrl.current, "reload");
     else webRef.current?.injectJavaScript("window.__nrResume&&window.__nrResume(0);true;");
-  }, []);
+  }, [startLoad]);
 
   // connection lost: the offline screen covers the page (which stays
   // underneath, untouched). Connection back: the screen goes away by
@@ -213,8 +344,10 @@ function Main() {
     });
   }, [retry]);
 
-  // back to the foreground: retry if offline, else nudge realtime and let
-  // read-only pages refresh (see src/injected.js)
+  // back to the foreground: retry if offline; else check the connection
+  // again, then (src/injected.js) hand a page switch that was waiting when
+  // the phone slept to the watchdog, wake the server through the WebView's
+  // own connection, nudge realtime and let read-only pages refresh
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "background") {
@@ -224,13 +357,26 @@ function Main() {
       if (state !== "active" || backgroundedAt.current === null) return;
       const away = Date.now() - backgroundedAt.current;
       backgroundedAt.current = null;
-      if (offlineRef.current) void retry();
-      else if (away >= RESUME_NUDGE_MS) {
-        webRef.current?.injectJavaScript(`window.__nrResume&&window.__nrResume(${away});true;`);
+      if (offlineRef.current) {
+        void retry();
+        return;
       }
+      if (away < RESUME_NUDGE_MS) return;
+      void NetInfo.fetch()
+        .catch(() => null)
+        .then((s) => {
+          const online = !s || isOnline(s);
+          record({ at: Date.now(), kind: "resume", path: "", ms: away, result: online ? "online" : "offline", note: `away ${Math.round(away / 1000)} s` });
+          if (!online) {
+            setErrorKind("offline");
+            setOffline(true);
+            return;
+          }
+          webRef.current?.injectJavaScript(`window.__nrResume&&window.__nrResume(${away});true;`);
+        });
     });
     return () => sub.remove();
-  }, [retry]);
+  }, [retry, record]);
 
   // a server error retries by itself a few times (the screen stays up
   // with Retry meanwhile); a lost connection retries when it comes back
@@ -346,8 +492,11 @@ function Main() {
   const onShouldStart = useCallback((req) => {
     const d = decide(req.url, POLICY);
     if (d === "external") void Linking.openURL(req.url).catch(() => {});
+    // the page leaves for a new full load (Android asks only for those,
+    // never for the website's own tab switches)
+    else if (d === "load" && req.isTopFrame && !req.url.startsWith("about:")) startLoad(req.url, null);
     return d === "load";
-  }, []);
+  }, [startLoad]);
 
   const onMessage = useCallback((/** @type {import('react-native-webview').WebViewMessageEvent} */ e) => {
     /** @type {any} */
@@ -387,7 +536,47 @@ function Main() {
         hideSplash();
         break;
       case "nav":
+        // a full load's first byte: the page's watchdog follows it from here
+        if (msg.kind === "load" && msg.state === "start") {
+          clearNoStartTimer();
+          setPageLoading(true);
+        }
         setNavLoading(msg.state === "start");
+        break;
+      case "resumed":
+        // the page reloads itself (a read-only page after time away)
+        if (msg.reload) startLoad(currentUrl.current, null);
+        break;
+      case "nav-log":
+        if (msg.kind === "load") pageShown.current = true;
+        record({
+          at: Date.now() - (Number(msg.ms) || 0),
+          kind: String(msg.kind),
+          path: String(msg.path),
+          ms: Number(msg.ms),
+          result: String(msg.result),
+        });
+        break;
+      case "nav-stuck":
+        onPageStuck({
+          kind: String(msg.kind),
+          href: String(msg.href),
+          ms: Number(msg.ms) || 0,
+          reason: `${msg.skeleton ? "skeleton, " : ""}${String(msg.reason || "")}`,
+        });
+        break;
+      case "warmup":
+        record({
+          at: Date.now() - (Number(msg.ms) || 0),
+          kind: "warmup",
+          path: "/api/health",
+          ms: Number(msg.ms),
+          result: msg.ok ? "ok" : "failed",
+          note: `page, ${msg.ok ? `HTTP ${msg.status}` : String(msg.error || msg.status || "")}, resume`,
+        });
+        break;
+      case "env":
+        if (typeof msg.ua === "string") setWebAgent(msg.ua.slice(0, 300));
         break;
       case "blob-download-blocked":
         Alert.alert(
@@ -427,7 +616,22 @@ function Main() {
       default:
         break;
     }
-  }, [hideSplash, onBackReply, assembler]);
+  }, [hideSplash, onBackReply, assembler, clearNoStartTimer, record, onPageStuck, startLoad]);
+
+  /** @type {[string, string][]} */
+  const about = useMemo(() => [
+    ["App", `NR Management ${APP_VERSION}`],
+    ["Package", Application.applicationId ?? "?"],
+    ["Website", WEB_URL],
+    ["Android", `API ${Platform.Version}`],
+    ["WebView", webAgent || "(not reported yet)"],
+    ["Cache", "default: the website's headers decide (pages no-store, static files cached)"],
+    ["JavaScript", "on; DOM storage on"],
+    ["Cookies", "shared with the app; third-party off"],
+    ["Security", "HTTPS only, mixed content never, file access off, extra windows off"],
+    ["Rendering", "hardware accelerated (default layer), text zoom 100%"],
+    ["Watchdog", `stuck after ${STALL_MS / 1000} s without change (max ${WATCH_MAX_MS / 1000} s); 1 automatic retry per page per minute`],
+  ], [webAgent]);
 
   return (
     <SafeAreaView
@@ -455,18 +659,11 @@ function Main() {
               canGoBack.current = nav.canGoBack;
               currentUrl.current = nav.url;
             }}
-            onLoadStart={() => {
-              setPageLoading(true);
-              clearSlowTimer();
-              slowTimer.current = setTimeout(() => {
-                slowTimer.current = null;
-                loadFailed.current = true;
-                webRef.current?.stopLoading();
-                showError("slow");
-              }, SLOW_LOAD_MS);
-            }}
+            // no onLoadStart: on Android it also fires for every address
+            // change inside the website (see startLoad above)
             onLoadEnd={() => {
               clearSlowTimer();
+              clearNoStartTimer();
               setPageLoading(false);
               setNavLoading(false);
               hideSplash();
@@ -477,6 +674,7 @@ function Main() {
             onError={(e) => {
               // the page itself failed to load (no network, DNS, TLS…)
               clearSlowTimer();
+              clearNoStartTimer();
               loadFailed.current = true;
               showError("offline", e.nativeEvent.description);
             }}
@@ -485,6 +683,7 @@ function Main() {
               // a native screen instead of a raw error page
               if (e.nativeEvent.statusCode < 500) return;
               clearSlowTimer();
+              clearNoStartTimer();
               loadFailed.current = true;
               showError("server", `Error ${e.nativeEvent.statusCode}`);
             }}
@@ -506,7 +705,10 @@ function Main() {
             domStorageEnabled
             sharedCookiesEnabled
             thirdPartyCookiesEnabled={false}
+            // the website's own headers decide: its pages are never stored
+            // (no-store / revalidate), only its static files (immutable)
             cacheEnabled
+            cacheMode="LOAD_DEFAULT"
             mixedContentMode="never"
             allowFileAccess={false}
             setSupportMultipleWindows={false}
@@ -539,9 +741,19 @@ function Main() {
               checking={checking}
               stillOffline={stillOffline}
               detail={errorDetail}
+              version={APP_VERSION}
               onRetry={retry}
+              onDiagnostics={() => setDiagnostics(true)}
             />
           ) : null}
+          <Diagnostics
+            visible={diagnostics}
+            log={navLog}
+            about={about}
+            colors={colors}
+            onClear={() => setNavLog([])}
+            onClose={() => setDiagnostics(false)}
+          />
           {cookieFlush > 0 && Platform.OS === "android" ? (
             <CookieFlush key={cookieFlush} onDone={() => setCookieFlush(0)} />
           ) : null}

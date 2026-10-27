@@ -13,3 +13,15 @@ test("dataDetectorTypes is an array (a plain string crashes Android)", () => {
   assert.ok(props.length > 0);
   for (const p of props) assert.match(p, /^\{\[/, `dataDetectorTypes=${p}`);
 });
+
+test("no onLoadStart timing on the WebViews (Android sends it for every address change)", () => {
+  // react-native-webview (Android) fires onLoadStart from doUpdateVisitedHistory:
+  // each tab switch inside the website, with no onLoadEnd after it. Timing
+  // loads with it left the bar running and a 20 s "too slow" timer armed
+  // after every tab switch. Loads are timed by startLoad() and the watchdog.
+  assert.doesNotMatch(app, /onLoadStart=/);
+});
+
+test("the page cache follows the website's headers (pages never stored, static files cached)", () => {
+  assert.match(app, /cacheMode="LOAD_DEFAULT"/);
+});

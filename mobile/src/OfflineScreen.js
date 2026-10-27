@@ -1,4 +1,5 @@
 // @ts-check
+import { useRef } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 
@@ -26,9 +27,14 @@ const TEXT = {
   },
 };
 
+/** Taps on the version, each within this of the last, that open Diagnostics. */
+const SECRET_TAPS = 5;
+const SECRET_GAP_MS = 1500;
+
 /**
  * Shown instead of the website whenever it can't be shown. The app is
- * online-only: nothing here is cached or editable.
+ * online-only: nothing here is cached or editable. Tapping the version at
+ * the bottom five times opens the hidden Diagnostics screen.
  *
  * @param {{
  *   kind?: ErrorKind,
@@ -36,11 +42,22 @@ const TEXT = {
  *   checking: boolean,
  *   stillOffline: boolean,
  *   detail?: string,
+ *   version: string,
  *   onRetry: () => void,
+ *   onDiagnostics: () => void,
  * }} props
  */
-export function OfflineScreen({ kind = "offline", colors, checking, stillOffline, detail, onRetry }) {
+export function OfflineScreen({ kind = "offline", colors, checking, stillOffline, detail, version, onRetry, onDiagnostics }) {
   const text = TEXT[kind] ?? TEXT.offline;
+  const taps = useRef({ n: 0, at: 0 });
+  const onVersionTap = () => {
+    const t = Date.now();
+    taps.current = { n: t - taps.current.at < SECRET_GAP_MS ? taps.current.n + 1 : 1, at: t };
+    if (taps.current.n >= SECRET_TAPS) {
+      taps.current = { n: 0, at: 0 };
+      onDiagnostics();
+    }
+  };
   return (
     <View style={[styles.root, { backgroundColor: colors.bg }]} accessibilityRole="alert">
       <Svg width={72} height={72} viewBox="0 0 32 32" fill="none">
@@ -66,6 +83,9 @@ export function OfflineScreen({ kind = "offline", colors, checking, stillOffline
       >
         {checking ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.buttonText}>Retry</Text>}
       </Pressable>
+      <Pressable onPress={onVersionTap} style={styles.version} hitSlop={16} accessibilityLabel={`Version ${version}`}>
+        <Text style={[styles.versionText, { color: colors.muted }]}>{version}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -78,4 +98,6 @@ const styles = StyleSheet.create({
   detail: { marginTop: 4, fontSize: 11, opacity: 0.7, textAlign: "center" },
   button: { marginTop: 28, minWidth: 140, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
   buttonText: { color: "#ffffff", fontSize: 16, fontWeight: "600" },
+  version: { position: "absolute", bottom: 28, paddingHorizontal: 16, paddingVertical: 8 },
+  versionText: { fontSize: 12, opacity: 0.6 },
 });

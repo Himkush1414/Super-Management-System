@@ -106,7 +106,7 @@ function Main() {
   const [errorDetail, setErrorDetail] = useState(/** @type {string | undefined} */ (undefined));
   // what the error screen says: no connection, the server failed, or too slow
   const [errorKind, setErrorKind] = useState(/** @type {import('./src/OfflineScreen').ErrorKind} */ ("offline"));
-  // Android: the keyboard's height, and how much the window shrank for it
+  // Android: the keyboard's height, and how much height the window gave up for it
   const [keyboard, setKeyboard] = useState(0);
   const [rootHeight, setRootHeight] = useState(0);
   const [openHeight, setOpenHeight] = useState(0);
@@ -296,8 +296,8 @@ function Main() {
   }, [confirmExit, historyBack]);
 
   // Android: keep the page above the keyboard. With edge-to-edge the window
-  // may not shrink for the keyboard, so the page is padded by whatever the
-  // window didn't give up itself (0 where it already shrank).
+  // may keep its full height under the keyboard, so the page is padded by
+  // whatever height the window didn't give up itself (0 where it did).
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const show = Keyboard.addListener("keyboardDidShow", (e) => setKeyboard(e.endCoordinates.height));

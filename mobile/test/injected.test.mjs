@@ -5,9 +5,13 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import injected from "../src/injected.js";
 
-/** @param {{ path?: string, theme?: string|null, dialog?: boolean, focused?: string }} [opts] */
+/** @param {{ path?: string, theme?: string|null, dialog?: boolean, focused?: string, bg?: string }} [opts] */
 function page(opts = {}) {
   /** @type {any[]} */ const posted = [];
+  /** @type {Record<string, Function[]>} */ const docListeners = {};
+  /** @type {Record<string, Function[]>} */ const winListeners = {};
+  /** @type {string[]} */ const historyCalls = [];
+  const style = { backgroundColor: opts.bg ?? "rgb(10, 10, 10)" };
   /** @type {any[]} */ const sockets = [];
   let reloads = 0;
   const attrs = { "data-theme": opts.theme ?? null };
@@ -45,20 +49,38 @@ function page(opts = {}) {
     }
   }
   const documentElement = { getAttribute: (/** @type {string} */ k) => /** @type {any} */ (attrs)[k] };
+  const history = {
+    pushState: (/** @type {any} */ _s, /** @type {string} */ _t, /** @type {string} */ url) => historyCalls.push(`push ${url}`),
+    replaceState: (/** @type {any} */ _s, /** @type {string} */ _t, /** @type {string} */ url) => historyCalls.push(`replace ${url}`),
+  };
   const window = {
     ReactNativeWebView: { postMessage: (/** @type {string} */ s) => posted.push(JSON.parse(s)) },
     WebSocket: FakeWS,
+    history,
+    requestAnimationFrame: (/** @type {() => void} */ f) => f(),
+    addEventListener: (/** @type {string} */ t, /** @type {Function} */ fn) => (winListeners[t] ||= []).push(fn),
   };
   const sandbox = {
     window,
     HTMLAnchorElement: Anchor,
-    location: { pathname: opts.path ?? "/dashboard/orders", reload: () => reloads++ },
+    location: {
+      pathname: opts.path ?? "/dashboard/orders",
+      search: "",
+      origin: "https://site",
+      href: `https://site${opts.path ?? "/dashboard/orders"}`,
+      reload: () => reloads++,
+    },
+    history,
+    URL,
+    setTimeout,
+    getComputedStyle: () => style,
     document: {
       documentElement,
+      body: {},
       cookie: "",
       activeElement: opts.focused ? { tagName: opts.focused } : null,
       querySelector: () => (opts.dialog ? {} : null),
-      addEventListener: () => {},
+      addEventListener: (/** @type {string} */ t, /** @type {Function} */ fn) => (docListeners[t] ||= []).push(fn),
     },
     MutationObserver: class {
       /** @param {() => void} cb */
@@ -86,6 +108,21 @@ function page(opts = {}) {
       attrs["data-theme"] = t;
       observers.forEach((cb) => cb());
     },
+    /** @param {string} bg */
+    setBg(bg) {
+      style.backgroundColor = bg;
+      observers.forEach((cb) => cb());
+    },
+    /** @param {string} type @param {any} [ev] */
+    fire(type, ev = {}) {
+      for (const fn of docListeners[type] || []) fn(ev);
+    },
+    /** @param {string} type @param {any} [ev] */
+    fireWindow(type, ev = {}) {
+      for (const fn of winListeners[type] || []) fn(ev);
+    },
+    history,
+    historyCalls,
   };
 }
 
@@ -164,6 +201,57 @@ test("theme changes are reported once per change", () => {
     p.posted.filter((m) => m.type === "theme").map((m) => m.value),
     ["dark", "light", "dark"],
   );
+});
+
+test("after the first paint: the page's background colour, then 'painted'", () => {
+  const p = page({ bg: "rgb(245, 245, 246)" });
+  p.fire("DOMContentLoaded");
+  const tail = p.posted.filter((m) => m.type === "bg" || m.type === "painted");
+  assert.deepEqual(tail, [{ type: "bg", value: "rgb(245, 245, 246)" }, { type: "painted" }]);
+});
+
+test("a background change (theme toggle) is reported once", () => {
+  const p = page();
+  p.fire("DOMContentLoaded");
+  p.setBg("rgb(245, 245, 246)");
+  p.setBg("rgb(245, 245, 246)");
+  assert.deepEqual(
+    p.posted.filter((m) => m.type === "bg").map((m) => m.value),
+    ["rgb(10, 10, 10)", "rgb(245, 245, 246)"],
+  );
+});
+
+/** @param {{ href: string, download?: boolean, target?: string }} a */
+const linkTarget = (a) => {
+  const el = {
+    href: a.href,
+    target: a.target || "",
+    hasAttribute: (/** @type {string} */ k) => k === "download" && !!a.download,
+  };
+  return { closest: () => el };
+};
+
+test("a tap on a same-site page link starts the progress bar; the address change ends it", () => {
+  const p = page({ path: "/dashboard/orders" });
+  p.fire("click", { target: linkTarget({ href: "https://site/dashboard/activity" }), button: 0 });
+  assert.deepEqual(p.posted.at(-1), { type: "nav", state: "start" });
+  p.history.pushState(null, "", "/dashboard/activity");
+  assert.deepEqual(p.historyCalls, ["push /dashboard/activity"]);
+  assert.ok(p.posted.some((m) => m.type === "nav" && m.state === "end"));
+  const ends = p.posted.filter((m) => m.type === "nav" && m.state === "end").length;
+  p.fireWindow("popstate");
+  assert.equal(p.posted.filter((m) => m.type === "nav" && m.state === "end").length, ends + 1);
+});
+
+test("downloads, other sites, new tabs and same-page links don't start the bar", () => {
+  const p = page({ path: "/dashboard/orders" });
+  const before = p.posted.length;
+  p.fire("click", { target: linkTarget({ href: "https://site/dashboard/orders/csv", download: true }), button: 0 });
+  p.fire("click", { target: linkTarget({ href: "https://elsewhere.example/" }), button: 0 });
+  p.fire("click", { target: linkTarget({ href: "https://site/dashboard/activity", target: "_blank" }), button: 0 });
+  p.fire("click", { target: linkTarget({ href: "https://site/dashboard/orders#top" }), button: 0 });
+  p.fire("click", { target: { closest: () => null }, button: 0 });
+  assert.equal(p.posted.slice(before).filter((m) => m.type === "nav").length, 0);
 });
 
 // ── session bridge: cookies exactly as the website's @supabase/ssr writes them ──

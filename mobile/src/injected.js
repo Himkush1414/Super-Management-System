@@ -121,6 +121,79 @@ const PAGE_SCRIPT = String.raw`(function () {
   document.addEventListener("DOMContentLoaded", reportTheme);
   reportTheme();
 
+  // ── colours and first paint: let the app match the page exactly ────────
+  // The page's real background (whatever the website's CSS says) colours
+  // the app around it; "painted" tells the app it can lift the splash.
+  var lastBg = "";
+  function reportBg() {
+    try {
+      var bg = document.body ? getComputedStyle(document.body).backgroundColor : "";
+      if (bg && bg !== lastBg) {
+        lastBg = bg;
+        post({ type: "bg", value: bg });
+      }
+    } catch (e) {
+      /* no body yet */
+    }
+  }
+  function afterPaint(fn) {
+    var raf = w.requestAnimationFrame || function (f) { return setTimeout(f, 16); };
+    raf(function () { raf(fn); });
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    afterPaint(function () {
+      reportBg();
+      post({ type: "painted" });
+    });
+  });
+  try {
+    new MutationObserver(function () { afterPaint(reportBg); }).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "class", "style"],
+    });
+  } catch (e) {
+    /* no documentElement yet */
+  }
+
+  // ── navigation inside the website: drive the app's progress bar ────────
+  // The website switches pages without a full load (client-side routing),
+  // which the WebView doesn't see. A tap on a same-site link starts the
+  // bar; the address changing (pushState / back) ends it.
+  function isPageLink(a, e) {
+    if (!a || !a.href || a.hasAttribute("download")) return false;
+    if (a.target && a.target !== "_self") return false;
+    if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return false;
+    var u;
+    try {
+      u = new URL(a.href, location.href);
+    } catch (err) {
+      return false;
+    }
+    if (u.origin !== location.origin) return false;
+    // a same-page #anchor is not a navigation
+    return u.pathname + u.search !== location.pathname + location.search;
+  }
+  document.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+    if (isPageLink(a, e)) post({ type: "nav", state: "start" });
+  }, true);
+  function navEnded() {
+    post({ type: "nav", state: "end" });
+    reportSession();
+    afterPaint(reportBg);
+  }
+  var H = w.history;
+  ["pushState", "replaceState"].forEach(function (k) {
+    var orig = H && H[k];
+    if (typeof orig !== "function") return;
+    H[k] = function () {
+      var r = orig.apply(this, arguments);
+      try { navEnded(); } catch (e) { /* never break the website's router */ }
+      return r;
+    };
+  });
+  if (w.addEventListener) w.addEventListener("popstate", navEnded);
+
   // ── downloads built in the page (blob: URLs) ───────────────────────────
   // A WebView cannot save a blob: download. The website's account reset
   // flow ("Download this data", then delete) treats a returning a.click()

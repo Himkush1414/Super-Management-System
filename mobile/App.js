@@ -21,7 +21,7 @@ import { createAssembler } from "./src/fileAssembler";
 import { createPushRegistrar, ensureChannel } from "./src/push";
 import * as Application from "expo-application";
 import { MAX_MS as WATCH_MAX_MS, STALL_MS } from "./src/watchdog";
-import { addEntry, onStuck, pathOnly } from "./src/loading";
+import { addEntry, onStuck, pathOnly, retryHow } from "./src/loading";
 import { loadLog, saveLog } from "./src/diagnosticsStore";
 import { Diagnostics } from "./src/Diagnostics";
 
@@ -226,15 +226,15 @@ function Main() {
   const loadFailed = useRef(false);
 
   // ── full page loads ────────────────────────────────────────────────────
-  // Android's onLoadStart can't be used to time a load: react-native-webview
+  // Android's onLoadStart doesn't mark a full load: react-native-webview
   // sends it from doUpdateVisitedHistory, i.e. for every address change
-  // inside the website too (each tab switch, each live refresh), and no
-  // onLoadEnd follows those. (Before, each tab switch left the bar running
-  // and armed a 20 s timer that stopped all loading, the next tab's
-  // request included, and showed "taking too long".) So a full load is
-  // timed from where it is asked for (start, reload, a link that leaves
-  // the page, a retry) until the page reports in: its first byte has
-  // arrived and its watchdog (src/watchdog.js) takes over.
+  // inside the website too (each tab switch, each live refresh). The
+  // WebView follows those with onPageFinished, so the old 20 s timer on
+  // onLoadStart was cleared again (checked on the emulator); still, it
+  // treated every tab switch as a page load. So a full load is timed from
+  // where it is asked for (start, reload, a link that leaves the page, a
+  // retry) until the page reports in: its first byte has arrived and its
+  // watchdog (src/watchdog.js) takes over.
   const noStartTimer = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
   const clearNoStartTimer = useCallback(() => {
     if (noStartTimer.current) clearTimeout(noStartTimer.current);
@@ -288,9 +288,9 @@ function Main() {
       note: s.reason,
     });
     if (action === "retry") {
-      // a fresh full load of that address (a same-address load replaces
-      // the stuck page in history instead of adding to it)
-      startLoad(href, s.kind === "load" ? "reload" : "assign");
+      // a fresh full load of that address: the WebView's own reload when
+      // it already shows it (see retryHow), else the link from the page
+      startLoad(href, retryHow(href, currentUrl.current));
       return;
     }
     loadFailed.current = true;
@@ -625,7 +625,7 @@ function Main() {
     ["Website", WEB_URL],
     ["Android", `API ${Platform.Version}`],
     ["WebView", webAgent || "(not reported yet)"],
-    ["Cache", "default: the website's headers decide (pages no-store, static files cached)"],
+    ["Cache", "default: the website's headers decide (pages no-store, scripts and styles cached)"],
     ["JavaScript", "on; DOM storage on"],
     ["Cookies", "shared with the app; third-party off"],
     ["Security", "HTTPS only, mixed content never, file access off, extra windows off"],
@@ -706,7 +706,7 @@ function Main() {
             sharedCookiesEnabled
             thirdPartyCookiesEnabled={false}
             // the website's own headers decide: its pages are never stored
-            // (no-store / revalidate), only its static files (immutable)
+            // (no-store / revalidate), only its scripts and styles (immutable)
             cacheEnabled
             cacheMode="LOAD_DEFAULT"
             mixedContentMode="never"

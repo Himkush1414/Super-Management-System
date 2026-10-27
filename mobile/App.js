@@ -16,7 +16,8 @@ import { ProgressBar } from "./src/ProgressBar";
 import { decide, deepLink, isRootPage } from "./src/links";
 import { buildInjectedScript } from "./src/injected";
 import { OfflineScreen } from "./src/OfflineScreen";
-import { saveAndShareFile } from "./src/files";
+import { saveAndOpenFile } from "./src/files";
+import { createAssembler } from "./src/fileAssembler";
 import { createPushRegistrar, ensureChannel } from "./src/push";
 
 // react-native-webview's class typing defaults its generic to `undefined`, and
@@ -100,6 +101,9 @@ function Main() {
   const [bg, setBg] = useState(() => loadCachedBg() ?? DEFAULT_BG);
   const [pageLoading, setPageLoading] = useState(false);
   const [navLoading, setNavLoading] = useState(false);
+  // a CSV/PDF on its way from the page (shows the progress bar)
+  const [downloading, setDownloading] = useState(false);
+  const [assembler] = useState(createAssembler);
   const [offline, setOffline] = useState(false);
   const [checking, setChecking] = useState(false);
   const [stillOffline, setStillOffline] = useState(false);
@@ -391,18 +395,39 @@ function Main() {
           "This file can only be downloaded on the website in a computer browser. Nothing was deleted.",
         );
         break;
-      case "file":
-        void saveAndShareFile(msg).catch(() =>
+      case "file-start":
+        assembler.start(msg.id);
+        setDownloading(true);
+        break;
+      case "file-chunk":
+        if (!assembler.chunk(msg)) setDownloading(false);
+        break;
+      case "file-end": {
+        setDownloading(false);
+        const f = assembler.end(msg);
+        if (!f) {
+          Alert.alert("Download failed", "The file could not be downloaded. Please try again.");
+          break;
+        }
+        void saveAndOpenFile(f).catch(() =>
           Alert.alert("Download failed", "The file could not be saved. Please try again."),
         );
         break;
+      }
       case "file-error":
-        Alert.alert("Download failed", "The file could not be downloaded. Please try again.");
+        assembler.drop(msg.id);
+        setDownloading(false);
+        Alert.alert(
+          "Download failed",
+          msg.signedOut
+            ? "You were signed out. Sign in again, then download the file."
+            : "The file could not be downloaded. Please try again.",
+        );
         break;
       default:
         break;
     }
-  }, [hideSplash, onBackReply]);
+  }, [hideSplash, onBackReply, assembler]);
 
   return (
     <SafeAreaView
@@ -468,7 +493,8 @@ function Main() {
             onRenderProcessGone={() => webRef.current?.reload()}
             onContentProcessDidTerminate={() => webRef.current?.reload()}
             onFileDownload={({ nativeEvent }) => {
-              // iOS only: fetch it inside the page so the session cookie goes along
+              // iOS only, for an attachment the page's own catch missed:
+              // fetch it inside the page so the session cookie goes along
               if (decide(nativeEvent.downloadUrl, POLICY) !== "load") return;
               webRef.current?.injectJavaScript(
                 `window.__nrFetchFile&&window.__nrFetchFile(${JSON.stringify(nativeEvent.downloadUrl)});true;`,
@@ -503,7 +529,7 @@ function Main() {
             applicationNameForUserAgent={`NRManagement/1.0 (${Platform.OS})`}
             style={{ backgroundColor: colors.bg }}
           />
-          <ProgressBar active={(pageLoading || navLoading) && !offline} color={colors.accent} />
+          <ProgressBar active={(pageLoading || navLoading || downloading) && !offline} color={colors.accent} />
           {offline ? (
             <OfflineScreen
               kind={errorKind}

@@ -5,13 +5,17 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import injected from "../src/injected.js";
 
-/** @param {{ path?: string, theme?: string|null, dialog?: boolean, focused?: string, bg?: string }} [opts] */
+/** @param {{ path?: string, theme?: string|null, dialog?: boolean, focused?: string, bg?: string, menuOpen?: boolean }} [opts] */
 function page(opts = {}) {
   /** @type {any[]} */ const posted = [];
   /** @type {Record<string, Function[]>} */ const docListeners = {};
   /** @type {Record<string, Function[]>} */ const winListeners = {};
   /** @type {string[]} */ const historyCalls = [];
   const style = { backgroundColor: opts.bg ?? "rgb(10, 10, 10)" };
+  /** @type {any[]} */ const dispatched = [];
+  let menuClicks = 0;
+  // the mobile menu's close button: in the page always, visible only when open
+  const menuButton = { getClientRects: () => (opts.menuOpen ? [{}] : []), click: () => menuClicks++ };
   /** @type {any[]} */ const sockets = [];
   let reloads = 0;
   const attrs = { "data-theme": opts.theme ?? null };
@@ -74,13 +78,27 @@ function page(opts = {}) {
     URL,
     setTimeout,
     getComputedStyle: () => style,
+    KeyboardEvent: class {
+      /** @param {string} type @param {any} init */
+      constructor(type, init) {
+        this.type = type;
+        Object.assign(this, init);
+      }
+    },
     document: {
       documentElement,
       body: {},
       cookie: "",
       activeElement: opts.focused ? { tagName: opts.focused } : null,
-      querySelector: () => (opts.dialog ? {} : null),
+      querySelector: (/** @type {string} */ sel) => {
+        if (sel.includes('aria-label="Close menu"')) return menuButton;
+        return opts.dialog ? {} : null;
+      },
       addEventListener: (/** @type {string} */ t, /** @type {Function} */ fn) => (docListeners[t] ||= []).push(fn),
+      dispatchEvent: (/** @type {any} */ e) => {
+        dispatched.push(e);
+        return true;
+      },
     },
     MutationObserver: class {
       /** @param {() => void} cb */
@@ -123,6 +141,10 @@ function page(opts = {}) {
     },
     history,
     historyCalls,
+    dispatched,
+    get menuClicks() {
+      return menuClicks;
+    },
   };
 }
 
@@ -252,6 +274,31 @@ test("downloads, other sites, new tabs and same-page links don't start the bar",
   p.fire("click", { target: linkTarget({ href: "https://site/dashboard/orders#top" }), button: 0 });
   p.fire("click", { target: { closest: () => null }, button: 0 });
   assert.equal(p.posted.slice(before).filter((m) => m.type === "nav").length, 0);
+});
+
+test("back: an open dialog closes the website's way (Escape)", () => {
+  const p = page({ dialog: true });
+  p.w.__nrBack();
+  assert.equal(p.dispatched.length, 1);
+  assert.equal(p.dispatched[0].type, "keydown");
+  assert.equal(p.dispatched[0].key, "Escape");
+  assert.equal(p.dispatched[0].bubbles, true);
+  assert.deepEqual(p.posted.at(-1), { type: "back", handled: "dialog" });
+});
+
+test("back: the open mobile menu closes through its own button", () => {
+  const p = page({ menuOpen: true });
+  p.w.__nrBack();
+  assert.equal(p.menuClicks, 1);
+  assert.deepEqual(p.posted.at(-1), { type: "back", handled: "menu" });
+});
+
+test("back: nothing open → the app decides (history or exit)", () => {
+  const p = page();
+  p.w.__nrBack();
+  assert.equal(p.menuClicks, 0);
+  assert.equal(p.dispatched.length, 0);
+  assert.deepEqual(p.posted.at(-1), { type: "back", handled: "" });
 });
 
 // ── session bridge: cookies exactly as the website's @supabase/ssr writes them ──

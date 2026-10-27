@@ -96,6 +96,29 @@ const PAGE_SCRIPT = String.raw`(function () {
     if (reload) location.reload();
   };
 
+  // ── back button: close what is open on the page before leaving it ──────
+  // Called by the app on Android back. An open dialog closes the way the
+  // website closes it (Escape); the open mobile menu through its own
+  // close button. Otherwise the app goes back in history or asks to exit.
+  w.__nrBack = function () {
+    var handled = "";
+    try {
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, cancelable: true }));
+        handled = "dialog";
+      } else {
+        var close = document.querySelector('button[aria-label="Close menu"]');
+        if (close && close.getClientRects().length) {
+          close.click();
+          handled = "menu";
+        }
+      }
+    } catch (e) {
+      handled = "";
+    }
+    post({ type: "back", handled: handled });
+  };
+
   // ── theme: let the app colour the status bar like the page ─────────────
   function theme() {
     return document.documentElement && document.documentElement.getAttribute("data-theme") === "light"

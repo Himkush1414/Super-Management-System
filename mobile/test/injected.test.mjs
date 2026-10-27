@@ -5,7 +5,10 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import injected from "../src/injected.js";
 
-/** @param {{ path?: string, theme?: string|null, dialog?: boolean, focused?: string, bg?: string, menuOpen?: boolean }} [opts] */
+/**
+ * @param {{ path?: string, theme?: string|null, dialog?: boolean, focused?: string, bg?: string, menuOpen?: boolean,
+ *   fetch?: (url: string, init: any) => Promise<any> }} [opts]
+ */
 function page(opts = {}) {
   /** @type {any[]} */ const posted = [];
   /** @type {Record<string, Function[]>} */ const docListeners = {};
@@ -13,6 +16,7 @@ function page(opts = {}) {
   /** @type {string[]} */ const historyCalls = [];
   const style = { backgroundColor: opts.bg ?? "rgb(10, 10, 10)" };
   /** @type {any[]} */ const dispatched = [];
+  /** @type {{ url: string, init: any }[]} */ const fetches = [];
   let menuClicks = 0;
   // the mobile menu's close button: in the page always, visible only when open
   const menuButton = { getClientRects: () => (opts.menuOpen ? [{}] : []), click: () => menuClicks++ };
@@ -78,6 +82,22 @@ function page(opts = {}) {
     URL,
     setTimeout,
     getComputedStyle: () => style,
+    fetch: (/** @type {string} */ url, /** @type {any} */ init) => {
+      fetches.push({ url, init });
+      return opts.fetch ? opts.fetch(url, init) : Promise.reject(new Error("offline"));
+    },
+    FileReader: class {
+      constructor() {
+        /** @type {any} */ this.result = null;
+        /** @type {any} */ this.onload = null;
+        /** @type {any} */ this.onerror = null;
+      }
+      /** @param {{ type: string, base64: string }} b */
+      readAsDataURL(b) {
+        this.result = `data:${b.type};base64,${b.base64}`;
+        setTimeout(() => this.onload && this.onload(), 0);
+      }
+    },
     KeyboardEvent: class {
       /** @param {string} type @param {any} init */
       constructor(type, init) {
@@ -131,9 +151,11 @@ function page(opts = {}) {
       style.backgroundColor = bg;
       observers.forEach((cb) => cb());
     },
-    /** @param {string} type @param {any} [ev] */
+    /** @param {string} type @param {any} [ev] @returns {any} the event, to check defaultPrevented */
     fire(type, ev = {}) {
-      for (const fn of docListeners[type] || []) fn(ev);
+      const e = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...ev };
+      for (const fn of docListeners[type] || []) fn(e);
+      return e;
     },
     /** @param {string} type @param {any} [ev] */
     fireWindow(type, ev = {}) {
@@ -142,6 +164,7 @@ function page(opts = {}) {
     history,
     historyCalls,
     dispatched,
+    fetches,
     get menuClicks() {
       return menuClicks;
     },
@@ -299,6 +322,95 @@ test("back: nothing open → the app decides (history or exit)", () => {
   assert.equal(p.menuClicks, 0);
   assert.equal(p.dispatched.length, 0);
   assert.deepEqual(p.posted.at(-1), { type: "back", handled: "" });
+});
+
+// ── downloads: caught in the page, fetched with the session, sent in pieces ──
+
+/** a fetch Response stand-in @param {{ status?: number, type?: string, cd?: string, base64?: string }} r */
+const response = (r) => ({
+  ok: (r.status ?? 200) < 400,
+  status: r.status ?? 200,
+  headers: {
+    get: (/** @type {string} */ k) =>
+      ({ "content-type": r.type ?? "application/pdf", "content-disposition": r.cd ?? "" })[k.toLowerCase()] ?? null,
+  },
+  blob: () => Promise.resolve({ type: (r.type ?? "application/pdf").split(";")[0], base64: r.base64 ?? "JVBERi0=" }),
+});
+const settle = () => new Promise((r) => setTimeout(r, 20));
+
+test("download link: no browser download; fetched in the page with the session cookie", async () => {
+  const p = page({ fetch: () => Promise.resolve(response({ cd: 'attachment; filename="orders-2026-10-27.csv"', type: "text/csv; charset=utf-8", base64: "YSxiCjEsMgo=" })) });
+  const e = p.fire("click", { target: linkTarget({ href: "https://site/dashboard/orders/csv", download: true }), button: 0 });
+  assert.equal(e.defaultPrevented, true);
+  // (plain copy: the init object comes from the page's realm)
+  assert.deepEqual(JSON.parse(JSON.stringify(p.fetches)), [
+    { url: "https://site/dashboard/orders/csv", init: { credentials: "include", cache: "no-store" } },
+  ]);
+  await settle();
+  const msgs = p.posted.filter((m) => String(m.type).startsWith("file-"));
+  assert.deepEqual(msgs.map((m) => m.type), ["file-start", "file-chunk", "file-end"]);
+  assert.deepEqual(msgs[2], { type: "file-end", id: msgs[0].id, name: "orders-2026-10-27.csv", mime: "text/csv", chunks: 1 });
+  assert.equal(msgs[1].data, "YSxiCjEsMgo=");
+  // a file link never starts the page-switch bar
+  assert.equal(p.posted.filter((m) => m.type === "nav").length, 0);
+});
+
+test("the website's file routes are caught even without a download attribute", () => {
+  const p = page();
+  for (const path of ["/dashboard/orders/pdf?period=month&at=2026-10-01", "/dashboard/orders/0b7c6a0e-1f0e-4c43-9a4e-3c2a1b0d9e8f/pdf"]) {
+    const e = p.fire("click", { target: linkTarget({ href: `https://site${path}` }), button: 0 });
+    assert.equal(e.defaultPrevented, true, path);
+  }
+  assert.equal(p.fetches.length, 2);
+});
+
+test("ordinary links and other sites' files are left to the browser", () => {
+  const p = page();
+  for (const href of ["https://site/dashboard/activity", "https://elsewhere.example/report.pdf"]) {
+    const e = p.fire("click", { target: linkTarget({ href, download: href.endsWith(".pdf") }), button: 0 });
+    assert.equal(e.defaultPrevented, false, href);
+  }
+  assert.equal(p.fetches.length, 0);
+});
+
+test("a big file goes over in 256 KB pieces, in order", async () => {
+  const big = "A".repeat(256 * 1024 * 2 + 10);
+  const p = page({ fetch: () => Promise.resolve(response({ cd: 'attachment; filename="all.pdf"', base64: big })) });
+  p.w.__nrFetchFile("https://site/dashboard/orders/pdf?period=all");
+  await settle();
+  const chunks = p.posted.filter((m) => m.type === "file-chunk");
+  assert.deepEqual(chunks.map((c) => [c.i, c.n]), [[0, 3], [1, 3], [2, 3]]);
+  assert.equal(chunks.map((c) => c.data).join(""), big);
+  assert.equal(p.posted.at(-1).chunks, 3);
+});
+
+test("signed out meanwhile (login page came back): a clear error, no file", async () => {
+  const p = page({ fetch: () => Promise.resolve(response({ type: "text/html; charset=utf-8" })) });
+  p.w.__nrFetchFile("https://site/dashboard/orders/csv");
+  await settle();
+  const err = p.posted.at(-1);
+  assert.equal(err.type, "file-error");
+  assert.equal(err.signedOut, true);
+  assert.equal(p.posted.filter((m) => m.type === "file-chunk").length, 0);
+});
+
+test("a server error is reported, not saved", async () => {
+  const p = page({ fetch: () => Promise.resolve(response({ status: 500 })) });
+  p.w.__nrFetchFile("https://site/dashboard/orders/csv");
+  await settle();
+  assert.deepEqual(
+    (({ type, message, signedOut }) => ({ type, message, signedOut }))(p.posted.at(-1)),
+    { type: "file-error", message: "HTTP 500", signedOut: false },
+  );
+});
+
+test("file names come from Content-Disposition, else the URL", () => {
+  const p = page();
+  const name = p.w.__nrApp.fileName;
+  assert.equal(name('attachment; filename="NR Orders – Oct.pdf"', "x"), "NR Orders – Oct.pdf");
+  assert.equal(name("attachment; filename*=UTF-8''NR%20Orders%20%E2%80%93%20Oct.pdf", "x"), "NR Orders – Oct.pdf");
+  assert.equal(name("attachment; filename=plain.csv", "x"), "plain.csv");
+  assert.equal(name("", "https://site/dashboard/orders/csv?x=1"), "csv");
 });
 
 // ── session bridge: cookies exactly as the website's @supabase/ssr writes them ──

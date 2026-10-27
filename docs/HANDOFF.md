@@ -25,7 +25,9 @@ this file.
   phone are:
   - the page background colour (`shell-colors.json`), so the next start
     has no white flash;
-  - the most recent download, in the app's cache.
+  - the most recent download, in the app's cache;
+  - the Diagnostics list (`diagnostics.json`): the last 50 page loads
+    with their time, path and result, nothing else.
   - The splash and the offline screen are built into the app.
 
 ## What the app shell does (all in `mobile/`)
@@ -34,9 +36,9 @@ this file.
 |---|---|
 | Feel | No pinch or double-tap zoom, no bounce or glow, no sideways page drag (tables still scroll in their own box), no tap flash, no long-press menu on links, buttons and images, text selection only in fields and table cells. Each tweak has its own flag in `mobile/src/appFeel.js` (`APP_FEEL`). |
 | Launch | The native splash stays until the first page has painted, then fades. The root view, WebView, status bar and navigation bar take the page's real background colour, follow the dark/light toggle, and remember it for the next start. |
-| Loading | A thin native progress bar during page loads, in-site page switches and file downloads. |
+| Loading | A thin native progress bar during page loads, in-site page switches and file downloads. A **loading watchdog** follows every page switch: a loading skeleton still on screen after 8 s, or a page that hasn't changed for 8 s, is reloaded once by itself; if it sticks again, the error screen with **Retry**. Never a loop. The server is woken (`/api/health`) on launch and on resume. |
 | Back (Android) | Closes an open dialog or the mobile menu first, then goes back in page history, then asks "Leave NR Management?". |
-| Errors | Native screens instead of browser error pages: offline (retries when the connection returns), server error (retries by itself after 10 s, 20 s and 40 s), page too slow (stopped after 20 s). Each has **Retry**. |
+| Errors | Native screens instead of browser error pages: offline (retries when the connection returns), server error (retries by itself after 10 s, 20 s and 40 s), page stuck (one automatic reload, then this screen). Each has **Retry**. |
 | Keyboard | The page is kept above the Android keyboard, and the focused field scrolls into view. |
 | Links | Only the website's own address loads inside the app. Other sites, `tel:`, `mailto:`, `sms:` and WhatsApp open in the phone's own apps. File URLs, cleartext HTTP, mixed content and extra windows are blocked. |
 | Session | The website's own cookie, shared with the WebView. After a sign-in or sign-out the app makes Android write the cookie to disk at once, so killing the app right after doesn't undo it. |
@@ -59,8 +61,12 @@ injected viewport still sets `viewport-fit=cover`.
 ## Merging the open PRs
 
 All mobile work is in stacked PRs: **#5 → #6 → #7 → #8 → #9 → #10 → #11
-→ #12 → #13**. Each is based on the one before. #5 already targets
-`master`.
+→ #12 → #13 → #14 → #16**. Each is based on the one before. #5 already
+targets `master`.
+
+**#15 is not in this chain.** It is the website loading proposal (label
+"website change: needs my review"). It only adds a document, and it stays
+unmerged until you decide (see "Proposals for the website" below).
 
 Two facts decide how to merge:
 - Vercel refuses deploys whose commit author isn't `nrindustry`.
@@ -101,6 +107,8 @@ merge 10 feat/mobile-navigation-errors; check
 merge 11 feat/mobile-downloads;         check
 merge 12 chore/mobile-production-apk;   check
 merge 13 docs/mobile-handoff;           check
+merge 14 feat/mobile-loading-watchdog;  check
+merge 16 docs/android-download;         check
 ```
 
 Wait for the Vercel production deployment to show **Ready** after each
@@ -110,7 +118,7 @@ branches. GitHub's "Delete branch" button on each merged PR, or:
 ```bash
 for b in chore/mobile-scaffold feat/mobile-native feat/mobile-push ci/mobile-eas-build docs/readme-download \
          feat/mobile-app-feel feat/mobile-launch-colors feat/mobile-navigation-errors feat/mobile-downloads \
-         chore/mobile-production-apk docs/mobile-handoff; do git push origin --delete "$b"; done
+         chore/mobile-production-apk docs/mobile-handoff feat/mobile-loading-watchdog docs/android-download; do git push origin --delete "$b"; done
 ```
 
 Merging changes nothing on the website. The PRs touch only `mobile/`,
@@ -124,15 +132,32 @@ deployment shows as blocked.
 
 ## Install on a phone
 
-1. Open the private install link on the phone. Each EAS build has an
-   install page and a direct APK link; they are sent privately and are not
-   in this repository.
-2. If Android asks, allow installs from that source: *Settings → Apps →
-   (your browser) → Install unknown apps*.
-3. Tap **Install**. If Play Protect warns about an unknown developer: **More
+The permanent download link (always the newest release):
+<https://github.com/Himkush1414/Super-Management-System/releases/latest/download/NR-Management.apk>,
+also as a QR code: [assets/qr-download.png](assets/qr-download.png).
+
+1. Open the link on the phone (or scan the QR code with the camera) and
+   download the APK.
+2. Open the file. If Android asks, allow installs from that source:
+   *Settings → Apps → (your browser) → Install unknown apps*. Tap
+   **Install**. If Play Protect warns about an unknown developer: **More
    details → Install anyway**. The app isn't on Google Play.
-4. A newer APK installs over the old one and keeps you signed in. Every
-   build is signed with the same EAS-held key.
+3. Open **NR Management** and sign in. **A login is still required**: the
+   link gives anyone the app, but only the existing staff accounts can see
+   anything.
+
+A newer APK installs over the old one and keeps you signed in. Every build
+is signed with the same EAS-held key.
+
+## Diagnostics (when a page is slow)
+
+The app keeps a list of its last 50 page loads and switches: time, kind,
+page path (never the query string), duration and result (`ok`, `retried`,
+`stuck`). Only timings and paths are kept, never page content, data or the
+session. To see it: turn on flight mode, then on the offline screen tap the
+version number at the bottom **five times**. **Share** sends the list as
+text, which is the evidence to compare with Vercel's logs (see
+[WEBSITE-LOADING-PROPOSAL.md](WEBSITE-LOADING-PROPOSAL.md) in #15).
 
 ## Manual checklist (needs a real phone and a real sign-in)
 
@@ -171,6 +196,15 @@ changed data. These need a person with a phone and their own account:
 - [ ] The dark/light toggle changes the status bar and navigation bar
       colours with the page.
 
+**Page switching (the loading fix)**
+- [ ] Switch between Orders, an order, Activity, Settings and back, about
+      20 times on mobile data. No tab stays on the grey skeleton for more
+      than about 8 s. If one does, the app reloads it by itself.
+- [ ] Put the phone away for 2+ minutes on a tab, then open the app and
+      switch tabs at once. The tab loads (it may reload itself once).
+- [ ] Open Diagnostics (see above) and **Share** the list to yourself.
+      Every line should say `ok`; send the list if you see `stuck`.
+
 **Back button**
 - [ ] Open a dialog and press back: the dialog closes. Open the menu and
       press back: the menu closes.
@@ -204,18 +238,44 @@ manager or an encrypted drive, in two places. Delete the `.jks` from
 `mobile/` afterwards (it's gitignored, but don't leave it). Never commit,
 email or paste it. More: [android-signing.md](android-signing.md).
 
-## Building a new APK
+## Releasing a new APK
 
-Only when files in `mobile/` changed:
+Only when files in `mobile/` changed. Run from a checkout of the merged
+branch, with the Expo and GitHub tokens in the environment:
 
 ```bash
 cd mobile
 npm ci && npm run typecheck && npm run lint && npm test
 npx eas-cli build --platform android --profile production-apk --non-interactive --wait
+# the versionCode goes up by itself and the same key is used; note the build's commit and APK URL
+curl -sSL -o /tmp/NR-Management.apk "<APK URL from the build page>"
+BT=~/toolchain/android-sdk/build-tools/37.0.0
+$BT/apksigner verify --print-certs /tmp/NR-Management.apk | grep SHA-256   # must be 7b7176ec…71e44b4
+$BT/aapt2 dump badging /tmp/NR-Management.apk | head -1                     # package and versionCode
+# secret scan: must print nothing
+python3 -I -m zipfile -e /tmp/NR-Management.apk /tmp/apkx && find /tmp/apkx -type f -print0 | xargs -0 strings -n 8 \
+  | grep -E -- '-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.eyJ|service_role|sb_secret_|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}'
+TAG=android-v1.0.0-vc<N>          # the new versionCode
+git tag -a "$TAG" <built commit> -m "NR Management Android 1.0.0 (versionCode <N>)"
+git push origin "$TAG"
+gh release create "$TAG" /tmp/NR-Management.apk --title "NR Management for Android 1.0.0 (versionCode <N>)" --notes "…" --latest
+curl -sIL https://github.com/Himkush1414/Super-Management-System/releases/latest/download/NR-Management.apk | grep -E '^HTTP|^location'
 ```
 
-The versionCode goes up by itself, and the same key is used. The build
-page shows the install link and the APK.
+The download link and the QR code never change: they always point at the
+newest release.
+
+## QR codes
+
+`node mobile/scripts/render-qr.mjs` writes `docs/assets/qr-download.png`
+for the permanent link (black on white, error correction H, wide border,
+1200 px); `node mobile/scripts/render-qr.mjs <url>=<file.png>` makes one
+for any other link. Check a QR code by decoding it:
+
+```bash
+uv run --no-project --with zxing-cpp --with pillow python -I -c \
+  "import sys,zxingcpp;from PIL import Image;print([r.text for r in zxingcpp.read_barcodes(Image.open(sys.argv[1]))])" docs/assets/qr-download.png
+```
 
 ## Later, optional
 
@@ -259,5 +319,15 @@ TestFlight or an App Store listing; the app code already supports iOS.
 
 ## Proposals for the website (not applied)
 
-None needed. Everything above is done from the app shell. The website,
-its login, its data and its database are unchanged.
+**PR #15**, `docs/WEBSITE-LOADING-PROPOSAL.md`, labelled "website change:
+needs my review". It explains the stuck tab skeleton:
+- The website's router waits for the server with no time limit (verified).
+- The database reads that build each tab have no time limit either
+  (verified).
+- That reads actually stall is assumed: it needs the server logs of a
+  signed-in session.
+
+It proposes exact patches: a time limit on reads plus a "Try again" error
+page, and parallel reads on three tabs. **Nothing is applied.** The
+website, its login, its data and its database are unchanged. Merging #15
+only adds the document; applying a patch is a separate decision.

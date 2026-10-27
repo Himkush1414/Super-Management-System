@@ -7,7 +7,7 @@
 **Order management for NR Industries, on the web and on Android, live in real time.**
 
 [![Website](https://img.shields.io/badge/Web-live-0a0a0a?logo=vercel&logoColor=white)](https://super-management-system-tau.vercel.app)
-[![Android](https://img.shields.io/badge/Android-private%20APK-3b82f6?logo=android&logoColor=white)](#the-android-app)
+[![Android](https://img.shields.io/badge/Android-download%20APK-3b82f6?logo=android&logoColor=white)](#download-the-android-app)
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)](https://react.dev)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%C2%B7%20Auth%20%C2%B7%20Realtime-3ecf8e?logo=supabase&logoColor=white)](https://supabase.com)
@@ -25,29 +25,22 @@ within seconds.
 
 ---
 
-## The Android app
+## Download the Android app
 
-The Android app is **distributed privately** to NR Industries staff as a
-signed APK. It isn't on Google Play and isn't published here. Ask the
-administrator for the install link. For iPhone, see [iOS](docs/ios.md).
+**[Download NR-Management.apk](https://github.com/Himkush1414/Super-Management-System/releases/latest/download/NR-Management.apk)**
+(always the newest version), or scan with the phone's camera:
 
-The app is the live website, so every website update reaches it at once,
-with nothing to reinstall. Sign in with the same username and PIN as on
-the website.
+<img src="docs/assets/qr-download.png" alt="QR code: download the NR Management Android app" width="200" height="200">
 
-### Install on Android
+1. Open the link on the Android phone and download the APK.
+2. Open the file. If Android asks, allow installs from your browser, then tap **Install**
+   (on a Play Protect warning: **More details → Install anyway**).
+3. Open **NR Management** and sign in.
 
-1. Open the install link you were sent on the phone, and download the APK.
-2. Open the downloaded file. If Android says installs from this source
-   aren't allowed, tap **Settings**, turn on **Allow from this source**
-   for your browser (*Settings → Apps → Chrome → Install unknown apps*),
-   then go back.
-3. Tap **Install**. If Play Protect warns about an unknown developer, tap
-   **More details → Install anyway**. The app isn't on Google Play, so this
-   is expected.
-4. Open **NR Management** and sign in.
-
-**Updating:** install the newer APK over the old one. You stay signed in.
+**A login is still required.** The app is the live website: only the
+existing staff accounts (username + 6-digit PIN) can see anything. A newer
+APK installs over the old one and keeps you signed in. For iPhone, see
+[iOS](docs/ios.md).
 
 ---
 
@@ -223,8 +216,10 @@ More detail on the website (accounts, pipeline, schema, exports):
    or with **Actions → Mobile · EAS Android build → Run workflow**.
    The versionCode goes up by itself and the same signing key is used,
    so the new APK installs over the old one.
-3. Send the install link from the EAS build page to the staff privately.
-   Don't publish the APK or its link in this public repository.
+3. Scan the APK for secrets, then publish it as a GitHub Release on the
+   exact commit that was built, with the file named `NR-Management.apk`.
+   The download link and QR code above then serve the new version by
+   themselves. Exact commands: [docs/HANDOFF.md](docs/HANDOFF.md#releasing-a-new-apk).
 
 Handoff, manual phone checklist and open items:
 [docs/HANDOFF.md](docs/HANDOFF.md).

@@ -184,6 +184,7 @@ const PAGE_SCRIPT = String.raw`(function () {
   // bar; the address changing (pushState / back) ends it.
   function isPageLink(a, e) {
     if (!a || !a.href || a.hasAttribute("download")) return false;
+    if (w.__nrApp.fileUrl && w.__nrApp.fileUrl(a)) return false;
     if (a.target && a.target !== "_self") return false;
     if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return false;
     var u;
@@ -309,15 +310,64 @@ const PAGE_SCRIPT = String.raw`(function () {
   setInterval(reportSession, 15000);
   reportSession();
 
-  // ── iOS: fetch a same-site attachment with the session, hand it over ────
+  // ── files: the website's CSV and PDF downloads ─────────────────────────
+  // A WebView can't save an attachment the way a browser does. A tap on one
+  // of the website's own download links is caught here: the page fetches
+  // the file itself (so the signed-in session cookie goes along, exactly as
+  // in a browser) and hands it to the app in chunks, which saves it and
+  // opens it in the phone's viewer or share sheet (WhatsApp, Drive, print).
+  var FILE_PATHS = /^\/dashboard\/(orders\/csv|orders\/pdf|orders\/[0-9a-f-]{36}\/pdf|data\/export)\/?$/i;
+  function fileUrl(a) {
+    if (!a || !a.href) return null;
+    var u;
+    try {
+      u = new URL(a.href, location.href);
+    } catch (e) {
+      return null;
+    }
+    if (u.origin !== location.origin) return null;
+    var isDownload = typeof a.hasAttribute === "function" && a.hasAttribute("download");
+    return isDownload || FILE_PATHS.test(u.pathname) ? u.href : null;
+  }
+  w.__nrApp.fileUrl = fileUrl;
+  document.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+    var url = fileUrl(a);
+    if (!url) return;
+    // no browser download; the website's own click handlers still run
+    e.preventDefault();
+    w.__nrFetchFile(url);
+  }, true);
+
+  /** filename*=UTF-8''… or filename="…" from Content-Disposition, else the URL's last part */
+  function fileName(cd, url) {
+    var star = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(cd || "");
+    if (star) {
+      try {
+        return decodeURIComponent(star[1].trim().replace(/^"|"$/g, ""));
+      } catch (e) {
+        /* fall through */
+      }
+    }
+    var plain = /filename\s*=\s*"([^"]+)"/.exec(cd || "") || /filename\s*=\s*([^;]+)/.exec(cd || "");
+    if (plain) return plain[1].trim();
+    return String(url).split(/[?#]/)[0].split("/").pop() || "download";
+  }
+  w.__nrApp.fileName = fileName;
+
+  // base64 text per message: a big bulk PDF goes over in several pieces
+  var CHUNK = 256 * 1024;
+  var fileSeq = 0;
   w.__nrFetchFile = function (url) {
+    var id = ++fileSeq;
+    post({ type: "file-start", id: id });
     fetch(url, { credentials: "include", cache: "no-store" })
       .then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status);
-        var cd = res.headers.get("content-disposition") || "";
-        var m = /filename="([^"]+)"/.exec(cd);
-        var name = m ? m[1] : url.split("?")[0].split("/").pop() || "download";
-        var mime = res.headers.get("content-type") || "application/octet-stream";
+        var mime = (res.headers.get("content-type") || "application/octet-stream").split(";")[0].trim().toLowerCase();
+        // signed out meanwhile: the website redirected the request to its login page
+        if (mime === "text/html") throw new Error("signed-out");
+        var name = fileName(res.headers.get("content-disposition"), url);
         return res.blob().then(function (b) {
           return new Promise(function (resolve, reject) {
             var r = new FileReader();
@@ -332,10 +382,16 @@ const PAGE_SCRIPT = String.raw`(function () {
         });
       })
       .then(function (f) {
-        post(Object.assign({ type: "file" }, f));
+        if (!f.data) throw new Error("empty file");
+        var n = Math.ceil(f.data.length / CHUNK);
+        for (var i = 0; i < n; i++) {
+          post({ type: "file-chunk", id: id, i: i, n: n, data: f.data.slice(i * CHUNK, (i + 1) * CHUNK) });
+        }
+        post({ type: "file-end", id: id, name: f.name, mime: f.mime, chunks: n });
       })
       .catch(function (e) {
-        post({ type: "file-error", message: String((e && e.message) || e) });
+        var message = String((e && e.message) || e);
+        post({ type: "file-error", id: id, message: message, signedOut: message === "signed-out" });
       });
   };
 })();

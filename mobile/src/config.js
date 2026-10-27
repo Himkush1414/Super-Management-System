@@ -14,8 +14,3 @@ export const POLICY = makePolicy(WEB_URL, SUPABASE_URL || undefined);
 
 /** Login lands here; also the fallback for notification taps. */
 export const START_URL = `${WEB_URL}/dashboard/orders`;
-
-export const COLORS = {
-  dark: { bg: "#0a0a0a", panel: "#111111", text: "#ededed", muted: "#a1a1a1", accent: "#3b82f6" },
-  light: { bg: "#f5f5f6", panel: "#ffffff", text: "#171717", muted: "#4b4b4b", accent: "#1d4ed8" },
-};

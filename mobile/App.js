@@ -1,13 +1,18 @@
 // @ts-check
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, BackHandler, Linking, Platform, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
+import * as SystemUI from "expo-system-ui";
+import { NavigationBar } from "expo-navigation-bar";
 import NetInfo from "@react-native-community/netinfo";
 import * as Notifications from "expo-notifications";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { WebView as RNWebView } from "react-native-webview";
-import { COLORS, POLICY, START_URL } from "./src/config";
+import { POLICY, START_URL } from "./src/config";
+import { DEFAULT_BG, cssColorToHex, shellColors } from "./src/colors";
+import { loadCachedBg, saveCachedBg } from "./src/shellCache";
+import { ProgressBar } from "./src/ProgressBar";
 import { decide, deepLink, isRootPage } from "./src/links";
 import { buildInjectedScript } from "./src/injected";
 import { OfflineScreen } from "./src/OfflineScreen";
@@ -22,10 +27,20 @@ const WebView = /** @type {import('react').ComponentType<import('react-native-we
 );
 
 void SplashScreen.preventAutoHideAsync().catch(() => {});
+// the splash stays until the first page has painted, then fades out
+try {
+  SplashScreen.setOptions({ duration: 250, fade: true });
+} catch {
+  // older native module: it just disappears without the fade
+}
 
 const INJECTED = buildInjectedScript();
 /** Below this the socket is almost certainly still alive; don't touch it. */
 const RESUME_NUDGE_MS = 5000;
+/** The splash never stays longer than this, even on a very slow network. */
+const SPLASH_MAX_MS = 10000;
+/** A page switch inside the website that never reports back stops the bar. */
+const NAV_MAX_MS = 15000;
 
 // Connectivity comes from the OS only. NetInfo's own reachability check
 // pings a Google URL on a timer; that is polling, and blocked by some
@@ -65,7 +80,11 @@ export default function App() {
   const [startUrl] = useState(() => urlFromNotification(Notifications.getLastNotificationResponse()) ?? START_URL);
   const registrar = useRef(/** @type {ReturnType<typeof createPushRegistrar> | null} */ (null));
   if (registrar.current === null) registrar.current = createPushRegistrar();
-  const [theme, setTheme] = useState(/** @type {"dark" | "light"} */ ("dark"));
+  // the page's own background colour: cached from the last run, so the
+  // first frame already matches (no white flash, no wrong-coloured bars)
+  const [bg, setBg] = useState(() => loadCachedBg() ?? DEFAULT_BG);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [navLoading, setNavLoading] = useState(false);
   const [offline, setOffline] = useState(false);
   const [checking, setChecking] = useState(false);
   const [stillOffline, setStillOffline] = useState(false);
@@ -76,7 +95,7 @@ export default function App() {
     offlineRef.current = offline;
   }, [offline]);
 
-  const colors = COLORS[theme];
+  const colors = useMemo(() => shellColors(bg), [bg]);
 
   const hideSplash = useCallback(() => {
     void SplashScreen.hideAsync().catch(() => {});
@@ -84,9 +103,23 @@ export default function App() {
 
   // never leave the splash up if the network is slow
   useEffect(() => {
-    const t = setTimeout(hideSplash, 8000);
+    const t = setTimeout(hideSplash, SPLASH_MAX_MS);
     return () => clearTimeout(t);
   }, [hideSplash]);
+
+  // the root view (behind everything, seen during rotation or the keyboard
+  // animating) takes the page colour too; remembered for the next start
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(bg).catch(() => {});
+    saveCachedBg(bg);
+  }, [bg]);
+
+  // a page switch inside the website that never reports back
+  useEffect(() => {
+    if (!navLoading) return;
+    const t = setTimeout(() => setNavLoading(false), NAV_MAX_MS);
+    return () => clearTimeout(t);
+  }, [navLoading]);
 
   /** Open a website URL inside the running WebView. */
   const navigate = useCallback((/** @type {string} */ url) => {
@@ -208,8 +241,16 @@ export default function App() {
           accessToken: typeof msg.accessToken === "string" ? msg.accessToken : undefined,
         });
         break;
-      case "theme":
-        setTheme(msg.value === "light" ? "light" : "dark");
+      case "bg": {
+        const hex = cssColorToHex(msg.value);
+        if (hex) setBg(hex);
+        break;
+      }
+      case "painted":
+        hideSplash();
+        break;
+      case "nav":
+        setNavLoading(msg.state === "start");
         break;
       case "blob-download-blocked":
         Alert.alert(
@@ -228,13 +269,14 @@ export default function App() {
       default:
         break;
     }
-  }, []);
+  }, [hideSplash]);
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={[styles.root, { backgroundColor: colors.bg }]} edges={["top", "bottom", "left", "right"]}>
-        <StatusBar style={theme === "light" ? "dark" : "light"} />
-        <View style={styles.root}>
+        <StatusBar style={colors.bars} />
+        <NavigationBar style={colors.bars} />
+        <View style={[styles.root, { backgroundColor: colors.bg }]}>
           <WebView
             ref={webRef}
             source={{ uri: startUrl }}
@@ -247,7 +289,10 @@ export default function App() {
               canGoBack.current = nav.canGoBack;
               currentUrl.current = nav.url;
             }}
+            onLoadStart={() => setPageLoading(true)}
             onLoadEnd={() => {
+              setPageLoading(false);
+              setNavLoading(false);
               hideSplash();
             }}
             onLoad={() => {
@@ -300,6 +345,7 @@ export default function App() {
             applicationNameForUserAgent={`NRManagement/1.0 (${Platform.OS})`}
             style={{ backgroundColor: colors.bg }}
           />
+          <ProgressBar active={(pageLoading || navLoading) && !offline} color={colors.accent} />
           {offline ? (
             <OfflineScreen
               colors={colors}

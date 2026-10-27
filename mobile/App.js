@@ -284,7 +284,18 @@ export default function App() {
             allowsBackForwardNavigationGestures
             allowsLinkPreview={false}
             pullToRefreshEnabled={false}
+            // app feel (the page side is in src/appFeel.js): no zoom, no
+            // bounce or glow, no page scrollbars, no auto-linked numbers
             textZoom={100}
+            setBuiltInZoomControls={false}
+            setDisplayZoomControls={false}
+            bounces={false}
+            overScrollMode="never"
+            showsVerticalScrollIndicator={false}
+            showsHorizontalScrollIndicator={false}
+            dataDetectorTypes="none"
+            automaticallyAdjustContentInsets={false}
+            contentInsetAdjustmentBehavior="never"
             webviewDebuggingEnabled={__DEV__}
             applicationNameForUserAgent={`NRManagement/1.0 (${Platform.OS})`}
             style={{ backgroundColor: colors.bg }}

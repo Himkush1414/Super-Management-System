@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: "EAS build profile (preview = installable APK)"
+        description: "EAS build profile (preview or production-apk = installable APK, production = Play bundle)"
         type: choice
-        options: [preview, production]
+        options: [preview, production-apk, production]
         default: preview
       wait:
         description: "Wait for the build to finish and print its link"

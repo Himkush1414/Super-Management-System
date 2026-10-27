@@ -8,6 +8,8 @@
 // Pure string builder (no React Native imports) so tests can run it in a
 // sandbox with `node --test`.
 
+const { buildAppFeelScript } = require("./appFeel");
+
 // Hermes compiles release bundles to bytecode, so Function#toString() can't
 // be used to ship page code: it is a plain string. String.raw keeps the
 // regex backslashes verbatim (the text has no backticks or interpolation).
@@ -243,9 +245,13 @@ const PAGE_SCRIPT = String.raw`(function () {
 })();
 true;`;
 
-/** The script handed to `injectedJavaScriptBeforeContentLoaded`. */
-function buildInjectedScript() {
-  return PAGE_SCRIPT;
+/**
+ * The script handed to `injectedJavaScriptBeforeContentLoaded`: the app
+ * bridge, then the app-feel tweaks (src/appFeel.js).
+ * @param {Partial<import('./appFeel').AppFeelFlags>} [appFeel]
+ */
+function buildInjectedScript(appFeel) {
+  return `${PAGE_SCRIPT}\n${buildAppFeelScript(appFeel)}`;
 }
 
 module.exports = { buildInjectedScript };

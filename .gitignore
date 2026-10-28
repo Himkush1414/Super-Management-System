@@ -57,3 +57,30 @@ next-env.d.ts
 
 # sample PDFs generated from fixtures for review (never real data)
 sample-pdfs/
+
+# local tool settings (per machine, never shared)
+.claude/settings.local.json
+
+# security audit notes that name real findings: kept off the public repo
+docs/SECURITY-FINDINGS.md
+
+# keys, signing files and credentials, anywhere in the repo
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+google-services.json
+GoogleService-Info.plist
+*service-account*.json
+*-firebase-adminsdk-*.json
+
+# database dumps and backups (real data)
+*.dump
+*.backup
+*.sql.gz
+backups/
+
+# app builds
+*.apk
+*.aab

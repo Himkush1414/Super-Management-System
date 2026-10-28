@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // the Android app has its own lint (mobile/eslint.config.mjs)
+    "mobile/**",
   ]),
 ]);
 

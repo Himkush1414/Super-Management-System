@@ -1,0 +1,38 @@
+# Secret scan rules (.github/workflows/secret-scan.yml): gitleaks' own
+# rules, plus the ways this project could leak a login.
+title = "NR Management secret scan"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "supabase-secret-key"
+description = "Supabase secret API key"
+regex = '''sb_secret_[A-Za-z0-9_-]{20,}'''
+keywords = ["sb_secret_"]
+
+[[rules]]
+id = "supabase-access-token"
+description = "Supabase personal access token"
+regex = '''sbp_[a-f0-9]{40}'''
+keywords = ["sbp_"]
+
+[[rules]]
+id = "sql-literal-password"
+description = "A literal password hashed in SQL (crypt('...'))"
+regex = '''crypt\(\s*'[^'<]{4,}'\s*,'''
+keywords = ["crypt("]
+
+[[rules]]
+id = "sql-literal-pin"
+description = "A real 6-digit PIN passed to set_account_pin"
+regex = '''set_account_pin\(\s*'[a-z0-9_]+'\s*,\s*'[0-9]{6}'\s*\)'''
+keywords = ["set_account_pin"]
+
+[allowlist]
+description = "Old commits already public; see the owner's security findings"
+commits = [
+  "1030a16157479f7d6038793ec7ba1a2766e57e78",
+  "72dfea7c589d9e7dfc0b5239b63f6092473b020f",
+  "834f075213df2d4c25b13947ec9acc942af52111",
+]

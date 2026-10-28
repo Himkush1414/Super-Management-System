@@ -369,11 +369,30 @@ const PAGE_SCRIPT = String.raw`(function () {
 
   // base64 text per message: a big bulk PDF goes over in several pieces
   var CHUNK = 256 * 1024;
+  // a download that hasn't arrived by then is given up with a message;
+  // before, a request that never answered kept the bar running for good
+  var FILE_MAX_MS = 120000;
   var fileSeq = 0;
   w.__nrFetchFile = function (url) {
     var id = ++fileSeq;
+    var over = false;
+    var ctl = typeof AbortController === "function" ? new AbortController() : null;
+    var limit = setTimeout(function () {
+      if (over) return;
+      over = true;
+      if (ctl) ctl.abort();
+      post({ type: "file-error", id: id, message: "timeout", signedOut: false, timedOut: true });
+    }, FILE_MAX_MS);
+    function finish() {
+      if (over) return false;
+      over = true;
+      clearTimeout(limit);
+      return true;
+    }
+    var init = { credentials: "include", cache: "no-store" };
+    if (ctl) init.signal = ctl.signal;
     post({ type: "file-start", id: id });
-    fetch(url, { credentials: "include", cache: "no-store" })
+    fetch(url, init)
       .then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         var mime = (res.headers.get("content-type") || "application/octet-stream").split(";")[0].trim().toLowerCase();
@@ -395,6 +414,7 @@ const PAGE_SCRIPT = String.raw`(function () {
       })
       .then(function (f) {
         if (!f.data) throw new Error("empty file");
+        if (!finish()) return;
         var n = Math.ceil(f.data.length / CHUNK);
         for (var i = 0; i < n; i++) {
           post({ type: "file-chunk", id: id, i: i, n: n, data: f.data.slice(i * CHUNK, (i + 1) * CHUNK) });
@@ -402,6 +422,7 @@ const PAGE_SCRIPT = String.raw`(function () {
         post({ type: "file-end", id: id, name: f.name, mime: f.mime, chunks: n });
       })
       .catch(function (e) {
+        if (!finish()) return;
         var message = String((e && e.message) || e);
         post({ type: "file-error", id: id, message: message, signedOut: message === "signed-out" });
       });

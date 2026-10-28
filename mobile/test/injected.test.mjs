@@ -7,7 +7,7 @@ import injected from "../src/injected.js";
 
 /**
  * @param {{ path?: string, theme?: string|null, dialog?: boolean, focused?: string, bg?: string, menuOpen?: boolean,
- *   fetch?: (url: string, init: any) => Promise<any> }} [opts]
+ *   fetch?: (url: string, init: any) => Promise<any>, setTimeout?: (fn: () => void, ms: number) => any, clearTimeout?: (t: any) => void }} [opts]
  */
 function page(opts = {}) {
   /** @type {any[]} */ const posted = [];
@@ -80,7 +80,8 @@ function page(opts = {}) {
     },
     history,
     URL,
-    setTimeout,
+    setTimeout: opts.setTimeout ?? setTimeout,
+    clearTimeout: opts.clearTimeout ?? clearTimeout,
     getComputedStyle: () => style,
     fetch: (/** @type {string} */ url, /** @type {any} */ init) => {
       fetches.push({ url, init });
@@ -507,4 +508,41 @@ test("reports only on change: sign-in, token refresh, sign-out", () => {
     p.sessions().map((m) => m.accessToken ?? null),
     [null, a1, a2, null],
   );
+});
+
+test("a download that never arrives is given up after 2 minutes, with a message", async () => {
+  /** @type {{ fn: () => void, ms: number }[]} */
+  const timers = [];
+  const p = page({
+    fetch: () => new Promise(() => {}),
+    setTimeout: (/** @type {() => void} */ fn, /** @type {number} */ ms) => timers.push({ fn, ms }),
+    clearTimeout: () => {},
+  });
+  p.w.__nrFetchFile("https://site/dashboard/orders/pdf?period=all");
+  await settle();
+  assert.deepEqual(p.posted.filter((m) => String(m.type).startsWith("file-")).map((m) => m.type), ["file-start"]);
+  const limit = timers.find((t) => t.ms === 120000);
+  assert.ok(limit, "a 2-minute limit is set");
+  limit.fn();
+  const err = p.posted.at(-1);
+  assert.equal(err.type, "file-error");
+  assert.equal(err.timedOut, true);
+  assert.equal(err.signedOut, false);
+});
+
+test("a download that arrives in time clears its limit and reports once", async () => {
+  /** @type {{ fn: () => void, ms: number }[]} */
+  const timers = [];
+  let cleared = 0;
+  const p = page({
+    fetch: () => Promise.resolve(response({ cd: 'attachment; filename="a.csv"', type: "text/csv", base64: "YQo=" })),
+    setTimeout: (/** @type {() => void} */ fn, /** @type {number} */ ms) => { timers.push({ fn, ms }); return timers.length; },
+    clearTimeout: () => cleared++,
+  });
+  p.w.__nrFetchFile("https://site/dashboard/orders/csv");
+  await settle();
+  assert.equal(cleared, 1);
+  // a late limit does nothing more
+  timers.find((t) => t.ms === 120000)?.fn();
+  assert.deepEqual(p.posted.filter((m) => String(m.type).startsWith("file-")).map((m) => m.type), ["file-start", "file-chunk", "file-end"]);
 });

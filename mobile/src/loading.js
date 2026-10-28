@@ -21,6 +21,60 @@ const LOG_MAX = 50;
  * }} LogEntry
  */
 
+/** Server errors retry by themselves after these waits, then wait for Retry. */
+const SERVER_RETRY_MS = [10000, 20000, 40000];
+
+/**
+ * What the app knows about the page under its error screen: whether its
+ * load failed (so Retry loads it again instead of only waking it), and how
+ * many automatic retries of a server error have run.
+ *
+ * Android reports a main-page server error (onHttpError) and then finishes
+ * that load (onLoad) like any other, so a finished load only counts as
+ * working when no server error came with it. The automatic retries add up
+ * across the retries themselves and start again only after a load that
+ * worked, or when the user taps Retry.
+ */
+function createLoadState() {
+  let failed = false;
+  let httpError = false;
+  let serverRetries = 0;
+  return {
+    /** A full load was asked for (start, link, reload, retry). */
+    started() {
+      httpError = false;
+    },
+    /** The main page answered with a server error. */
+    serverError() {
+      httpError = true;
+      failed = true;
+    },
+    /** No network, DNS, TLS, or a stuck load that was stopped. */
+    loadError() {
+      failed = true;
+    },
+    /** onLoad: the WebView finished a load. */
+    finished() {
+      failed = httpError;
+      if (!httpError) serverRetries = 0;
+    },
+    get failed() {
+      return failed;
+    },
+    /** The wait before the next automatic retry of a server error, or null: wait for Retry. */
+    nextServerRetry() {
+      return serverRetries < SERVER_RETRY_MS.length ? SERVER_RETRY_MS[serverRetries] : null;
+    },
+    serverRetried() {
+      serverRetries++;
+    },
+    /** The user tapped Retry: a new round of automatic retries. */
+    retryTapped() {
+      serverRetries = 0;
+    },
+  };
+}
+
 /** The address without its #fragment: the same page for retry purposes. */
 function pageKey(/** @type {string} */ href) {
   return String(href).split("#")[0];
@@ -128,4 +182,4 @@ function formatReport(log, about) {
   return lines.join("\n");
 }
 
-module.exports = { RETRY_WINDOW_MS, LOG_MAX, onStuck, retryHow, pathOnly, addEntry, parseLog, formatReport, clock };
+module.exports = { RETRY_WINDOW_MS, LOG_MAX, SERVER_RETRY_MS, createLoadState, onStuck, retryHow, pathOnly, addEntry, parseLog, formatReport, clock };

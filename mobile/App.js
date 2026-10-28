@@ -21,7 +21,7 @@ import { createAssembler } from "./src/fileAssembler";
 import { createPushRegistrar, ensureChannel } from "./src/push";
 import * as Application from "expo-application";
 import { MAX_MS as WATCH_MAX_MS, STALL_MS } from "./src/watchdog";
-import { addEntry, onStuck, pathOnly, retryHow } from "./src/loading";
+import { addEntry, createLoadState, onStuck, pathOnly, retryHow } from "./src/loading";
 import { loadLog, saveLog } from "./src/diagnosticsStore";
 import { Diagnostics } from "./src/Diagnostics";
 
@@ -78,8 +78,6 @@ async function warmUp() {
     clearTimeout(stop);
   }
 }
-/** Server errors retry by themselves after these waits, then wait for Retry. */
-const SERVER_RETRY_MS = [10000, 20000, 40000];
 /** The page answers the back button within this, or the app decides alone. */
 const BACK_REPLY_MS = 350;
 
@@ -123,11 +121,11 @@ function Main() {
   const insets = useSafeAreaInsets();
   const webRef = useRef(/** @type {WebViewHandle | null} */ (null));
   const canGoBack = useRef(false);
-  const currentUrl = useRef(START_URL);
   const backgroundedAt = useRef(/** @type {number | null} */ (null));
 
   // cold start from a notification tap: open that order directly
   const [startUrl] = useState(() => urlFromNotification(Notifications.getLastNotificationResponse()) ?? START_URL);
+  const currentUrl = useRef(startUrl);
   const registrar = useRef(/** @type {ReturnType<typeof createPushRegistrar> | null} */ (null));
   if (registrar.current === null) registrar.current = createPushRegistrar();
   // the page's own background colour: cached from the last run, so the
@@ -221,9 +219,21 @@ function Main() {
     webRef.current?.injectJavaScript(`location.assign(${JSON.stringify(url)});true;`);
   }, []);
 
-  // true when the current page failed to load (vs. the network dropping
-  // under a page that is still there, with whatever the user typed)
-  const loadFailed = useRef(false);
+  // A link that opens the app from cold arrives before the first page has
+  // loaded, when there is no page yet to run it in (it was dropped and the
+  // app stayed on the start page). It waits here and opens once a page has
+  // loaded.
+  const pageLoaded = useRef(false);
+  const pendingLink = useRef(/** @type {string | null} */ (null));
+  const openWhenLoaded = useCallback((/** @type {string} */ url) => {
+    if (pageLoaded.current) navigate(url);
+    else pendingLink.current = url;
+  }, [navigate]);
+
+  // whether the current page failed to load (vs. the network dropping
+  // under a page that is still there, with whatever the user typed), and
+  // the automatic retries of a server error (src/loading.js)
+  const [load] = useState(createLoadState);
 
   // ── full page loads ────────────────────────────────────────────────────
   // Android's onLoadStart doesn't mark a full load: react-native-webview
@@ -250,6 +260,7 @@ function Main() {
   const startLoad = useCallback((/** @type {string} */ url, /** @type {"reload" | "assign" | null} */ how) => {
     clearSlowTimer();
     clearNoStartTimer();
+    load.started();
     pageShown.current = false;
     setPageLoading(true);
     noStartTimer.current = setTimeout(() => {
@@ -264,7 +275,7 @@ function Main() {
     }, SLOW_LOAD_MS);
     if (how === "reload") webRef.current?.reload();
     else if (how === "assign") navigate(url);
-  }, [clearSlowTimer, clearNoStartTimer, navigate]);
+  }, [clearSlowTimer, clearNoStartTimer, load, navigate]);
 
   /**
    * A page stuck loading (reported by the page watchdog, or a full load
@@ -293,10 +304,10 @@ function Main() {
       startLoad(href, retryHow(href, currentUrl.current));
       return;
     }
-    loadFailed.current = true;
+    load.loadError();
     webRef.current?.stopLoading();
     showError("slow");
-  }, [clearSlowTimer, clearNoStartTimer, record, showError, startLoad]);
+  }, [clearSlowTimer, clearNoStartTimer, load, record, showError, startLoad]);
   useEffect(() => {
     stuckRef.current = onPageStuck;
   }, [onPageStuck]);
@@ -323,9 +334,9 @@ function Main() {
     setErrorDetail(undefined);
     setOffline(false);
     setErrorKind("offline");
-    if (loadFailed.current) startLoad(currentUrl.current, "reload");
+    if (load.failed) startLoad(currentUrl.current, "reload");
     else webRef.current?.injectJavaScript("window.__nrResume&&window.__nrResume(0);true;");
-  }, [startLoad]);
+  }, [load, startLoad]);
 
   // connection lost: the offline screen covers the page (which stays
   // underneath, untouched). Connection back: the screen goes away by
@@ -378,21 +389,19 @@ function Main() {
     return () => sub.remove();
   }, [retry, record]);
 
-  // a server error retries by itself a few times (the screen stays up
-  // with Retry meanwhile); a lost connection retries when it comes back
-  const serverRetries = useRef(0);
+  // a server error retries by itself a few times, waiting longer each time
+  // (the screen stays up with Retry meanwhile); a lost connection retries
+  // when it comes back
   useEffect(() => {
-    if (!offline) {
-      serverRetries.current = 0;
-      return;
-    }
-    if (errorKind !== "server" || serverRetries.current >= SERVER_RETRY_MS.length) return;
+    if (!offline || errorKind !== "server") return;
+    const wait = load.nextServerRetry();
+    if (wait === null) return;
     const t = setTimeout(() => {
-      serverRetries.current++;
+      load.serverRetried();
       void retry();
-    }, SERVER_RETRY_MS[serverRetries.current]);
+    }, wait);
     return () => clearTimeout(t);
-  }, [offline, errorKind, retry]);
+  }, [offline, errorKind, load, retry]);
 
   // Android back: leaving the app always asks first
   const exitAsked = useRef(false);
@@ -481,12 +490,12 @@ function Main() {
   useEffect(() => {
     const open = (/** @type {string | null | undefined} */ url) => {
       const path = pathFromAppLink(url);
-      if (path) navigate(deepLink(path, POLICY));
+      if (path) openWhenLoaded(deepLink(path, POLICY));
     };
     void Linking.getInitialURL().then(open).catch(() => {});
     const sub = Linking.addEventListener("url", (e) => open(e.url));
     return () => sub.remove();
-  }, [navigate]);
+  }, [openWhenLoaded]);
 
   /** @type {(req: import('react-native-webview/lib/WebViewTypes').ShouldStartLoadRequest) => boolean} */
   const onShouldStart = useCallback((req) => {
@@ -610,7 +619,9 @@ function Main() {
           "Download failed",
           msg.signedOut
             ? "You were signed out. Sign in again, then download the file."
-            : "The file could not be downloaded. Please try again.",
+            : msg.timedOut
+              ? "The file took too long to arrive. Please try again."
+              : "The file could not be downloaded. Please try again.",
         );
         break;
       default:
@@ -669,13 +680,18 @@ function Main() {
               hideSplash();
             }}
             onLoad={() => {
-              loadFailed.current = false;
+              load.finished();
+              if (load.failed) return;
+              pageLoaded.current = true;
+              const link = pendingLink.current;
+              pendingLink.current = null;
+              if (link) navigate(link);
             }}
             onError={(e) => {
               // the page itself failed to load (no network, DNS, TLS…)
               clearSlowTimer();
               clearNoStartTimer();
-              loadFailed.current = true;
+              load.loadError();
               showError("offline", e.nativeEvent.description);
             }}
             onHttpError={(e) => {
@@ -684,7 +700,7 @@ function Main() {
               if (e.nativeEvent.statusCode < 500) return;
               clearSlowTimer();
               clearNoStartTimer();
-              loadFailed.current = true;
+              load.serverError();
               showError("server", `Error ${e.nativeEvent.statusCode}`);
             }}
             // the offline screen covers failures; never flash the default red error text
@@ -742,7 +758,10 @@ function Main() {
               stillOffline={stillOffline}
               detail={errorDetail}
               version={APP_VERSION}
-              onRetry={retry}
+              onRetry={() => {
+                load.retryTapped();
+                void retry();
+              }}
               onDiagnostics={() => setDiagnostics(true)}
             />
           ) : null}

@@ -58,77 +58,63 @@ colour. Android WebViews report `env(safe-area-inset-*)` inconsistently,
 and the app is portrait only, so the page itself needs no inset CSS. The
 injected viewport still sets `viewport-fit=cover`.
 
-## Merging the open PRs
+## Clean-up pass of 2026-10-28
 
-All mobile work is in stacked PRs: **#5 → #6 → #7 → #8 → #9 → #10 → #11
-→ #12 → #13 → #14 → #16**. Each is based on the one before. #5 already
-targets `master`.
+Bugs found and fixed in the app. **Released as versionCode 8** (GitHub
+Release `android-v1.0.0-vc8`, built on EAS from commit `09e7748`, signed
+with the same key `7b7176ec…71e44b4`, APK SHA-256 `1820a823…706cd9f`). It
+installs over versionCode 6 as an update (tested on the emulator).
+versionCode 7 was built but never released: testing it found the
+progress-bar bug below.
+- **Server error, then Retry, showed the raw error page.** Android follows
+  a main-page server error (5xx) with a normal "page finished" event, which
+  cleared the app's "load failed" flag. Retry then only woke the page
+  instead of loading it again. Found in the WebView library's source;
+  fixed in `src/loading.js` (`createLoadState`), with tests.
+- **The automatic server-error retries never backed off.** The counter
+  was reset on every retry, so it retried every 10 s for as long as the
+  error lasted. It now waits 10, 20 and 40 s, then waits for **Retry**.
+  Checked on the emulator with a test build pointed at a page that
+  always answers 500: the error screen appeared at 3.9 s, retries ran at
+  13.5 s, 34.6 s and 75.0 s, and then none until the end of the 150 s
+  watch.
+- **A `nrmanagement://` link that opened the app from cold was dropped**
+  (the app stayed on the sign-in page). Reproduced 3 of 3 times with
+  versionCode 6. The link now waits until the first page has loaded:
+  3 of 3 opened the linked page.
+- **A download that never answered kept the progress bar running for
+  good.** It now gives up after 2 minutes with a message (tested).
+- **The progress bar could keep running after a very small page.** For a
+  page that loads very fast, the WebView's "load finished" can arrive
+  before the page's own "load started", which turned the bar on again.
+  Found while testing versionCode 7 (still running at +45 s in 3 of 5
+  runs); fixed before release: 0 of 8 runs.
+- After a cold start from a notification, the app thought it was on the
+  orders list. It now knows the real start page, so a stuck first page is
+  retried with a reload.
 
-**#15 is not in this chain.** It is the website loading proposal (label
-"website change: needs my review"). It only adds a document, and it stays
-unmerged until you decide (see "Proposals for the website" below).
+Start-up, measured on the emulator (1080×2400, Android 14). Cold start
+until the sign-in button is on screen, signed out, against the live
+website. The two builds were installed alternately, 6 runs per block:
 
-Two facts decide how to merge:
-- Vercel refuses deploys whose commit author isn't `nrindustry`.
-  Commits by `Himkush1414` showed "Deployment was blocked".
-- A GitHub merge button creates a new merge commit authored by the
-  account that clicks it.
+| Build | Blocks (median of 6 runs) | Median of all 18 runs |
+|---|---|---|
+| versionCode 6 (released before) | 4.29, 4.65, 4.48 s | 4.58 s |
+| versionCode 8 (this release) | 4.84, 4.84, 5.21 s | 4.87 s |
 
-Every commit on these branches is authored by `nrindustry`. So the way
-that keeps Vercel deploying is a **fast-forward** of `master` to each PR
-head, in order. That is how #3 and #4 were merged. GitHub then marks each
-PR as merged by itself.
-
-The assistant didn't run these: pushing to `master` was outside what it
-was allowed to do. Run them from a checkout of the repository:
-
-```bash
-REPO=Himkush1414/Super-Management-System
-git fetch origin
-check() {  # live site after each merge: / 307, /login 200, /api/health 200
-  for p in / /login /api/health; do
-    printf '%s %s\n' "$p" "$(curl -s -o /dev/null -w '%{http_code}' "https://super-management-system-tau.vercel.app$p")"
-  done
-}
-merge() {  # merge <PR number> <branch>: retarget to master, then fast-forward
-  gh api -X PATCH "repos/$REPO/pulls/$1" -f base=master --jq '"#\(.number) base=\(.base.ref) state=\(.state)"'
-  git fetch origin
-  git merge-base --is-ancestor origin/master "origin/$2" || { echo "not a fast-forward, stop"; return 1; }
-  git diff --name-only origin/master "origin/$2" | grep -Ev '^(mobile/|docs/|README\.md$|\.github/workflows/mobile-|supabase/mobile/)' && { echo "unexpected files, stop"; return 1; }
-  git push origin "origin/$2:refs/heads/master"    # a normal push: fast-forward only, never --force
-  gh pr view "$1" --repo "$REPO" --json state --jq .state   # should print MERGED
-}
-merge 5  feat/mobile-push;              check
-merge 6  ci/mobile-eas-build;           check
-merge 7  docs/readme-download;          check
-merge 8  feat/mobile-app-feel;          check
-merge 9  feat/mobile-launch-colors;     check
-merge 10 feat/mobile-navigation-errors; check
-merge 11 feat/mobile-downloads;         check
-merge 12 chore/mobile-production-apk;   check
-merge 13 docs/mobile-handoff;           check
-merge 14 feat/mobile-loading-watchdog;  check
-merge 16 docs/android-download;         check
-```
-
-Wait for the Vercel production deployment to show **Ready** after each
-push (GitHub → the commit → status "Vercel"). Then delete the merged
-branches. GitHub's "Delete branch" button on each merged PR, or:
-
-```bash
-for b in chore/mobile-scaffold feat/mobile-native feat/mobile-push ci/mobile-eas-build docs/readme-download \
-         feat/mobile-app-feel feat/mobile-launch-colors feat/mobile-navigation-errors feat/mobile-downloads \
-         chore/mobile-production-apk docs/mobile-handoff feat/mobile-loading-watchdog docs/android-download; do git push origin --delete "$b"; done
-```
-
-Merging changes nothing on the website. The PRs touch only `mobile/`,
-`docs/`, `README.md`, `.github/workflows/mobile-*` and the dormant
-`supabase/mobile/`. Vercel redeploys the same website.
-
-The other alternative is GitHub's **Merge** button. It works, but its
-merge commit is authored by the clicking account, so Vercel would block
-that deployment. The live website would stay as it is, unchanged, but the
-deployment shows as blocked.
+The same pair in flight mode (no network, until the offline screen's
+Retry button): versionCode 6 3.62 / 5.09 s, versionCode 8 3.74 / 5.08 s (one
+versionCode 8 run left out: the emulator stalled for a minute; 10
+more offline starts of it were all normal).
+That is no difference. The emulator itself drifts by up to 1.4 s between
+blocks of the same build, more than the gap above, and the two APKs
+differ only in the JavaScript bundle (+4 KB). None of the changed code
+runs before the first page appears. So: **no measurable change in
+start-up**, as expected, because the fixes are about errors, not speed.
+Of the time to sign-in, the app's own native start is 1.6 to 2.1 s on
+the emulator, and the website's redirect plus sign-in page about 0.7 s.
+The rest is the WebView drawing the page. No WebView setting was changed:
+the current ones were checked and kept.
 
 ## Install on a phone
 
@@ -149,7 +135,7 @@ also as a QR code: [assets/qr-download.png](assets/qr-download.png).
 A newer APK installs over the old one and keeps you signed in. Every build
 is signed with the same EAS-held key.
 
-**Backup link (temporary):** the same APK straight from EAS, QR code
+**Backup link (temporary):** versionCode 6 straight from EAS, QR code
 [assets/qr-download-eas-backup.png](assets/qr-download-eas-backup.png).
 EAS deletes build files after a while; this one expires on **10 November
 2026**. After that, use the GitHub link above, which doesn't expire.
@@ -311,13 +297,41 @@ TestFlight or an App Store listing; the app code already supports iOS.
 
 ## Still open for the owner
 
-- **Old passwords in git history:** a credential-looking value was found
-  in the history of `supabase/seed.sql` (commit `834f075` and other
-  commits that touched that file). The repository is **public**. This is
-  on hold by the owner's decision and nothing was changed.
+- **Security findings (2026-10-28 audit).** The full list, with exact
+  locations, is in `docs/SECURITY-FINDINGS.md`. That file is gitignored and
+  never pushed; a copy is at `/mnt/d/_private-backup/`. In short:
+  - Nothing secret is in the current files, and no key, token, PIN or
+    real data was found anywhere in the history.
+  - Old commits still contain plain-text passwords from the sign-in
+    systems used before the PIN login. None of them opens anything in the
+    app today: the old head-admin account was deleted, and every staff
+    account's password was replaced by a random value when the PINs were
+    set.
+  - The one **real risk**: the old head-admin password next to a personal
+    email address. If that password is used anywhere else (above all for
+    that email account), change it there.
+  - Decide whether to make the repository private or to clean the
+    history. Both are explained, with their side effects, in the
+    findings file. Nothing was rewritten.
 - **Rotate the tokens that were pasted into chat** (GitHub and Expo). After
   rotating, update `~/.config/nr-mobile/tokens.sh` on the build machine
   (it's outside the repository and never committed).
+- **Website PRs waiting for your review** (they change the live website,
+  so they stay unmerged until you decide):
+  - #19: Next.js 16.3.4 → 16.4.3 and `npm audit fix` (1 critical
+    and 3 high advisories, 0 left). No code change.
+  - #15: the loading proposal (see below).
+- **Screenshots to add from your phone.** The README shows only screens
+  without data (splash, sign-in, offline, the website's sign-in page).
+  Screens behind the sign-in were not taken, because that would mean
+  signing in to the live system with a real account. If you want them,
+  take these on your phone **with dummy data only** (a test order with an
+  invented client name, no real prices or phone numbers) and add them to
+  `docs/assets/screens/`:
+  - the orders list (Orders tab), in dark and in light mode;
+  - an order's page with its stage tracker;
+  - the Punch Order form;
+  - the Android share sheet after **PDF**.
 - Push notifications, Firebase, the push SQL and edge function, and the
   Supabase values in EAS: all deliberately not done (see above).
 - The signing-key backup (above).

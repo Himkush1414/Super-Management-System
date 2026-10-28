@@ -550,6 +550,9 @@ function Main() {
           clearNoStartTimer();
           setPageLoading(true);
         }
+        // the page is on screen. For a very small page this "start" can
+        // arrive after onLoadEnd, so only this "end" stops its bar
+        if (msg.kind === "load" && msg.state === "end") setPageLoading(false);
         setNavLoading(msg.state === "start");
         break;
       case "resumed":

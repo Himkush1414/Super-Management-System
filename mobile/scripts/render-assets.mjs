@@ -1,19 +1,15 @@
 // @ts-check
-// Renders every brand image from scripts/brand.mjs:
+// Renders the documentation images from scripts/brand.mjs:
 //   node scripts/render-assets.mjs
-// Writes mobile/assets/*.png, mobile/assets/brand/*.svg and the GitHub
-// social preview at docs/assets/social-preview.png.
+// Writes mobile/assets/brand/*.svg, the GitHub social preview at
+// docs/assets/social-preview.png and docs/assets/app-icon.png.
+// The app's own icons, splash and notification icon come from the owner's
+// logo instead: see scripts/render-logo.py.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Resvg } from "@resvg/resvg-js";
-import {
-  adaptiveForegroundSvg,
-  iconSvg,
-  notificationSvg,
-  socialPreviewSvg,
-  splashSvg,
-} from "./brand.mjs";
+import { iconSvg, socialPreviewSvg } from "./brand.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const mobile = path.resolve(here, "..");
@@ -39,25 +35,14 @@ function render(svg, width, out) {
   console.log(`${path.relative(repo, out)}  ${width}px  ${png.length} B`);
 }
 
-const assets = path.join(mobile, "assets");
-const brand = path.join(assets, "brand");
+const brand = path.join(mobile, "assets", "brand");
 fs.mkdirSync(brand, { recursive: true });
 
 const sources = {
   "icon.svg": iconSvg(),
-  "adaptive-foreground.svg": adaptiveForegroundSvg(),
-  "adaptive-monochrome.svg": adaptiveForegroundSvg({ mono: true }),
-  "notification.svg": notificationSvg(),
-  "splash.svg": splashSvg(),
   "social-preview.svg": socialPreviewSvg(),
 };
 for (const [name, svg] of Object.entries(sources)) fs.writeFileSync(path.join(brand, name), svg + "\n");
 
-render(sources["icon.svg"], 1024, path.join(assets, "icon.png"));
-render(sources["adaptive-foreground.svg"], 1024, path.join(assets, "android-icon-foreground.png"));
-render(sources["adaptive-monochrome.svg"], 1024, path.join(assets, "android-icon-monochrome.png"));
-render(sources["notification.svg"], 96, path.join(assets, "notification-icon.png"));
-render(sources["splash.svg"], 1024, path.join(assets, "splash-icon.png"));
-render(sources["icon.svg"], 48, path.join(assets, "favicon.png"));
 render(sources["social-preview.svg"], 1280, path.join(repo, "docs/assets/social-preview.png"));
 render(sources["icon.svg"], 256, path.join(repo, "docs/assets/app-icon.png"));

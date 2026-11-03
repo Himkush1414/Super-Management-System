@@ -42,7 +42,8 @@ const config = {
   android: {
     package: APP_ID,
     adaptiveIcon: {
-      backgroundColor: "#0a0a0a",
+      // the logo's own white ground behind the gold star
+      backgroundColor: "#ffffff",
       foregroundImage: "./assets/android-icon-foreground.png",
       monochromeImage: "./assets/android-icon-monochrome.png",
     },

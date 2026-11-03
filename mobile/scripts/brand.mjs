@@ -1,8 +1,9 @@
 // @ts-check
 // The NR Management monogram: an original "NR" drawn as plain strokes (no
-// font, no third-party artwork) in the website's palette. Every app icon,
-// the splash image and the GitHub social preview are rendered from here by
-// scripts/render-assets.mjs.
+// font, no third-party artwork) in the website's palette. The GitHub social
+// preview and docs/assets/app-icon.png are rendered from here by
+// scripts/render-assets.mjs. The app's icons now use the owner's logo
+// (scripts/render-logo.py).
 
 export const PALETTE = {
   ground: "#0a0a0a",
@@ -39,33 +40,6 @@ export function iconSvg() {
   <rect width="1024" height="1024" fill="${PALETTE.ground}"/>
   <rect x="40" y="40" width="944" height="944" rx="200" fill="none" stroke="${PALETTE.ink}" stroke-opacity="0.14" stroke-width="8"/>
   ${glyph({ scale: 0.92 })}
-</svg>`;
-}
-
-/**
- * Android adaptive icon foreground: transparent, glyph inside the 66/108
- * safe circle (diameter ≈ 626 px of 1024) so no launcher mask clips it.
- * @param {{ mono?: boolean }} [o]
- */
-export function adaptiveForegroundSvg({ mono = false } = {}) {
-  const ink = mono ? "#ffffff" : PALETTE.ink;
-  const accent = mono ? "#ffffff" : PALETTE.accent;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  ${glyph({ ink, accent, scale: 0.78 })}
-</svg>`;
-}
-
-/** Status-bar notification icon: white on transparent (Android tints it). */
-export function notificationSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  ${glyph({ ink: "#ffffff", accent: "#ffffff", scale: 1.5 })}
-</svg>`;
-}
-
-/** Splash image (shown on the ground colour from app config). */
-export function splashSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  ${glyph({ scale: 1.2 })}
 </svg>`;
 }
 

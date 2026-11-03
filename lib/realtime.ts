@@ -10,7 +10,8 @@ type Binding = {
   filter?: string;
   cb: (payload: unknown) => void;
 };
-type Chan = { on: (...args: unknown[]) => Chan; subscribe: () => unknown };
+type Status = "SUBSCRIBED" | "TIMED_OUT" | "CLOSED" | "CHANNEL_ERROR";
+type Chan = { on: (...args: unknown[]) => Chan; subscribe: (cb?: (status: Status) => void) => unknown };
 
 /**
  * Join a realtime channel AS THE SIGNED-IN USER.
@@ -21,9 +22,13 @@ type Chan = { on: (...args: unknown[]) => Chan; subscribe: () => unknown };
  * production list then silently never updated after a hard reload, and the
  * anon join on `orders` made the Realtime server log "permission denied for
  * table orders". So: load the session, hand its token to Realtime, then join.
+ *
+ * `onResync` runs when the channel has joined again after it was lost (the
+ * connection dropped, the laptop slept, the server restarted). Realtime
+ * doesn't replay what changed meanwhile, so the caller re-reads instead.
  * Returns a cleanup function.
  */
-function subscribeAsUser(channelName: string, bindings: Binding[]): () => void {
+function subscribeAsUser(channelName: string, bindings: Binding[], onResync?: () => void): () => void {
   const supabase = createClient();
   let channel: Chan | null = null;
   let cancelled = false;
@@ -41,7 +46,18 @@ function subscribeAsUser(channelName: string, bindings: Binding[]): () => void {
         b.cb,
       );
     }
-    ch.subscribe();
+    let joined = false;
+    let lost = false;
+    ch.subscribe((status) => {
+      if (cancelled) return;
+      if (status === "SUBSCRIBED") {
+        if (joined && lost) onResync?.();
+        joined = true;
+        lost = false;
+      } else {
+        lost = true; // TIMED_OUT, CLOSED, CHANNEL_ERROR: the client rejoins by itself
+      }
+    });
     channel = ch;
   });
 
@@ -82,6 +98,9 @@ export function useRealtime(
 
 export type LiveTable = { table: string; filter?: string };
 
+/** A tab hidden longer than this refreshes once when it is shown again. */
+const HIDDEN_REFRESH_MS = 60_000;
+
 /**
  * Refresh the current route's server data when any of `tables` changes.
  *
@@ -93,6 +112,11 @@ export type LiveTable = { table: string; filter?: string };
  * visible again.
  */
 export function useLiveRefresh(channelName: string, tables: LiveTable[], debounceMs = 400) {
+  // Also refreshed: after the live connection comes back (changes made while
+  // it was down are never replayed), and when a tab that was hidden for a
+  // while is shown again (a sleeping laptop may not notice the drop at
+  // once). Every viewer refreshes after the same change, so each waits a
+  // random extra 0-600 ms: the refreshes reach the server spread out.
   const router = useRouter();
   const key = JSON.stringify(tables);
 
@@ -111,15 +135,23 @@ export function useLiveRefresh(channelName: string, tables: LiveTable[], debounc
     };
     const schedule = () => {
       clearTimeout(timer);
-      timer = setTimeout(flush, debounceMs);
+      timer = setTimeout(flush, debounceMs + Math.floor(Math.random() * 600));
     };
+    let hiddenAt = document.hidden ? Date.now() : 0;
     const onVisible = () => {
-      if (!document.hidden && dirty) flush();
+      if (document.hidden) {
+        hiddenAt = Date.now();
+        return;
+      }
+      const away = hiddenAt ? Date.now() - hiddenAt : 0;
+      hiddenAt = 0;
+      if (dirty || away > HIDDEN_REFRESH_MS) flush();
     };
 
     const unsubscribe = subscribeAsUser(
       channelName,
       subs.map((t) => ({ table: t.table, filter: t.filter, cb: schedule })),
+      schedule,
     );
     document.addEventListener("visibilitychange", onVisible);
 

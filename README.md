@@ -186,9 +186,7 @@ Supabase, never in git):
 | App (EAS, push, not set) | `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `GOOGLE_SERVICES_JSON` | only for push notifications, which are off |
 | GitHub Actions | `EXPO_TOKEN` | for the manual app build |
 
-See `.env.example` and `mobile/.env.example`. Accounts, the order
-pipeline, schema and exports in detail:
-[docs/website-reference.md](docs/website-reference.md).
+See `.env.example` and `mobile/.env.example`.
 
 > **For edits outside the website code** (`mobile/`, `docs/`, `.github/`,
 > `supabase/`): the website's Tailwind build scans every committed text

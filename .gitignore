@@ -64,6 +64,8 @@ sample-pdfs/
 
 # security audit notes that name real findings: kept off the public repo
 docs/SECURITY-FINDINGS.md
+# internal design notes (accounts, lockout rules, schema): kept privately
+docs/website-reference.md
 
 # keys, signing files and credentials, anywhere in the repo
 *.jks

@@ -84,3 +84,9 @@ backups/
 # app builds
 *.apk
 *.aab
+
+# one-off SQL that changes or deletes data (moves, cleanups, rollbacks): kept
+# privately, never in the public repo. Read-only verify / snapshot scripts stay.
+supabase/scripts/*
+!supabase/scripts/*_verify.sql
+!supabase/scripts/*_snapshot.sql

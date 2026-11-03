@@ -37,8 +37,6 @@ export default async function ActivityPage({
 }: {
   searchParams: Promise<{ account?: string }>;
 }) {
-  const ctx = await requireSession();
-  if (!ctx.can("audit.view")) redirect("/dashboard/orders");
   const supabase = await createClient();
   const { account } = await searchParams;
 
@@ -49,7 +47,12 @@ export default async function ActivityPage({
     .order("created_at", { ascending: false })
     .limit(PAGE_SIZE);
   if (account && /^[0-9a-f-]{36}$/i.test(account)) q = q.eq("target_profile_id", account);
-  const data = must(await q, "the activity log");
+  // The read starts together with the session check instead of after it
+  // (one database round trip less). Safe: RLS returns nothing to anyone
+  // who may not see the log, and nothing renders before the check passes.
+  const [ctx, result] = await Promise.all([requireSession(), q]);
+  if (!ctx.can("audit.view")) redirect("/dashboard/orders");
+  const data = must(result, "the activity log");
   const entries = (data ?? []) as Entry[];
 
   // Items deleted as part of an account reset are shown under that reset.

@@ -33,13 +33,15 @@ export default async function DataPage({
 }: {
   searchParams: Promise<{ account?: string }>;
 }) {
-  const ctx = await requireSession();
-  if (!ctx.can("data.delete")) redirect("/dashboard/orders");
   const supabase = await createClient();
   const { account: selectedId } = await searchParams;
 
-  // admin_account_overview() re-checks admin tier in the database.
-  const overview = must(await supabase.rpc("admin_account_overview"), "the accounts overview");
+  // admin_account_overview() re-checks admin tier in the database, so it can
+  // start together with the session check (one round trip less); nothing
+  // renders before the check passes.
+  const [ctx, result] = await Promise.all([requireSession(), supabase.rpc("admin_account_overview")]);
+  if (!ctx.can("data.delete")) redirect("/dashboard/orders");
+  const overview = must(result, "the accounts overview");
   const accounts = (overview ?? []) as Account[];
   const selected = accounts.find((a) => a.profile_id === selectedId) ?? null;
 

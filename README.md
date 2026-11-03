@@ -7,7 +7,7 @@
 **Order management for NR Industries, on the web and on Android, live in real time.**
 
 [![Website](https://img.shields.io/badge/Web-live-0a0a0a?logo=vercel&logoColor=white)](https://super-management-system-tau.vercel.app)
-[![Android](https://img.shields.io/badge/Android-download%20APK-3b82f6?logo=android&logoColor=white)](#download-the-android-app)
+[![Android](https://img.shields.io/badge/Android-private%20APK-3b82f6?logo=android&logoColor=white)](#android-app)
 [![Platforms](https://img.shields.io/badge/platforms-web%20%C2%B7%20Android-555555)](#what-it-is)
 [![License](https://img.shields.io/badge/license-all%20rights%20reserved-555555)](#license-and-rights)
 <br>
@@ -39,17 +39,11 @@ of the data, and website updates reach it without a new APK.
 
 ---
 
-## Download the Android app
+## Android app
 
-**[Download NR-Management.apk](https://github.com/Himkush1414/Super-Management-System/releases/latest/download/NR-Management.apk)**
-(always the newest version), or scan with the phone's camera:
-
-<img src="docs/assets/qr-download.png" alt="QR code: download the NR Management Android app" width="200" height="200">
-
-1. Open the link on the Android phone and download the APK.
-2. Open the file. If Android asks, allow installs from your browser, then tap **Install**
-   (on a Play Protect warning: **More details → Install anyway**).
-3. Open **NR Management** and sign in.
+The Android app is handed to staff **privately** by the owner. There is
+no public download link, QR code, store listing or GitHub Release, on
+purpose: the repository is public, and the app is only for the staff.
 
 **A login is still required.** The app is the live website: only the
 existing staff accounts (username + 6-digit PIN) can see anything. A newer
@@ -75,9 +69,8 @@ offline screens, taken on an Android emulator without signing in.
 
 **Website**
 - **Sign-in** with username + 6-digit PIN. Fixed staff accounts only: no
-  self sign-up, no password recovery. 5 wrong PINs in 15 minutes lock that
-  username for 15 minutes, with a separate per-IP cap, checked inside
-  Postgres.
+  self sign-up, no password recovery. Repeated wrong PINs lock the
+  username for a while, checked inside Postgres.
 - **Roles**: head admin, admin, marketing and production, enforced by
   Postgres row-level security, not only by the screens.
 - **Punch Order** (marketing): client, ship-to address, expected delivery,
@@ -207,9 +200,9 @@ mobile/                   the Android app (its own package.json)
   App.js                  WebView, error screens, back button, keyboard, downloads
   src/                    URL policy, page bridge, loading watchdog, app feel, colours
   test/                   node tests
-  scripts/                icon, splash and QR code generators
+  scripts/                icon and splash generators, a private QR helper
 .github/workflows/        secret scan (every push), manual EAS app build
-docs/                     handoff, setup guides, website reference, images
+docs/                     handoff, security, setup guides, images
 ```
 
 ## Releasing
@@ -218,9 +211,8 @@ docs/                     handoff, setup guides, website reference, images
   authored by `nrindustry`, or Vercel blocks the deployment.
 - **Android app:** only when `mobile/` changed. Build the
   `production-apk` profile on EAS (same signing key, the versionCode goes
-  up by itself), scan the APK for secrets, and publish it as a GitHub
-  Release named `NR-Management.apk`. The download link and QR code above
-  then serve it by themselves. Exact steps:
+  up by itself), scan the APK for secrets, and give it to staff
+  privately. It is never published on GitHub. Exact steps:
   [docs/HANDOFF.md](docs/HANDOFF.md#releasing-a-new-apk). Signing key:
   [docs/android-signing.md](docs/android-signing.md).
 

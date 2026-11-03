@@ -60,8 +60,8 @@ injected viewport still sets `viewport-fit=cover`.
 
 ## Clean-up pass of 2026-10-28
 
-Bugs found and fixed in the app. **Released as versionCode 8** (GitHub
-Release `android-v1.0.0-vc8`, built on EAS from commit `09e7748`, signed
+Bugs found and fixed in the app. **Shipped as versionCode 8** (built on
+EAS from commit `09e7748`, signed
 with the same key `7b7176ec…71e44b4`, APK SHA-256 `1820a823…706cd9f`). It
 installs over versionCode 6 as an update (tested on the emulator).
 versionCode 7 was built but never released: testing it found the
@@ -118,27 +118,25 @@ the current ones were checked and kept.
 
 ## Install on a phone
 
-The permanent download link (always the newest release):
-<https://github.com/Himkush1414/Super-Management-System/releases/latest/download/NR-Management.apk>,
-also as a QR code: [assets/qr-download.png](assets/qr-download.png).
+The APK is **never published** (no GitHub Release, no link or QR code in
+the repository): the repository is public and the app is for staff only.
+The owner keeps the newest signed APK and a QR code for it on the D: drive
+(`D:\_cache\builds\NR-Management-1.0.0-vc<N>\`), outside the repository,
+and hands it over directly.
 
-1. Open the link on the phone (or scan the QR code with the camera) and
-   download the APK.
+1. Copy the APK to the phone, or scan the owner's private QR code, which
+   points at the EAS build file. EAS deletes build files after about 30
+   days, so that QR code stops working then; the APK on D: doesn't.
 2. Open the file. If Android asks, allow installs from that source:
-   *Settings → Apps → (your browser) → Install unknown apps*. Tap
-   **Install**. If Play Protect warns about an unknown developer: **More
-   details → Install anyway**. The app isn't on Google Play.
-3. Open **NR Management** and sign in. **A login is still required**: the
-   link gives anyone the app, but only the existing staff accounts can see
-   anything.
+   *Settings → Apps → (your browser or file manager) → Install unknown
+   apps*. Tap **Install**. If Play Protect warns about an unknown
+   developer: **More details → Install anyway**. The app isn't on Google
+   Play.
+3. Open **NR Management** and sign in. **A login is still required**: only
+   the existing staff accounts can see anything.
 
 A newer APK installs over the old one and keeps you signed in. Every build
 is signed with the same EAS-held key.
-
-**Backup link (temporary):** versionCode 6 straight from EAS, QR code
-[assets/qr-download-eas-backup.png](assets/qr-download-eas-backup.png).
-EAS deletes build files after a while; this one expires on **10 November
-2026**. After that, use the GitHub link above, which doesn't expire.
 
 ## Diagnostics (when a page is slow)
 
@@ -246,26 +244,24 @@ $BT/aapt2 dump badging /tmp/NR-Management.apk | head -1                     # pa
 # secret scan: must print nothing
 python3 -I -m zipfile -e /tmp/NR-Management.apk /tmp/apkx && find /tmp/apkx -type f -print0 | xargs -0 strings -n 8 \
   | grep -E -- '-----BEGIN [A-Z ]*PRIVATE KEY|eyJ[A-Za-z0-9_-]{10,}\.eyJ|service_role|sb_secret_|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}'
-TAG=android-v1.0.0-vc<N>          # the new versionCode
-git tag -a "$TAG" <built commit> -m "NR Management Android 1.0.0 (versionCode <N>)"
-git push origin "$TAG"
-gh release create "$TAG" /tmp/NR-Management.apk --title "NR Management for Android 1.0.0 (versionCode <N>)" --notes "…" --latest
-curl -sIL https://github.com/Himkush1414/Super-Management-System/releases/latest/download/NR-Management.apk | grep -E '^HTTP|^location'
+N=<the new versionCode>
+D=/mnt/d/_cache/builds/NR-Management-1.0.0-vc$N; mkdir -p "$D"
+cp /tmp/NR-Management.apk "$D/" && sha256sum "$D/NR-Management.apk" > "$D/NR-Management.apk.sha256"
 ```
 
-The download link and the QR code never change: they always point at the
-newest release.
+Never `gh release create`, never attach the APK to a GitHub Release, and
+never commit the APK, its link or its QR code: the repository is public.
 
-## QR codes
+## QR codes (private)
 
-`node mobile/scripts/render-qr.mjs` writes `docs/assets/qr-download.png`
-for the permanent link (black on white, error correction H, wide border,
-1200 px); `node mobile/scripts/render-qr.mjs <url>=<file.png>` makes one
-for any other link. Check a QR code by decoding it:
+`node mobile/scripts/render-qr.mjs <https url>=<out.png>` makes a QR code
+(black on white, error correction H, wide border, 1200 px). It refuses to
+write inside the repository: put the file next to the APK on D:. Check a QR
+code by decoding it:
 
 ```bash
 uv run --no-project --with zxing-cpp --with pillow python -I -c \
-  "import sys,zxingcpp;from PIL import Image;print([r.text for r in zxingcpp.read_barcodes(Image.open(sys.argv[1]))])" docs/assets/qr-download.png
+  "import sys,zxingcpp;from PIL import Image;print([r.text for r in zxingcpp.read_barcodes(Image.open(sys.argv[1]))])" <out.png>
 ```
 
 ## Later, optional

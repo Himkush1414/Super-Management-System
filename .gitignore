@@ -44,8 +44,9 @@ supabase/.temp
 supabase/.branches
 supabase/.env
 
-# contain real fixed-account login PINs — never commit (see seed.sql.example)
+# contain real fixed-account login PINs or the account list — never commit
 supabase/seed.sql
+supabase/seed.sql.example
 supabase/hosted-bootstrap.sql
 supabase/hosted-pins.sql
 supabase/hosted-dispatchers.sql

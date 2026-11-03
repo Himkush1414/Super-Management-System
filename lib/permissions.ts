@@ -2,7 +2,7 @@
  * lib/permissions.ts — single source of truth for the role model.
  *
  * Four roles. `marketing` and `production` are each held by several fixed
- * accounts (marketing1..4, production1..4); individual scoping (an account
+ * accounts; individual scoping (an account
  * only sees its own orders) is enforced by RLS on `orders.created_by` /
  * `order_assignees`, not by the role. (The database still knows a retired
  * `dispatcher` role — 0022, removed from the app in 0024: those accounts

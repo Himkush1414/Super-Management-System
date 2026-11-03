@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+/* Only the website's own code decides which utilities exist. Without these,
+   words in the docs, the Android app, SQL and workflow files turn into
+   unused CSS rules (and a doc edit could change the site's stylesheet). */
+@source not "../docs";
+@source not "../mobile";
+@source not "../supabase";
+@source not "../scripts";
+@source not "../.github";
+@source not "../README.md";
+@source not "../AGENTS.md";
+@source not "../CLAUDE.md";
+
 /*
   NR Industries design tokens.
   Public site + internal dashboard share one dark, restrained palette

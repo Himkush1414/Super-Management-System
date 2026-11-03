@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { isAuthRetryableFetchError } from "@supabase/supabase-js";
+import { timedFetch } from "@/lib/supabase/fetch";
 
 const DASHBOARD_PREFIX = "/dashboard";
 
@@ -47,6 +49,7 @@ export async function updateSession(request: NextRequest) {
   if (!url || !key) return isDashboard ? to("/login") : response;
 
   const supabase = createServerClient(url, key, {
+    global: { fetch: timedFetch },
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -75,9 +78,15 @@ export async function updateSession(request: NextRequest) {
   if (isDashboard) {
     // Local cookie read; only touches the network when the access token has
     // expired and needs refreshing (the new cookies are written above).
-    const session = await withTimeout(supabase.auth.getSession().then((r) => r.data.session));
-    log("getSession", { session: Boolean(session) });
-    if (!session) return to("/login");
+    const r = await withTimeout(supabase.auth.getSession());
+    // Couldn't check (the refresh timed out, or the network failed): NOT a
+    // sign-out. The cookies are kept, and the page's own session check
+    // decides, showing "Try again" if it can't check either. Sending the
+    // user to /login here signed people out after a phone had been away
+    // for an hour on a slow connection.
+    const unknown = r === null || (!r.data.session && isAuthRetryableFetchError(r.error));
+    log("getSession", { session: Boolean(r?.data.session), unknown });
+    if (!unknown && !r?.data.session) return to("/login");
   }
 
   return response;

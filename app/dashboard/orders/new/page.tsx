@@ -1,5 +1,6 @@
 import { requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/server";
+import { must } from "@/lib/data/read";
 import { PageHeader } from "@/components/shared/Page";
 import { Card, CardBody } from "@/components/ui/Card";
 import { PunchOrderForm } from "@/components/dashboard/PunchOrderForm";
@@ -20,10 +21,13 @@ export default async function NewOrderPage() {
   // Done with the service role so raw phone numbers never reach the marketing
   // client — only a boolean.
   const svc = createServiceClient();
-  const [{ data: profiles }, { data: settings }] = await Promise.all([
+  const [profilesRes, settingsRes] = await Promise.all([
     svc.from("profiles").select("id, full_name, real_name, role").eq("role", "production").order("full_name"),
     svc.from("production_settings").select("profile_id, phone, confirmed_at"),
   ]);
+  // a failed read must not look like "no production member is ready"
+  const profiles = must(profilesRes, "the production team");
+  const settings = must(settingsRes, "the production settings");
 
   const ready = new Set(
     (settings ?? [])

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { DatabaseZap, ScrollText } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { must } from "@/lib/data/read";
 import { redirect } from "next/navigation";
 import { PageHeader, EmptyState } from "@/components/shared/Page";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
@@ -38,7 +39,7 @@ export default async function DataPage({
   const { account: selectedId } = await searchParams;
 
   // admin_account_overview() re-checks admin tier in the database.
-  const { data: overview } = await supabase.rpc("admin_account_overview");
+  const overview = must(await supabase.rpc("admin_account_overview"), "the accounts overview");
   const accounts = (overview ?? []) as Account[];
   const selected = accounts.find((a) => a.profile_id === selectedId) ?? null;
 
@@ -184,11 +185,12 @@ async function MarketingOrders({
   account: Account;
   supabase: Awaited<ReturnType<typeof createClient>>;
 }) {
-  const { data } = await supabase
+  const res = await supabase
     .from("order_feed")
     .select("id, product_name, client_name, transformer_rating, quantity, stage, expected_delivery, created_at, items")
     .eq("created_by", account.profile_id)
     .order("created_at", { ascending: false });
+  const data = must(res, "the account's orders");
   const orders = (data ?? []).map((o) => ({
     ...o,
     title: orderTitle(o),
@@ -263,12 +265,13 @@ async function ProductionUpdates({
   account: Account;
   supabase: Awaited<ReturnType<typeof createClient>>;
 }) {
-  const { data } = await supabase
+  const res = await supabase
     .from("order_stage_events")
     .select("id, from_stage, to_stage, created_at, order_id, orders(product_name, client_name)")
     .eq("changed_by", account.profile_id)
     .not("from_stage", "is", null)
     .order("created_at", { ascending: false });
+  const data = must(res, "the account's stage updates");
   const events = (data ?? []) as unknown as {
     id: string;
     from_stage: number;

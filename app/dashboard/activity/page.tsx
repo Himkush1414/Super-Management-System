@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ScrollText, Trash2, RotateCcw, History } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { must } from "@/lib/data/read";
 import { PageHeader, EmptyState } from "@/components/shared/Page";
 import { Badge } from "@/components/shared/Badge";
 import { formatDateTime, formatDay } from "@/lib/utils";
@@ -48,7 +49,7 @@ export default async function ActivityPage({
     .order("created_at", { ascending: false })
     .limit(PAGE_SIZE);
   if (account && /^[0-9a-f-]{36}$/i.test(account)) q = q.eq("target_profile_id", account);
-  const { data } = await q;
+  const data = must(await q, "the activity log");
   const entries = (data ?? []) as Entry[];
 
   // Items deleted as part of an account reset are shown under that reset.

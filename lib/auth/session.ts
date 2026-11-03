@@ -2,7 +2,9 @@ import "server-only";
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { isAuthApiError, isAuthRetryableFetchError, isAuthSessionMissingError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { ReadError } from "@/lib/data/read";
 import type { Profile } from "@/types/database.types";
 import { ROLES, type Permission, type Role, can, isAdminTier } from "@/lib/permissions";
 import { displayName } from "@/lib/names";
@@ -37,6 +39,17 @@ function tokenSubject(jwt: string | undefined): string | null {
 }
 
 /**
+ * Did Auth actually answer "this session is not valid"? Only a 4xx answer
+ * from the Auth server (revoked or expired session, user gone) or no
+ * session at all. A timeout, a network failure or a 5xx is "couldn't
+ * check", which must not look like a sign-out.
+ */
+function authSaysSignedOut(error: unknown): boolean {
+  if (isAuthSessionMissingError(error)) return true;
+  return isAuthApiError(error) && typeof error.status === "number" && error.status >= 400 && error.status < 500;
+}
+
+/**
  * Resolve the signed-in account for a dashboard route, route handler or
  * server action. An account either is one of the fixed seeded rows or it
  * isn't signed in.
@@ -52,21 +65,28 @@ function tokenSubject(jwt: string | undefined): string | null {
 const loadSession = cache(async (): Promise<SessionContext> => {
   const pf = perf("session");
   const supabase = await createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession(); // local cookie read (the proxy keeps it fresh)
-  const sub = tokenSubject(session?.access_token);
+  // Local cookie read (the proxy keeps it fresh); it only goes to Auth when
+  // the token has expired, and Auth retries a failing refresh for up to
+  // 30 s, so it is capped like getUser below.
+  const got = await Promise.race([
+    supabase.auth.getSession(),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+  ]);
+  // The refresh couldn't reach Auth: unknown, not signed out (see below).
+  if (got === null) throw new ReadError("the session", "no answer in 8 s");
+  if (!got.data.session && isAuthRetryableFetchError(got.error)) throw new ReadError("the session", got.error);
+  const sub = tokenSubject(got.data.session?.access_token);
   if (!sub) redirect("/login");
 
-  const [user, { data: profile }, { data: settings }] = await Promise.all([
+  const [checked, profileRes, settingsRes] = await Promise.all([
     // Cap the Auth round trip so a slow/unreachable Auth server can't hang
     // every dashboard render (see lib/supabase/middleware.ts).
     pf.time(
       "auth.getUser",
       Promise.race([
-        supabase.auth.getUser().then((r) => r.data.user),
+        supabase.auth.getUser(),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
-      ]).catch(() => null),
+      ]).catch((e: unknown) => ({ data: { user: null }, error: e })),
     ),
     pf.time("profile", supabase.from("profiles").select("*").eq("id", sub).maybeSingle<Profile>()),
     // RLS: production reads its own row; everyone else gets nothing.
@@ -79,7 +99,23 @@ const loadSession = cache(async (): Promise<SessionContext> => {
         .maybeSingle<{ phone: string | null; confirmed_at: string | null }>(),
     ),
   ]);
+  const user = checked?.data.user ?? null;
   pf.end({ user: Boolean(user) });
+
+  // Two different answers, kept apart:
+  //  * "signed out": Auth answered that this session is not valid (revoked,
+  //    expired refresh, user gone) or the profile row doesn't exist -> /login;
+  //  * "couldn't check": Auth or the database was too slow or unreachable ->
+  //    an error with "Try again". Sending people to /login for that used to
+  //    sign them out at random on a slow connection, and a failed settings
+  //    read sent production to the Settings page as if its phone were missing.
+  if (!user && !authSaysSignedOut(checked?.error)) {
+    throw new ReadError("the sign-in check", checked === null ? "no answer in 5 s" : checked.error);
+  }
+  if (profileRes.error) throw new ReadError("the account", profileRes.error);
+  if (settingsRes.error) throw new ReadError("the production settings", settingsRes.error);
+  const profile = profileRes.data;
+  const settings = settingsRes.data;
 
   if (!user || user.id !== sub || !profile) redirect("/login");
   // A role the app no longer has (the retired dispatchers, 0024): out.

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { must } from "@/lib/data/read";
 import { PageHeader } from "@/components/shared/Page";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { SettingsForm } from "@/components/dashboard/SettingsForm";
@@ -15,13 +16,16 @@ export default async function SettingsPage() {
   if (ctx.role !== "marketing" && ctx.role !== "production") redirect("/dashboard/orders");
   const isProduction = ctx.role === "production";
 
-  const { data } = isProduction
-    ? await (await createClient())
-        .from("production_settings")
-        .select("*")
-        .eq("profile_id", ctx.userId)
-        .maybeSingle<ProductionSettings>()
-    : { data: null };
+  const data = isProduction
+    ? must(
+        await (await createClient())
+          .from("production_settings")
+          .select("*")
+          .eq("profile_id", ctx.userId)
+          .maybeSingle<ProductionSettings>(),
+        "your settings",
+      )
+    : null;
 
   const settingUp = ctx.missingSetup.length > 0;
 

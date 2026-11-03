@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { requireEnv } from "@/lib/env";
+import { timedFetch } from "@/lib/supabase/fetch";
 
 /**
  * Server-side Supabase client bound to the request cookies.
@@ -16,6 +17,8 @@ export async function createClient() {
     requireEnv("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL),
     requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     {
+      // reads and Auth calls get a time limit; writes never do (fetch.ts)
+      global: { fetch: timedFetch },
       cookies: {
         getAll() {
           return cookieStore.getAll();
@@ -43,6 +46,6 @@ export function createServiceClient() {
   return createSupabaseClient(
     requireEnv("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL),
     requireEnv("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY),
-    { auth: { persistSession: false, autoRefreshToken: false } },
+    { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: timedFetch } },
   );
 }

@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
+import { must } from "@/lib/data/read";
 import type { Order, OrderItem, Profile } from "@/types/database.types";
 import { displayName } from "@/lib/names";
 import { perf } from "@/lib/perf";
@@ -31,10 +32,11 @@ export async function getOrders(
   const supabase = await createClient();
   let q = supabase.from("order_feed").select("*");
   if (range) q = q.gte("created_at", range.from).lt("created_at", range.to);
-  const [{ data: orders }, parties] = await Promise.all([
+  const [ordersRes, parties] = await Promise.all([
     pf.time("order_feed", q.order("created_at", { ascending: false })),
     pf.time("profiles", visibleParties(supabase)),
   ]);
+  const orders = must(ordersRes, "the orders");
   pf.end({ rows: orders?.length ?? 0 });
   return attach((orders ?? []) as Order[], parties);
 }
@@ -46,11 +48,13 @@ export async function getOrders(
 export const getOrder = cache(async (id: string): Promise<OrderRow | null> => {
   const pf = perf("getOrder");
   const supabase = await createClient();
-  const [{ data }, parties] = await Promise.all([
+  const [orderRes, parties] = await Promise.all([
     pf.time("order_feed", supabase.from("order_feed").select("*").eq("id", id).maybeSingle()),
     pf.time("profiles", visibleParties(supabase)),
   ]);
   pf.end();
+  // a failed read must not look like "this order doesn't exist"
+  const data = must(orderRes, "the order");
   if (!data) return null;
   return attach([data as Order], parties)[0] ?? null;
 });
@@ -62,7 +66,7 @@ export const getOrder = cache(async (id: string): Promise<OrderRow | null> => {
 async function visibleParties(
   supabase: Awaited<ReturnType<typeof createClient>>,
 ): Promise<Map<string, Party>> {
-  const { data } = await supabase.from("profiles").select("id, username, full_name, real_name, role");
+  const data = must(await supabase.from("profiles").select("id, username, full_name, real_name, role"), "the accounts");
   return new Map(
     (data ?? []).map((p) => [p.id as string, { ...(p as Omit<Party, "label">), label: displayName(p as Profile) }]),
   );

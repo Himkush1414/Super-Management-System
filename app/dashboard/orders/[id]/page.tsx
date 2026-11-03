@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, FileDown } from "lucide-react";
 import { requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
+import { must } from "@/lib/data/read";
 import { getOrder } from "@/lib/data/orders";
 import { PageHeader } from "@/components/shared/Page";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
@@ -39,7 +40,7 @@ export default async function OrderDetailPage({
   const supabase = await createClient();
   // Everything in one parallel round. production_settings is RLS-scoped
   // (admin tier sees all, production only itself) and only shown to admins.
-  const [ctx, order, { data: events }, { data: phones }] = await Promise.all([
+  const [ctx, order, eventsRes, phonesRes] = await Promise.all([
     pf.time("requireSession", requireSession()),
     pf.time("getOrder", getOrder(id)),
     pf.time(
@@ -49,6 +50,8 @@ export default async function OrderDetailPage({
     pf.time("production_settings", supabase.from("production_settings").select("profile_id, phone, confirmed_at")),
   ]);
   if (!order) notFound();
+  const events = must(eventsRes, "the stage history");
+  const phones = must(phonesRes, "the production phones");
 
   const isAssignedProduction =
     ctx.role === "production" && order.assignee_ids.includes(ctx.userId);

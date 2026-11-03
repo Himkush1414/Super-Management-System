@@ -33,7 +33,7 @@ directly.
 |---|---|---|
 | Supabase **service-role key** | Vercel project environment variables | the website's server code only |
 | Supabase **anon / publishable key** | Vercel environment variables (public by design) | the browser and the server |
-| Supabase **database password** | Supabase dashboard | `scripts/backup-db.sh` (via the `DATABASE_URL` environment variable, never stored) |
+| Supabase **database password** | Supabase dashboard | `scripts/db-backup.sh` (via the `SUPABASE_DB_URL` environment variable in a private file outside the repo) |
 | Supabase **personal access token** (Management API) | created when needed, then revoked | applying migrations |
 | **Vercel** token | created when needed, then revoked | deploy tooling |
 | **GitHub** tokens | the build machine's private environment file, outside the repo | pushes, releases, the `gh` tool |
@@ -66,9 +66,10 @@ in again. The Android app needs no rebuild; it reads keys from the website.
 ### Supabase database password
 1. Supabase dashboard → Project Settings → Database → Reset database
    password.
-2. Update the `DATABASE_URL` you use for backups (in your password manager,
-   not in a file in the repo).
-3. Run `scripts/backup-db.sh` once to confirm it connects.
+2. Update the `SUPABASE_DB_URL` you use for backups (in
+   `~/.config/nr-backup/env` and your password manager, never in the repo;
+   see [DATA-SAFETY.md](DATA-SAFETY.md)).
+3. Run `scripts/db-backup.sh` once to confirm it connects.
 
 The website doesn't use the database password (it uses the API keys), so no
 redeploy is needed.

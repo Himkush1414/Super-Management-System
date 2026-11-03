@@ -194,7 +194,8 @@ app/, components/, lib/   the website (Next.js App Router)
 proxy.ts                  session refresh and sign-in redirects
 types/                    database types
 supabase/migrations/      the database schema (applied to live)
-supabase/scripts/         verify, snapshot and rollback scripts (no data)
+supabase/scripts/         read-only verify and snapshot scripts
+scripts/db-backup.sh      read-only database backup, written outside the repo
 supabase/mobile/          push notifications: SQL + Edge Function (not applied)
 mobile/                   the Android app (its own package.json)
   App.js                  WebView, error screens, back button, keyboard, downloads
@@ -202,7 +203,7 @@ mobile/                   the Android app (its own package.json)
   test/                   node tests
   scripts/                icon and splash generators, a private QR helper
 .github/workflows/        secret scan (every push), manual EAS app build
-docs/                     handoff, security, setup guides, images
+docs/                     handoff, security, data safety, setup guides, images
 ```
 
 ## Releasing
@@ -227,6 +228,9 @@ docs/                     handoff, security, setup guides, images
 - Every push and pull request runs a gitleaks secret scan, and GitHub push
   protection refuses known token formats. `.env*`, signing keys, Firebase
   and service-account files, dumps and APKs are gitignored.
+- Backups, restore and the rules for changing data:
+  [docs/DATA-SAFETY.md](docs/DATA-SAFETY.md). Secrets and how to rotate
+  them: [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Roadmap
 

@@ -93,7 +93,3 @@ backups/
 supabase/scripts/*
 !supabase/scripts/*_verify.sql
 !supabase/scripts/*_snapshot.sql
-
-# Private: QR codes for the APK are kept on D:, never in the repository
-*qr-download*.png
-/docs/assets/qr-*.png

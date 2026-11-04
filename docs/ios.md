@@ -4,7 +4,7 @@
 has been made, and nothing about iOS (sign-in, push, downloads) has been
 tested on a device.
 
-An APK link or QR code **cannot** install anything on an iPhone. iOS only
+An APK link **cannot** install anything on an iPhone. iOS only
 installs apps through Apple: the App Store, TestFlight, or a
 device-registered (Ad Hoc) build.
 

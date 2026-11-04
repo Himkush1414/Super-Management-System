@@ -42,7 +42,7 @@ of the data, and website updates reach it without a new APK.
 ## Android app
 
 The Android app is handed to staff **privately** by the owner. There is
-no public download link, QR code, store listing or GitHub Release, on
+no public download link, store listing or GitHub Release, on
 purpose: the repository is public, and the app is only for the staff.
 
 **A login is still required.** The app is the live website: only the
@@ -201,7 +201,7 @@ mobile/                   the Android app (its own package.json)
   App.js                  WebView, error screens, back button, keyboard, downloads
   src/                    URL policy, page bridge, loading watchdog, app feel, colours
   test/                   node tests
-  scripts/                icon and splash generators, a private QR helper
+  scripts/                icon and splash generators
 .github/workflows/        secret scan (every push), manual EAS app build
 docs/                     handoff, security, data safety, setup guides, images
 ```

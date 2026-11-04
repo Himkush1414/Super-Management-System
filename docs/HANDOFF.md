@@ -118,15 +118,14 @@ the current ones were checked and kept.
 
 ## Install on a phone
 
-The APK is **never published** (no GitHub Release, no link or QR code in
-the repository): the repository is public and the app is for staff only.
-The owner keeps the newest signed APK and a QR code for it on the D: drive
-(`D:\_cache\builds\NR-Management-1.0.0-vc<N>\`), outside the repository,
-and hands it over directly.
+The APK is **never published** (no GitHub Release, no link in the
+repository): the repository is public and the app is for staff only. The
+owner keeps the newest signed APK outside the repository and hands it over
+directly.
 
-1. Copy the APK to the phone, or scan the owner's private QR code, which
+1. Copy the APK to the phone, or open the private link from the owner, which
    points at the EAS build file. EAS deletes build files after about 30
-   days, so that QR code stops working then; the APK on D: doesn't.
+   days, so that link stops working then; the owner's APK file doesn't.
 2. Open the file. If Android asks, allow installs from that source:
    *Settings → Apps → (your browser or file manager) → Install unknown
    apps*. Tap **Install**. If Play Protect warns about an unknown
@@ -250,19 +249,7 @@ cp /tmp/NR-Management.apk "$D/" && sha256sum "$D/NR-Management.apk" > "$D/NR-Man
 ```
 
 Never `gh release create`, never attach the APK to a GitHub Release, and
-never commit the APK, its link or its QR code: the repository is public.
-
-## QR codes (private)
-
-`node mobile/scripts/render-qr.mjs <https url>=<out.png>` makes a QR code
-(black on white, error correction H, wide border, 1200 px). It refuses to
-write inside the repository: put the file next to the APK on D:. Check a QR
-code by decoding it:
-
-```bash
-uv run --no-project --with zxing-cpp --with pillow python -I -c \
-  "import sys,zxingcpp;from PIL import Image;print([r.text for r in zxingcpp.read_barcodes(Image.open(sys.argv[1]))])" <out.png>
-```
+never commit the APK or its link: the repository is public.
 
 ## Later, optional
 

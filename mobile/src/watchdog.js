@@ -14,10 +14,14 @@
 // new page is on screen: the address has moved, the page has changed, and
 // no loading skeleton (the website's loading.tsx, [aria-busy="true"]) is
 // left. A navigation that goes STALL_MS without any change on the page
-// while still loading is reported to the app ("nav-stuck"); the app
-// retries once and then shows its error screen with Retry (App.js). Every
-// navigation is also reported for the hidden Diagnostics screen: kind,
-// path (never the query string), time and result.
+// while still loading gets a connection check first: the health check,
+// through the same connection as the router. If that answers, the server is
+// only slow, so nothing is reloaded (the website ends a slow page itself
+// with "Try again") and the navigation may wait until MAX_MS. If it doesn't,
+// the navigation is reported to the app ("nav-stuck"); the app retries once
+// and then shows its error screen with Retry (App.js). Every navigation is
+// also reported for the hidden Diagnostics screen: kind, path (never the
+// query string), time and result.
 //
 // It only watches. It never changes the page, delays the router or holds
 // up a request. Pure string builder (no React Native imports), so tests
@@ -27,6 +31,8 @@
 const STALL_MS = 8000;
 /** Even a page that keeps changing must have finished by then. */
 const MAX_MS = 25000;
+/** The connection check before a stuck report must answer within this. */
+const PROBE_MS = 4000;
 /** How often an unfinished navigation is checked. */
 const TICK_MS = 500;
 /** The website's loading skeletons (app/dashboard/loading.tsx, orders/[id]/loading.tsx). */
@@ -42,6 +48,7 @@ function buildWatchdogScript() {
   var d = document;
   var STALL_MS = ${STALL_MS};
   var MAX_MS = ${MAX_MS};
+  var PROBE_MS = ${PROBE_MS};
   var TICK_MS = ${TICK_MS};
   var SKELETON = ${JSON.stringify(SKELETON)};
 
@@ -120,18 +127,55 @@ function buildWatchdogScript() {
     else if (!cur.skelSince) cur.skelSince = t;
   }
 
+  /**
+   * A navigation looks stuck. Ask the server through the page's own
+   * connection: an answer means the server is only slow, so the navigation
+   * keeps waiting; no answer means the connection is gone, so report it.
+   */
+  function probe(reason) {
+    var c = cur;
+    c.probed = true;
+    var ended = false;
+    var ctl = typeof AbortController === "function" ? new AbortController() : null;
+    function end(ok) {
+      if (ended) return;
+      ended = true;
+      w.clearTimeout(limit);
+      // the page landed or the user moved on meanwhile: nothing to report
+      if (!ok && cur === c) stuck(reason);
+    }
+    var limit = w.setTimeout(function () {
+      if (ctl) ctl.abort();
+      end(false);
+    }, PROBE_MS);
+    try {
+      fetch(location.origin + "/api/health", { cache: "no-store", credentials: "omit", signal: ctl ? ctl.signal : undefined }).then(
+        function (r) {
+          end(!!r.ok);
+        },
+        function () {
+          end(false);
+        },
+      );
+    } catch (e) {
+      end(false);
+    }
+  }
+
   function check() {
     timer = null;
     if (!cur) return;
     if (isDone()) return report("ok");
     var t = now();
     trackSkeleton(t);
+    if (t - cur.t0 >= MAX_MS) return stuck("not finished after " + Math.round((t - cur.t0) / 1000) + " s");
     // a skeleton counts on its own: the header's counter or a running
     // timer can keep changing the page while the tab never arrives
-    if (cur.skelSince && t - cur.skelSince >= STALL_MS) return stuck("skeleton for " + Math.round((t - cur.skelSince) / 1000) + " s");
-    if (t - cur.last >= STALL_MS) return stuck("no change for " + Math.round((t - cur.last) / 1000) + " s");
-    if (t - cur.t0 >= MAX_MS) return stuck("not finished after " + Math.round((t - cur.t0) / 1000) + " s");
-    timer = w.setTimeout(check, TICK_MS);
+    if (!cur.probed) {
+      if (cur.skelSince && t - cur.skelSince >= STALL_MS) probe("skeleton for " + Math.round((t - cur.skelSince) / 1000) + " s");
+      else if (t - cur.last >= STALL_MS) probe("no change for " + Math.round((t - cur.last) / 1000) + " s");
+    }
+    if (cur) timer = w.setTimeout(check, TICK_MS);
   }
 
   function begin(kind, href) {
@@ -145,6 +189,7 @@ function buildWatchdogScript() {
       t0: t,
       last: t,
       skelSince: 0,
+      probed: false,
       changed: false,
       // these start at their new address already
       moved: kind !== "click",
@@ -250,4 +295,4 @@ function buildWatchdogScript() {
 true;`;
 }
 
-module.exports = { STALL_MS, MAX_MS, TICK_MS, SKELETON, buildWatchdogScript };
+module.exports = { STALL_MS, MAX_MS, PROBE_MS, TICK_MS, SKELETON, buildWatchdogScript };

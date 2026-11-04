@@ -7,7 +7,10 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import watchdog from "../src/watchdog.js";
 
-const { STALL_MS, MAX_MS, SKELETON, buildWatchdogScript } = watchdog;
+const { STALL_MS, MAX_MS, PROBE_MS, SKELETON, buildWatchdogScript } = watchdog;
+
+/** let a connection check that already has its answer finish */
+const settle = () => new Promise((r) => setTimeout(r, 2));
 const ORIGIN = "https://site";
 
 /** @param {{ path?: string, readyState?: string, fetch?: (url: string, init: any) => Promise<any> }} [opts] */
@@ -164,7 +167,7 @@ test("a tab switch: skeleton first, then the page → ok, with its real duration
   assert.equal(p.of("nav-stuck").length, 0);
 });
 
-test("stuck on the skeleton: reported once after STALL_MS without change, never again", () => {
+test("stuck on the skeleton with a dead connection: reported once after STALL_MS without change, never again", async () => {
   const p = loaded();
   p.tap("/dashboard/activity");
   p.push("/dashboard/activity");
@@ -172,6 +175,7 @@ test("stuck on the skeleton: reported once after STALL_MS without change, never 
   p.advance(STALL_MS - 600);
   assert.equal(p.of("nav-stuck").length, 0, "not before STALL_MS");
   p.advance(1000);
+  await settle();
   const stuck = p.of("nav-stuck");
   assert.equal(stuck.length, 1);
   assert.equal(stuck[0].kind, "click");
@@ -185,7 +189,7 @@ test("stuck on the skeleton: reported once after STALL_MS without change, never 
   assert.equal(p.pending(), 0);
 });
 
-test("a skeleton still on screen after STALL_MS is stuck, even while the header keeps changing", () => {
+test("a skeleton still on screen after STALL_MS is stuck, even while the header keeps changing", async () => {
   const p = loaded();
   p.tap("/dashboard/activity");
   p.push("/dashboard/activity");
@@ -198,6 +202,7 @@ test("a skeleton still on screen after STALL_MS is stuck, even while the header 
   p.advance(1000);
   p.change();
   p.advance(600);
+  await settle();
   const stuck = p.of("nav-stuck");
   assert.equal(stuck.length, 1);
   assert.equal(stuck[0].skeleton, true);
@@ -219,14 +224,96 @@ test("a page that keeps changing but never finishes is stuck after MAX_MS", () =
   assert.match(stuck[0].reason, /not finished/);
 });
 
-test("a tap that never gets going (nothing moves, no skeleton) is retried at the tapped address", () => {
+test("a tap that never gets going (nothing moves, no skeleton) is retried at the tapped address", async () => {
   const p = loaded();
   p.tap("/dashboard/settings");
   p.advance(STALL_MS + 500);
+  await settle();
   const stuck = p.of("nav-stuck");
   assert.equal(stuck.length, 1);
   assert.equal(stuck[0].href, `${ORIGIN}/dashboard/settings`, "the link, not the page still showing");
   assert.equal(stuck[0].skeleton, false);
+});
+
+test("a slow server with a working connection: no report, and the page lands by itself", async () => {
+  const p = loaded({ fetch: () => Promise.resolve({ ok: true, status: 200 }) });
+  p.tap("/dashboard/activity");
+  p.push("/dashboard/activity");
+  p.skeleton(true);
+  p.advance(STALL_MS + 500);
+  await settle();
+  assert.equal(p.fetches.length, 1, "one connection check");
+  assert.equal(p.fetches[0].url, `${ORIGIN}/api/health`);
+  assert.equal(p.fetches[0].init.credentials, "omit");
+  assert.equal(p.fetches[0].init.cache, "no-store");
+  p.advance(3500); // the server answers at 12 s
+  p.skeleton(false);
+  assert.equal(p.of("nav-stuck").length, 0);
+  assert.equal(p.of("nav-log")[0].result, "ok");
+  assert.equal(p.fetches.length, 1, "never asked twice");
+  assert.equal(p.pending(), 0);
+});
+
+test("a working connection but a page that never lands: reported at MAX_MS, once", async () => {
+  const p = loaded({ fetch: () => Promise.resolve({ ok: true, status: 200 }) });
+  p.tap("/dashboard/activity");
+  p.push("/dashboard/activity");
+  p.skeleton(true);
+  p.advance(STALL_MS + 500);
+  await settle();
+  p.advance(MAX_MS - STALL_MS - 1000);
+  assert.equal(p.of("nav-stuck").length, 0, "not before MAX_MS");
+  p.advance(1000);
+  const stuck = p.of("nav-stuck");
+  assert.equal(stuck.length, 1);
+  assert.match(stuck[0].reason, /not finished/);
+  assert.equal(p.pending(), 0);
+});
+
+test("a connection check that never answers counts as a dead connection after PROBE_MS", async () => {
+  /** @type {any} */ let signal = null;
+  const p = loaded({
+    fetch: (_u, init) => {
+      signal = init.signal;
+      return new Promise(() => {});
+    },
+  });
+  p.tap("/dashboard/activity");
+  p.push("/dashboard/activity");
+  p.skeleton(true);
+  p.advance(STALL_MS + 500);
+  assert.equal(p.of("nav-stuck").length, 0, "still waiting for the answer");
+  p.advance(PROBE_MS);
+  const stuck = p.of("nav-stuck");
+  assert.equal(stuck.length, 1);
+  assert.match(stuck[0].reason, /skeleton/);
+  assert.equal(signal.aborted, true, "the check itself is cancelled");
+  assert.equal(p.pending(), 0);
+});
+
+test("the health check failing with a server error counts as a dead connection", async () => {
+  const p = loaded({ fetch: () => Promise.resolve({ ok: false, status: 503 }) });
+  p.tap("/dashboard/activity");
+  p.push("/dashboard/activity");
+  p.skeleton(true);
+  p.advance(STALL_MS + 500);
+  await settle();
+  assert.equal(p.of("nav-stuck").length, 1);
+});
+
+test("a page that lands while the connection check runs is not reported", async () => {
+  /** @type {(v: any) => void} */ let fail = () => {};
+  const p = loaded({ fetch: () => new Promise((_ok, no) => (fail = no)) });
+  p.tap("/dashboard/activity");
+  p.push("/dashboard/activity");
+  p.skeleton(true);
+  p.advance(STALL_MS + 500);
+  p.skeleton(false);
+  fail(new Error("offline"));
+  await settle();
+  assert.equal(p.of("nav-stuck").length, 0);
+  assert.equal(p.of("nav-log")[0].result, "ok");
+  assert.equal(p.pending(), 0);
 });
 
 test("a change before the address moves (the menu closing) doesn't count as done", () => {

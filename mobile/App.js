@@ -644,7 +644,7 @@ function Main() {
     ["Cookies", "shared with the app; third-party off"],
     ["Security", "HTTPS only, mixed content never, file access off, extra windows off"],
     ["Rendering", "hardware accelerated (default layer), text zoom 100%"],
-    ["Watchdog", `stuck after ${STALL_MS / 1000} s without change (max ${WATCH_MAX_MS / 1000} s); 1 automatic retry per page per minute`],
+    ["Watchdog", `after ${STALL_MS / 1000} s without change, a connection check; if it fails, stuck (always by ${WATCH_MAX_MS / 1000} s); 1 automatic retry per page per minute`],
   ], [webAgent]);
 
   return (

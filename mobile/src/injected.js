@@ -71,10 +71,12 @@ const PAGE_SCRIPT = String.raw`(function () {
    * until a heartbeat is missed (up to ~30 s), so hand it to the realtime
    * client's own close handler now: it reconnects after its first backoff
    * step (1 s) and rejoins every channel. Realtime does not replay events
-   * missed while away, so read-only pages also reload; pages with a form
-   * keep what the user typed. A page switch that was still waiting when
-   * the phone slept is handed to the loading watchdog first (the app
-   * reloads that page itself), and the website's server is woken up.
+   * missed while away, so read-only pages also ask the website to read their
+   * data again ("nr-app-resume", components/dashboard/Shell.tsx), with no
+   * reload of the page; pages with a form are left alone. A page switch that
+   * was still waiting when the phone slept is handed to the loading watchdog
+   * first (the app reloads that page itself), and the website's server is
+   * woken up.
    */
   w.__nrResume = function (awayMs) {
     var watch = w.__nrWatch;
@@ -104,9 +106,9 @@ const PAGE_SCRIPT = String.raw`(function () {
         }
       }
     });
-    var reload = !retrying && awayMs >= 30000 && isReadOnlyView();
-    post({ type: "resumed", sockets: n, reload: reload });
-    if (reload) location.reload();
+    var refresh = !retrying && awayMs >= 30000 && isReadOnlyView();
+    post({ type: "resumed", sockets: n, refresh: refresh });
+    if (refresh) w.dispatchEvent(new Event("nr-app-resume"));
   };
 
   // ── back button: close what is open on the page before leaving it ──────

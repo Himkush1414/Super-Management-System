@@ -22,6 +22,7 @@ function page(opts = {}) {
   const menuButton = { getClientRects: () => (opts.menuOpen ? [{}] : []), click: () => menuClicks++ };
   /** @type {any[]} */ const sockets = [];
   let reloads = 0;
+  let resumeEvents = 0;
   const attrs = { "data-theme": opts.theme ?? null };
   /** @type {(() => void)[]} */ const observers = [];
 
@@ -67,6 +68,9 @@ function page(opts = {}) {
     history,
     requestAnimationFrame: (/** @type {() => void} */ f) => f(),
     addEventListener: (/** @type {string} */ t, /** @type {Function} */ fn) => (winListeners[t] ||= []).push(fn),
+    dispatchEvent: (/** @type {{ type: string }} */ e) => {
+      if (e.type === "nr-app-resume") resumeEvents++;
+    },
   };
   const sandbox = {
     window,
@@ -80,6 +84,12 @@ function page(opts = {}) {
     },
     history,
     URL,
+    Event: class {
+      /** @param {string} type */
+      constructor(type) {
+        this.type = type;
+      }
+    },
     setTimeout: opts.setTimeout ?? setTimeout,
     clearTimeout: opts.clearTimeout ?? clearTimeout,
     getComputedStyle: () => style,
@@ -141,6 +151,9 @@ function page(opts = {}) {
     Anchor,
     get reloads() {
       return reloads;
+    },
+    get resumeEvents() {
+      return resumeEvents;
     },
     /** @param {string|null} t */
     setTheme(t) {
@@ -216,25 +229,27 @@ test("only Supabase realtime sockets are tracked, and resume reconnects them", (
   assert.deepEqual(rt.closedWith, { code: 4001, reason: "app resume" });
   assert.equal(closedEvent.wasClean, false, "the realtime client must treat it as unclean so it reconnects");
   assert.equal(p.sockets[1].closedWith, null, "non-realtime sockets are left alone");
-  assert.deepEqual(p.posted.at(-1), { type: "resumed", sockets: 1, reload: false });
+  assert.deepEqual(p.posted.at(-1), { type: "resumed", sockets: 1, refresh: false });
   assert.equal(p.reloads, 0, "the punch-order form is never reloaded");
+  assert.equal(p.resumeEvents, 0, "and never refreshed");
 });
 
-test("read-only pages reload after a long absence, not a short one", () => {
+test("read-only pages read their data again after a long absence, with no page reload", () => {
   const p = page({ path: "/dashboard/orders/5f0c0b2e-1111-2222-3333-444455556666" });
   p.w.__nrResume(5_000);
-  assert.equal(p.reloads, 0);
+  assert.equal(p.resumeEvents, 0, "not after a short absence");
   p.w.__nrResume(45_000);
-  assert.equal(p.reloads, 1);
+  assert.equal(p.resumeEvents, 1);
+  assert.equal(p.reloads, 0);
 });
 
-test("an open dialog or a focused field blocks the reload", () => {
+test("an open dialog or a focused field blocks the refresh", () => {
   const withDialog = page({ path: "/dashboard/orders", dialog: true });
   withDialog.w.__nrResume(120_000);
-  assert.equal(withDialog.reloads, 0);
+  assert.equal(withDialog.resumeEvents, 0);
   const typing = page({ path: "/dashboard/orders", focused: "INPUT" });
   typing.w.__nrResume(120_000);
-  assert.equal(typing.reloads, 0);
+  assert.equal(typing.resumeEvents, 0);
 });
 
 test("theme changes are reported once per change", () => {

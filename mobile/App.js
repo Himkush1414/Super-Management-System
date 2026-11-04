@@ -611,10 +611,6 @@ function Main() {
         if (msg.kind === "load" && msg.state === "end") setPageLoading(false);
         setNavLoading(msg.state === "start");
         break;
-      case "resumed":
-        // the page reloads itself (a read-only page after time away)
-        if (msg.reload) startLoad(currentUrl.current, null);
-        break;
       case "nav-log":
         if (msg.kind === "load") pageShown.current = true;
         record({

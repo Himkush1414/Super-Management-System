@@ -18,8 +18,8 @@ this file.
   seconds.
 - After the phone wakes up or the connection comes back, the app
   reconnects the website's live updates at once. Pages without a form
-  reload after 30 s or more away, because realtime doesn't replay what
-  was missed.
+  read their data again after 30 s or more away, with no page reload,
+  because realtime doesn't replay what was missed.
 - Nothing from the website is cached by the app. The pages are fetched
   with the website's own `no-store` headers. The only things kept on the
   phone are:
@@ -36,9 +36,9 @@ this file.
 |---|---|
 | Feel | No pinch or double-tap zoom, no bounce or glow, no sideways page drag (tables still scroll in their own box), no tap flash, no long-press menu on links, buttons and images, text selection only in fields and table cells. Each tweak has its own flag in `mobile/src/appFeel.js` (`APP_FEEL`). |
 | Launch | The native splash stays until the first page has painted, then fades. The root view, WebView, status bar and navigation bar take the page's real background colour, follow the dark/light toggle, and remember it for the next start. |
-| Loading | A thin native progress bar during page loads, in-site page switches and file downloads. A **loading watchdog** follows every page switch: a loading skeleton still on screen after 8 s, or a page that hasn't changed for 8 s, is reloaded once by itself; if it sticks again, the error screen with **Retry**. Never a loop. The server is woken (`/api/health`) on launch and on resume. |
+| Loading | A thin native progress bar during page loads, in-site page switches and file downloads. A **loading watchdog** follows every page switch: after 8 s on a loading skeleton, or 8 s without a change, it checks the connection (`/api/health`, 4 s limit). If that answers, the server is only slow, so nothing reloads and the page may wait until 25 s (the website ends a slow page itself with "Try again"). If not, or at 25 s, the page is reloaded once by itself; if it sticks again, the error screen with **Retry**. Never a loop. The server is woken (`/api/health`) on launch and on resume. |
 | Back (Android) | Closes an open dialog or the mobile menu first, then goes back in page history, then asks "Leave NR Management?". |
-| Errors | Native screens instead of browser error pages: offline (retries when the connection returns), server error (retries by itself after 10 s, 20 s and 40 s), page stuck (one automatic reload, then this screen). Each has **Retry**. |
+| Errors | Native screens instead of browser error pages: offline (only if the connection stays lost for 2 s; retries when it returns), server error (retries by itself after 10 s, 20 s and 40 s), page stuck (one automatic reload, then this screen). A load cut off by a passing network error while the phone is online gets one silent reload per page per minute first. Each has **Retry**. |
 | Keyboard | The page is kept above the Android keyboard, and the focused field scrolls into view. |
 | Links | Only the website's own address loads inside the app. Other sites, `tel:`, `mailto:`, `sms:` and WhatsApp open in the phone's own apps. File URLs, cleartext HTTP, mixed content and extra windows are blocked. |
 | Session | The website's own cookie, shared with the WebView. After a sign-in or sign-out the app makes Android write the cookie to disk at once, so killing the app right after doesn't undo it. |
@@ -50,13 +50,39 @@ this file.
 has its own pull-down gestures in dialogs and the mobile menu. A pull
 gesture there would fight the page's own scrolling and could reload a
 half-filled form. The app refreshes by itself instead: realtime updates,
-plus a reload of pages without a form after time away.
+plus a fresh read of pages without a form after time away.
 
 **Safe areas.** The status bar, gesture bar and notch are handled natively
 (`react-native-safe-area-context`), with the bars painted in the page
 colour. Android WebViews report `env(safe-area-inset-*)` inconsistently,
 and the app is portrait only, so the page itself needs no inset CSS. The
 injected viewport still sets `viewport-fit=cover`.
+
+## Stability pass of 2026-11-04
+
+Fewer false reloads and false error screens. **Latest build: versionCode 10**
+(built on EAS from commit `a493201`, signed with the same key
+`7b7176ec…71e44b4`, APK SHA-256 `76e7d7f1…eb57af7`). The permissions match
+versionCode 9, and it installs over versionCode 9 as an update (tested on the
+emulator). Staff get the app fixes with this APK; the website fixes are already
+live for everyone.
+
+| What | Before | After | How it was measured |
+|---|---|---|---|
+| Server takes 12 s, connection fine | full reload at 8 s | no reload, page lands at 12.4 s | the app's page script on the local website in Edge |
+| Dead connection | stuck at 8.2 s | stuck at 12.1 s (the check takes up to 4 s) | same |
+| Back after 60 s away | 1 full reload | no reload, new order shown in 161 ms | same |
+| Mobile data cut for 1 s (2 runs) | "You're offline" flashed each time | nothing shown | versionCode 9 and 10 on the emulator |
+| Mobile data cut for 6 s | offline screen at 0.4 s | offline screen at 2.3 s, clears by itself | same |
+| Website: dead connection on a tab | skeleton for good | "Still loading…" and Reload by 13 s | production build in Edge |
+
+Cold start is unchanged within noise (3 runs, from the launcher to the first
+screen): versionCode 9 2.7 to 4.2 s, versionCode 10 2.3 to 2.7 s.
+
+**Not tested on a device:** nothing here used a real login, so signed-in pages
+in the app itself are still to confirm with the checklist below. The silent
+reload after a passing network error has unit tests only: the emulator
+doesn't produce a real `ERR_NETWORK_CHANGED`.
 
 ## Clean-up pass of 2026-10-28
 
@@ -124,7 +150,7 @@ owner keeps the newest signed APK outside the repository and hands it over
 directly.
 
 1. Copy the APK to the phone, or open the private link from the owner, which
-   points at the EAS build file. EAS deletes build files after about 30
+   points at the EAS build file. EAS deletes build files after about 14
    days, so that link stops working then; the owner's APK file doesn't.
 2. Open the file. If Android asks, allow installs from that source:
    *Settings → Apps → (your browser or file manager) → Install unknown
@@ -169,8 +195,8 @@ changed data. These need a person with a phone and their own account:
 - [ ] Move an order's stage on the phone. The website shows the new stage.
 - [ ] Put the phone away for 2+ minutes, change an order on the website,
       then open the app. The change is there.
-- [ ] Turn on flight mode, then off. The offline screen appears and clears
-      by itself, and live updates work again.
+- [ ] Turn on flight mode for 5 seconds, then off. The offline screen appears
+      after about 2 s and clears by itself, and live updates work again.
 - [ ] Delete the test order afterwards, the way you normally would.
 
 **Feel**
@@ -186,8 +212,11 @@ changed data. These need a person with a phone and their own account:
 
 **Page switching (the loading fix)**
 - [ ] Switch between Orders, an order, Activity, Settings and back, about
-      20 times on mobile data. No tab stays on the grey skeleton for more
-      than about 8 s. If one does, the app reloads it by itself.
+      20 times on mobile data. A slow tab shows "Try again" or lands by
+      itself. On a dead connection the app reloads it by itself after about
+      12 s.
+- [ ] Switch to another app for a minute and come back. The page does not
+      reload, and the data is up to date.
 - [ ] Put the phone away for 2+ minutes on a tab, then open the app and
       switch tabs at once. The tab loads (it may reload itself once).
 - [ ] Open Diagnostics (see above) and **Share** the list to yourself.

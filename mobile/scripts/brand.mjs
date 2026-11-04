@@ -1,62 +1,47 @@
 // @ts-check
-// The NR Management monogram: an original "NR" drawn as plain strokes (no
-// font, no third-party artwork) in the website's palette. The GitHub social
-// preview and docs/assets/app-icon.png are rendered from here by
-// scripts/render-assets.mjs. The app's icons now use the owner's logo
-// (scripts/render-logo.py).
+// The README icon and the GitHub social preview, built around the owner's
+// logo (assets/icon.png, itself rendered by scripts/render-logo.py). Rendered
+// by scripts/render-assets.mjs.
 
 export const PALETTE = {
   ground: "#0a0a0a",
-  panel: "#111111",
   ink: "#ededed",
   muted: "#a1a1a1",
-  accent: "#3b82f6",
+  gold: "#f8be03",
 };
 
-/**
- * The glyph on a 1024 grid, centred on (512, 512): N, then R whose leg is
- * the accent colour. Bounding box incl. stroke ≈ 624 × 424.
- * @param {{ ink?: string, accent?: string, scale?: number }} [o]
- */
-export function glyph({ ink = PALETTE.ink, accent = PALETTE.accent, scale = 1 } = {}) {
-  // Scaled about the centre with a nested viewport, not a geometry
-  // attribute: the website's Tailwind build scans every committed text
-  // file, and that attribute's name is also a utility class, which would
-  // add an unused rule to the website's CSS.
-  const size = 1024 * scale;
-  const at = 512 - size / 2;
-  return `<svg x="${at}" y="${at}" width="${size}" height="${size}" viewBox="0 0 1024 1024" overflow="visible">
-  <g fill="none" stroke-width="64" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M232 692V332L452 692V332" stroke="${ink}"/>
-    <path d="M572 692V332H682a108 108 0 0 1 0 216H572" stroke="${ink}"/>
-    <path d="M672 548L792 692" stroke="${accent}"/>
-  </g>
-  </svg>`;
+/** @param {string} logo the logo as a data: address */
+function tile(logo) {
+  return `<clipPath id="tile"><rect width="1024" height="1024" rx="220"/></clipPath>
+    <image href="${logo}" width="1024" height="1024" clip-path="url(#tile)"/>`;
 }
 
-/** Full app icon: rounded ground with a faint rim, glyph inside. */
-export function iconSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <rect width="1024" height="1024" fill="${PALETTE.ground}"/>
-  <rect x="40" y="40" width="944" height="944" rx="200" fill="none" stroke="${PALETTE.ink}" stroke-opacity="0.14" stroke-width="8"/>
-  ${glyph({ scale: 0.92 })}
+/**
+ * The logo on its white ground, with rounded corners.
+ * @param {string} logo
+ */
+export function iconSvg(logo) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1024" height="1024" viewBox="0 0 1024 1024">
+  ${tile(logo)}
 </svg>`;
 }
 
-/** 1280×640 GitHub social preview. Text uses the font given to resvg. */
-export function socialPreviewSvg() {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+/**
+ * 1280×640 GitHub social preview. Text uses the font given to resvg.
+ * @param {string} logo
+ */
+export function socialPreviewSvg(logo) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1280" height="640" viewBox="0 0 1280 640">
   <rect width="1280" height="640" fill="${PALETTE.ground}"/>
   <rect x="24" y="24" width="1232" height="592" rx="28" fill="none" stroke="${PALETTE.ink}" stroke-opacity="0.08" stroke-width="2"/>
   <svg x="96" y="152" width="335.872" height="335.872" viewBox="0 0 1024 1024">
-    <rect width="1024" height="1024" rx="220" fill="${PALETTE.panel}" stroke="${PALETTE.ink}" stroke-opacity="0.16" stroke-width="8"/>
-    ${glyph({ scale: 0.92 })}
+    ${tile(logo)}
   </svg>
   <g font-family="Geist, DejaVu Sans, sans-serif">
     <text x="480" y="286" font-size="72" font-weight="600" fill="${PALETTE.ink}">NR Management</text>
     <text x="482" y="348" font-size="30" fill="${PALETTE.muted}">Order management for NR Industries</text>
     <text x="482" y="392" font-size="30" fill="${PALETTE.muted}">Website + Android app · real-time · Supabase</text>
-    <rect x="482" y="430" width="96" height="6" rx="3" fill="${PALETTE.accent}"/>
+    <rect x="482" y="430" width="96" height="6" rx="3" fill="${PALETTE.gold}"/>
   </g>
 </svg>`;
 }

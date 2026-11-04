@@ -1,10 +1,9 @@
 // @ts-check
 // Renders the documentation images from scripts/brand.mjs:
 //   node scripts/render-assets.mjs
-// Writes mobile/assets/brand/*.svg, the GitHub social preview at
-// docs/assets/social-preview.png and docs/assets/app-icon.png.
-// The app's own icons, splash and notification icon come from the owner's
-// logo instead: see scripts/render-logo.py.
+// Writes the GitHub social preview at docs/assets/social-preview.png and
+// docs/assets/app-icon.png, both from the logo at assets/icon.png. The app's
+// own icons, splash and notification icon: see scripts/render-logo.py.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,14 +34,7 @@ function render(svg, width, out) {
   console.log(`${path.relative(repo, out)}  ${width}px  ${png.length} B`);
 }
 
-const brand = path.join(mobile, "assets", "brand");
-fs.mkdirSync(brand, { recursive: true });
+const logo = `data:image/png;base64,${fs.readFileSync(path.join(mobile, "assets", "icon.png")).toString("base64")}`;
 
-const sources = {
-  "icon.svg": iconSvg(),
-  "social-preview.svg": socialPreviewSvg(),
-};
-for (const [name, svg] of Object.entries(sources)) fs.writeFileSync(path.join(brand, name), svg + "\n");
-
-render(sources["social-preview.svg"], 1280, path.join(repo, "docs/assets/social-preview.png"));
-render(sources["icon.svg"], 256, path.join(repo, "docs/assets/app-icon.png"));
+render(socialPreviewSvg(logo), 1280, path.join(repo, "docs/assets/social-preview.png"));
+render(iconSvg(logo), 256, path.join(repo, "docs/assets/app-icon.png"));

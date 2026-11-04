@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Menu, LogOut, ChevronRight } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { NotificationsBell } from "./NotificationsBell";
@@ -64,6 +64,15 @@ export function Shell({
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const router = useRouter();
+
+  // The Android app, back from the background, asks for fresh data: the page
+  // re-reads it without a tab reload, so scroll and open menus stay.
+  useEffect(() => {
+    const refresh = () => router.refresh();
+    window.addEventListener("nr-app-resume", refresh);
+    return () => window.removeEventListener("nr-app-resume", refresh);
+  }, [router]);
 
   return (
     <div className="flex min-h-screen bg-bg">

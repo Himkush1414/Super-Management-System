@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import loading from "../src/loading.js";
 
-const { RETRY_WINDOW_MS, LOG_MAX, SERVER_RETRY_MS, createLoadState, onStuck, retryHow, pathOnly, addEntry, parseLog, formatReport } = loading;
+const { RETRY_WINDOW_MS, LOG_MAX, SERVER_RETRY_MS, OFFLINE_GRACE_MS, createLoadState, createOfflineGrace, isTransientLoadError, onStuck, retryHow, pathOnly, addEntry, parseLog, formatReport } = loading;
 const A = "https://site/dashboard/activity";
 
 test("a retry of the page already showing is a native reload; a page that never left loads its link", () => {
@@ -119,4 +119,37 @@ test("a load that works starts the server-error retries afresh", () => {
   load.started();
   load.finished();
   assert.equal(load.nextServerRetry(), 10000);
+});
+
+test("a short offline moment never reaches the screen; a lasting one does, once", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let shown = 0;
+  const grace = createOfflineGrace(() => shown++);
+  grace.change(false);
+  t.mock.timers.tick(OFFLINE_GRACE_MS - 1);
+  grace.change(true); // back on another network within the wait
+  t.mock.timers.tick(OFFLINE_GRACE_MS * 2);
+  assert.equal(shown, 0, "a flap shows nothing");
+
+  grace.change(false);
+  t.mock.timers.tick(OFFLINE_GRACE_MS / 2);
+  grace.change(false); // reported again: the wait doesn't start over
+  t.mock.timers.tick(OFFLINE_GRACE_MS / 2);
+  assert.equal(shown, 1);
+  t.mock.timers.tick(OFFLINE_GRACE_MS * 2);
+  assert.equal(shown, 1);
+
+  grace.change(false);
+  grace.stop();
+  t.mock.timers.tick(OFFLINE_GRACE_MS * 2);
+  assert.equal(shown, 1, "stopped: nothing fires");
+});
+
+test("passing network errors are told from lasting ones", () => {
+  for (const e of ["net::ERR_NETWORK_CHANGED", "net::ERR_CONNECTION_RESET", "net::ERR_CONNECTION_CLOSED", "net::ERR_TIMED_OUT", "net::ERR_QUIC_PROTOCOL_ERROR", "net::ERR_HTTP2_PROTOCOL_ERROR"]) {
+    assert.equal(isTransientLoadError(e), true, e);
+  }
+  for (const e of ["net::ERR_INTERNET_DISCONNECTED", "net::ERR_NAME_NOT_RESOLVED", "net::ERR_CERT_DATE_INVALID", "net::ERR_CONNECTION_REFUSED", "", undefined]) {
+    assert.equal(isTransientLoadError(e), false, String(e));
+  }
 });

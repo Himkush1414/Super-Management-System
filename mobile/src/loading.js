@@ -75,6 +75,53 @@ function createLoadState() {
   };
 }
 
+/** A lost connection covers the page only if it is still lost after this. */
+const OFFLINE_GRACE_MS = 2000;
+
+/**
+ * Connection changes as the OS reports them, with a grace period: switching
+ * between Wi-Fi and mobile data reports "offline" for a moment. `confirm`
+ * runs only when the connection has stayed lost for the whole wait.
+ *
+ * @param {() => void} confirm
+ * @param {number} [waitMs]
+ */
+function createOfflineGrace(confirm, waitMs = OFFLINE_GRACE_MS) {
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let timer = null;
+  const stop = () => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  };
+  return {
+    /** @param {boolean} online */
+    change(online) {
+      if (online) stop();
+      else if (timer === null) {
+        timer = setTimeout(() => {
+          timer = null;
+          confirm();
+        }, waitMs);
+      }
+    },
+    stop,
+  };
+}
+
+/** A page load cut off by a passing network problem waits this long, then loads again. */
+const FLAP_RETRY_MS = 1000;
+const TRANSIENT_ERROR = /\bERR_(NETWORK_CHANGED|NETWORK_IO_SUSPENDED|CONNECTION_RESET|CONNECTION_CLOSED|CONNECTION_ABORTED|CONNECTION_TIMED_OUT|TIMED_OUT|EMPTY_RESPONSE|QUIC_PROTOCOL_ERROR|HTTP2_PROTOCOL_ERROR|SPDY_PROTOCOL_ERROR)\b/;
+
+/**
+ * Whether a WebView load error is a passing network problem (the network
+ * changed, a connection was cut) and not a lasting one (no internet, DNS, TLS).
+ *
+ * @param {string | undefined} description
+ */
+function isTransientLoadError(description) {
+  return TRANSIENT_ERROR.test(String(description ?? ""));
+}
+
 /** The address without its #fragment: the same page for retry purposes. */
 function pageKey(/** @type {string} */ href) {
   return String(href).split("#")[0];
@@ -182,4 +229,4 @@ function formatReport(log, about) {
   return lines.join("\n");
 }
 
-module.exports = { RETRY_WINDOW_MS, LOG_MAX, SERVER_RETRY_MS, createLoadState, onStuck, retryHow, pathOnly, addEntry, parseLog, formatReport, clock };
+module.exports = { RETRY_WINDOW_MS, LOG_MAX, SERVER_RETRY_MS, OFFLINE_GRACE_MS, FLAP_RETRY_MS, createLoadState, createOfflineGrace, isTransientLoadError, onStuck, retryHow, pathOnly, addEntry, parseLog, formatReport, clock };

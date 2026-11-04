@@ -21,7 +21,7 @@ import { createAssembler } from "./src/fileAssembler";
 import { createPushRegistrar, ensureChannel } from "./src/push";
 import * as Application from "expo-application";
 import { MAX_MS as WATCH_MAX_MS, STALL_MS } from "./src/watchdog";
-import { addEntry, createLoadState, onStuck, pathOnly, retryHow } from "./src/loading";
+import { addEntry, createLoadState, createOfflineGrace, FLAP_RETRY_MS, isTransientLoadError, onStuck, pathOnly, retryHow } from "./src/loading";
 import { loadLog, saveLog } from "./src/diagnosticsStore";
 import { Diagnostics } from "./src/Diagnostics";
 
@@ -166,6 +166,10 @@ function Main() {
   }, []);
   // the last automatic retry of a stuck page (one per address per minute)
   const lastRetry = useRef(/** @type {import('./src/loading').RetryMark | null} */ (null));
+  // the last silent reload after a passing network error (one per address per minute)
+  const lastFlapRetry = useRef(/** @type {import('./src/loading').RetryMark | null} */ (null));
+  // a lost connection only covers the page if it lasts (src/loading.js)
+  const offlineGrace = useRef(/** @type {ReturnType<typeof createOfflineGrace> | null} */ (null));
 
   const colors = useMemo(() => shellColors(bg), [bg]);
 
@@ -312,6 +316,45 @@ function Main() {
     stuckRef.current = onPageStuck;
   }, [onPageStuck]);
 
+  /**
+   * The page itself failed to load. A passing network problem (the network
+   * changed, a connection was cut) while the phone is online gets one silent
+   * reload per address per minute; anything else gets the error screen.
+   */
+  const onLoadFailed = useCallback((
+    /** @type {string | undefined} */ url,
+    /** @type {string | undefined} */ detail,
+  ) => {
+    clearSlowTimer();
+    clearNoStartTimer();
+    const failed = () => {
+      load.loadError();
+      showError("offline", detail);
+    };
+    if (!isTransientLoadError(detail)) {
+      failed();
+      return;
+    }
+    const href = url && decide(url, POLICY) === "load" ? url : currentUrl.current;
+    const { action, mark } = onStuck(lastFlapRetry.current, href, Date.now());
+    lastFlapRetry.current = mark;
+    if (action !== "retry") {
+      failed();
+      return;
+    }
+    void NetInfo.fetch()
+      .catch(() => null)
+      .then((s) => {
+        if (s && !isOnline(s)) {
+          failed();
+          return;
+        }
+        record({ at: Date.now(), kind: "load", path: pathOnly(href), ms: null, result: "retried", note: detail });
+        setPageLoading(true);
+        setTimeout(() => startLoad(href, retryHow(href, currentUrl.current)), FLAP_RETRY_MS);
+      });
+  }, [clearSlowTimer, clearNoStartTimer, load, record, showError, startLoad]);
+
   // the first page: the WebView starts it as it mounts
   useEffect(() => {
     startLoad(startUrl, null);
@@ -338,21 +381,35 @@ function Main() {
     else webRef.current?.injectJavaScript("window.__nrResume&&window.__nrResume(0);true;");
   }, [load, startLoad]);
 
-  // connection lost: the offline screen covers the page (which stays
-  // underneath, untouched). Connection back: the screen goes away by
-  // itself and realtime reconnects at once; a page that had failed to
-  // load is loaded again.
+  // connection lost for more than a moment: the offline screen covers the
+  // page (which stays underneath, untouched). Connection back: the screen
+  // goes away by itself and realtime reconnects at once; a page that had
+  // failed to load is loaded again.
   useEffect(() => {
     let wasOnline = true;
-    return NetInfo.addEventListener((s) => {
+    const grace = createOfflineGrace(() => {
+      void NetInfo.fetch()
+        .catch(() => null)
+        .then((s) => {
+          if (!s || isOnline(s)) return;
+          setErrorKind("offline");
+          setOffline(true);
+        });
+    });
+    offlineGrace.current = grace;
+    const unsubscribe = NetInfo.addEventListener((s) => {
       const online = isOnline(s);
-      if (!online) {
-        setErrorKind("offline");
-        setOffline(true);
+      grace.change(online);
+      if (online && !wasOnline) {
+        if (offlineRef.current) void retry();
+        else webRef.current?.injectJavaScript("window.__nrResume&&window.__nrResume(0);true;");
       }
-      else if (!wasOnline && offlineRef.current) void retry();
       wasOnline = online;
     });
+    return () => {
+      unsubscribe();
+      grace.stop();
+    };
   }, [retry]);
 
   // back to the foreground: retry if offline; else check the connection
@@ -379,8 +436,7 @@ function Main() {
           const online = !s || isOnline(s);
           record({ at: Date.now(), kind: "resume", path: "", ms: away, result: online ? "online" : "offline", note: `away ${Math.round(away / 1000)} s` });
           if (!online) {
-            setErrorKind("offline");
-            setOffline(true);
+            offlineGrace.current?.change(false);
             return;
           }
           webRef.current?.injectJavaScript(`window.__nrResume&&window.__nrResume(${away});true;`);
@@ -690,13 +746,7 @@ function Main() {
               pendingLink.current = null;
               if (link) navigate(link);
             }}
-            onError={(e) => {
-              // the page itself failed to load (no network, DNS, TLS…)
-              clearSlowTimer();
-              clearNoStartTimer();
-              load.loadError();
-              showError("offline", e.nativeEvent.description);
-            }}
+            onError={(e) => onLoadFailed(e.nativeEvent.url, e.nativeEvent.description)}
             onHttpError={(e) => {
               // the website answered with a server error (main page only):
               // a native screen instead of a raw error page

@@ -6,6 +6,8 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { PunchOrderForm } from "@/components/dashboard/PunchOrderForm";
 import { displayName } from "@/lib/names";
 import type { Profile } from "@/types/database.types";
+import { RefreshOnRevisit } from "@/components/dashboard/RefreshOnRevisit";
+import { renderStamp } from "@/lib/render-stamp";
 
 export const metadata = { title: "Punch Order" };
 
@@ -44,6 +46,7 @@ export default async function NewOrderPage() {
 
   return (
     <>
+      <RefreshOnRevisit stamp={renderStamp()} />
       <PageHeader
         title="Punch Order"
         description="Create a production order and send it to a production team."

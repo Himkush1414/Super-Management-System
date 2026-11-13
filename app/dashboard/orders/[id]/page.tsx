@@ -19,6 +19,8 @@ import { MAX_STAGE, orderTitle, stageName, totalQuantity } from "@/lib/orders";
 import { GST_RATE, formatINR, orderMoney } from "@/lib/money";
 import { perf } from "@/lib/perf";
 import { formatDateTime, formatDay } from "@/lib/utils";
+import { RefreshOnRevisit } from "@/components/dashboard/RefreshOnRevisit";
+import { renderStamp } from "@/lib/render-stamp";
 
 export async function generateMetadata({
   params,
@@ -74,6 +76,7 @@ export default async function OrderDetailPage({
 
   return (
     <>
+      <RefreshOnRevisit stamp={renderStamp()} />
       <LiveRefresh
         channel={`order-${id}`}
         tables={[

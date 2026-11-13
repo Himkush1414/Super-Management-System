@@ -7,6 +7,8 @@ import { PageHeader } from "@/components/shared/Page";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { SettingsForm } from "@/components/dashboard/SettingsForm";
 import type { ProductionSettings } from "@/types/database.types";
+import { RefreshOnRevisit } from "@/components/dashboard/RefreshOnRevisit";
+import { renderStamp } from "@/lib/render-stamp";
 
 export const metadata = { title: "Settings" };
 
@@ -29,6 +31,7 @@ export default async function SettingsPage() {
 
   return (
     <>
+      <RefreshOnRevisit stamp={renderStamp()} />
       <PageHeader
         title={settingUp ? "Finish setting up your account" : "Settings"}
         description={

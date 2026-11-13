@@ -2,7 +2,8 @@
 
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, LazyMotion, m } from "framer-motion";
+import { loadMotion } from "@/lib/motion";
 import { X } from "lucide-react";
 import { Logo } from "@/components/shared/Logo";
 import { NAV_ITEMS } from "./nav-items";
@@ -106,39 +107,41 @@ export function Sidebar({
         <UserFooter name={name} role={role} caption={caption} />
       </aside>
 
-      <AnimatePresence>
-        {mobileOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={onClose}
-              className="fixed inset-0 z-40 bg-black/60 md:hidden"
-            />
-            <motion.aside
-              initial={{ x: -280 }}
-              animate={{ x: 0 }}
-              exit={{ x: -280 }}
-              transition={{ type: "tween", duration: 0.22 }}
-              className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-bg-subtle md:hidden"
-            >
-              <div className="flex h-14 items-center justify-between px-4 text-text">
-                <Logo />
-                <button
-                  onClick={onClose}
-                  className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-overlay/[0.06]"
-                  aria-label="Close menu"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-              <NavList role={role} onNavigate={onClose} />
-              <UserFooter name={name} role={role} caption={caption} />
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
+      <LazyMotion features={loadMotion} strict>
+        <AnimatePresence>
+          {mobileOpen && (
+            <>
+              <m.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={onClose}
+                className="fixed inset-0 z-40 bg-black/60 md:hidden"
+              />
+              <m.aside
+                initial={{ x: -280 }}
+                animate={{ x: 0 }}
+                exit={{ x: -280 }}
+                transition={{ type: "tween", duration: 0.22 }}
+                className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-bg-subtle md:hidden"
+              >
+                <div className="flex h-14 items-center justify-between px-4 text-text">
+                  <Logo />
+                  <button
+                    onClick={onClose}
+                    className="nr-interactive inline-flex size-8 items-center justify-center rounded-lg text-text-secondary hover:bg-overlay/[0.06]"
+                    aria-label="Close menu"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <NavList role={role} onNavigate={onClose} />
+                <UserFooter name={name} role={role} caption={caption} />
+              </m.aside>
+            </>
+          )}
+        </AnimatePresence>
+      </LazyMotion>
     </>
   );
 }

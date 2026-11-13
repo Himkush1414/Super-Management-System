@@ -31,7 +31,12 @@ export function StageTimerBar({
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!target) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    const id = setInterval(() => {
+      const t = Date.now();
+      setNow(t);
+      // nothing changes after this: stop re-rendering the page every second
+      if (t >= target) clearInterval(id);
+    }, 1000);
     return () => clearInterval(id);
   }, [target]);
 

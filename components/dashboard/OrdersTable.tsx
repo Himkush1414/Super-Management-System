@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useDeferredValue, useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, CalendarDays } from "lucide-react";
 import type { OrderRow } from "@/lib/data/orders";
@@ -42,25 +42,43 @@ export function OrdersTable({
 }) {
   const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState(STAGE_FILTER_ALL);
+  // The box shows each keystroke at once; the list follows as an
+  // interruptible render (it used to block typing on long lists).
+  const deferredQuery = useDeferredValue(query);
+  const deferredStage = useDeferredValue(stageFilter);
+
+  // The searchable text of each order, built once per list instead of on
+  // every keystroke. Fields are joined with a line break, which a search box
+  // can't contain, so a match never spans two fields (same results as before).
+  const searchable = useMemo(
+    () =>
+      orders.map((o) => ({
+        o,
+        text: [
+          ...o.items.flatMap((i) => [i.product_name, i.transformer_rating]),
+          o.client_name,
+          o.puncher?.label,
+          names(o),
+          o.status,
+        ]
+          .filter(Boolean)
+          .join("\n")
+          .toLowerCase(),
+      })),
+    [orders],
+  );
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return orders.filter((o) => {
-      if (stageFilter !== STAGE_FILTER_ALL && String(o.stage) !== stageFilter) {
-        return false;
-      }
-      if (!q) return true;
-      return [
-        ...o.items.flatMap((i) => [i.product_name, i.transformer_rating]),
-        o.client_name,
-        o.puncher?.label,
-        names(o),
-        o.status,
-      ]
-        .filter(Boolean)
-        .some((field) => field!.toLowerCase().includes(q));
-    });
-  }, [orders, query, stageFilter]);
+    const q = deferredQuery.trim().toLowerCase();
+    return searchable
+      .filter(({ o, text }) => {
+        if (deferredStage !== STAGE_FILTER_ALL && String(o.stage) !== deferredStage) {
+          return false;
+        }
+        return !q || text.includes(q);
+      })
+      .map(({ o }) => o);
+  }, [searchable, deferredQuery, deferredStage]);
 
   return (
     <div className="space-y-3">
@@ -103,103 +121,127 @@ export function OrdersTable({
         </p>
       ) : (
         <>
-          {/* phones: stacked cards */}
-          <ul className="space-y-2 md:hidden">
-            {filtered.map((o) => (
-              <li key={o.id}>
-                <Link
-                  href={`/dashboard/orders/${o.id}`}
-                  className="nr-interactive block rounded-xl border border-border bg-panel/60 p-4 active:bg-overlay/[0.03]"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{orderTitle(o)}</p>
-                      <p className="mt-0.5 truncate text-[12px] text-text-secondary">{subline(o)}</p>
-                    </div>
-                    {showPrice && (
-                      <span className="shrink-0 text-[13px] font-medium tnum">
-                        {grandTotal(o)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-3">
-                    <StageTracker stage={o.stage} compact />
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-text-tertiary">
-                    <StageBadge stage={o.stage} />
-                    {o.status !== "active" && <OrderStatusBadge status={o.status} />}
-                    <span className="tnum">Qty {totalQuantity(o)}</span>
-                    {o.expected_delivery && (
-                      <span className="inline-flex items-center gap-1">
-                        <CalendarDays size={12} /> {formatDay(o.expected_delivery)}
-                      </span>
-                    )}
-                    {showAssignees && names(o) && <span>→ {names(o)}</span>}
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-
-          {/* tablet / desktop: table */}
-          <div className="hidden md:block">
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Product</TH>
-                  {showPuncher && <TH className="whitespace-nowrap">Punched by</TH>}
-                  {showAssignees && <TH>Production</TH>}
-                  <TH numeric>Qty</TH>
-                  <TH>Stage</TH>
-                  {showPrice && <TH numeric>Grand total (incl. {GST_RATE}% GST)</TH>}
-                  <TH numeric>Delivery</TH>
-                </TR>
-              </THead>
-              <tbody>
-                {filtered.map((o) => (
-                  <TR key={o.id} className="group relative cursor-pointer">
-                    <TD className="min-w-[220px]">
-                      <Link
-                        href={`/dashboard/orders/${o.id}`}
-                        className="font-medium text-text group-hover:text-accent after:absolute after:inset-0"
-                      >
-                        {orderTitle(o)}
-                      </Link>
-                      <span className="block text-[12px] text-text-tertiary">
-                        {subline(o)}
-                        {o.status !== "active" && (
-                          <span className="ml-1 text-status-warning">· waiting on phone</span>
-                        )}
-                      </span>
-                    </TD>
-                    {showPuncher && (
-                      <TD className="whitespace-nowrap text-text-secondary">
-                        {o.puncher?.label ?? "—"}
-                      </TD>
-                    )}
-                    {showAssignees && (
-                      <TD className="max-w-[170px] truncate text-text-secondary" title={names(o)}>
-                        {names(o) || "—"}
-                      </TD>
-                    )}
-                    <TD numeric>{totalQuantity(o)}</TD>
-                    <TD>
-                      <StageBadge stage={o.stage} />
-                    </TD>
-                    {showPrice && <TD numeric className="whitespace-nowrap font-medium">{grandTotal(o)}</TD>}
-                    <TD numeric className="whitespace-nowrap text-text-secondary">
-                      {formatDay(o.expected_delivery)}
-                      <span className="block text-[11px] text-text-tertiary">
-                        sent {formatDate(o.created_at)}
-                      </span>
-                    </TD>
-                  </TR>
-                ))}
-              </tbody>
-            </Table>
-          </div>
+          <OrderCards orders={filtered} showPrice={showPrice} showAssignees={showAssignees} />
+          <OrderTable orders={filtered} showPuncher={showPuncher} showAssignees={showAssignees} showPrice={showPrice} />
         </>
       )}
     </div>
   );
 }
+
+type ListProps = { orders: OrderRow[]; showPrice: boolean; showAssignees: boolean };
+
+/**
+ * The two layouts (both in the page; CSS shows one), memoized: a keystroke
+ * re-renders them only once the filtered list itself has changed.
+ */
+const OrderCards = memo(function OrderCards({ orders, showPrice, showAssignees }: ListProps) {
+  return (
+    <>
+      {/* phones: stacked cards */}
+      <ul className="space-y-2 md:hidden">
+        {orders.map((o) => (
+          <li key={o.id}>
+            <Link
+              href={`/dashboard/orders/${o.id}`}
+              className="nr-interactive block rounded-xl border border-border bg-panel/60 p-4 active:bg-overlay/[0.03]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{orderTitle(o)}</p>
+                  <p className="mt-0.5 truncate text-[12px] text-text-secondary">{subline(o)}</p>
+                </div>
+                {showPrice && (
+                  <span className="shrink-0 text-[13px] font-medium tnum">
+                    {grandTotal(o)}
+                  </span>
+                )}
+              </div>
+              <div className="mt-3">
+                <StageTracker stage={o.stage} compact />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-text-tertiary">
+                <StageBadge stage={o.stage} />
+                {o.status !== "active" && <OrderStatusBadge status={o.status} />}
+                <span className="tnum">Qty {totalQuantity(o)}</span>
+                {o.expected_delivery && (
+                  <span className="inline-flex items-center gap-1">
+                    <CalendarDays size={12} /> {formatDay(o.expected_delivery)}
+                  </span>
+                )}
+                {showAssignees && names(o) && <span>→ {names(o)}</span>}
+              </div>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+});
+
+const OrderTable = memo(function OrderTable({
+  orders,
+  showPrice,
+  showAssignees,
+  showPuncher,
+}: ListProps & { showPuncher: boolean }) {
+  // tablet / desktop: table
+  return (
+    <div className="hidden md:block">
+      <Table>
+        <THead>
+          <TR>
+            <TH>Product</TH>
+            {showPuncher && <TH className="whitespace-nowrap">Punched by</TH>}
+            {showAssignees && <TH>Production</TH>}
+            <TH numeric>Qty</TH>
+            <TH>Stage</TH>
+            {showPrice && <TH numeric>Grand total (incl. {GST_RATE}% GST)</TH>}
+            <TH numeric>Delivery</TH>
+          </TR>
+        </THead>
+        <tbody>
+          {orders.map((o) => (
+            <TR key={o.id} className="group relative cursor-pointer">
+              <TD className="min-w-[220px]">
+                <Link
+                  href={`/dashboard/orders/${o.id}`}
+                  className="font-medium text-text group-hover:text-accent after:absolute after:inset-0"
+                >
+                  {orderTitle(o)}
+                </Link>
+                <span className="block text-[12px] text-text-tertiary">
+                  {subline(o)}
+                  {o.status !== "active" && (
+                    <span className="ml-1 text-status-warning">· waiting on phone</span>
+                  )}
+                </span>
+              </TD>
+              {showPuncher && (
+                <TD className="whitespace-nowrap text-text-secondary">
+                  {o.puncher?.label ?? "—"}
+                </TD>
+              )}
+              {showAssignees && (
+                <TD className="max-w-[170px] truncate text-text-secondary" title={names(o)}>
+                  {names(o) || "—"}
+                </TD>
+              )}
+              <TD numeric>{totalQuantity(o)}</TD>
+              <TD>
+                <StageBadge stage={o.stage} />
+              </TD>
+              {showPrice && <TD numeric className="whitespace-nowrap font-medium">{grandTotal(o)}</TD>}
+              <TD numeric className="whitespace-nowrap text-text-secondary">
+                {formatDay(o.expected_delivery)}
+                <span className="block text-[11px] text-text-tertiary">
+                  sent {formatDate(o.created_at)}
+                </span>
+              </TD>
+            </TR>
+          ))}
+        </tbody>
+      </Table>
+    </div>
+  );
+});

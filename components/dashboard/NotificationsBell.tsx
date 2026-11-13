@@ -17,6 +17,10 @@ export function NotificationsBell({
 }) {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationRow[]>([]);
+  // false until the first list has arrived: before that, an empty list is
+  // "not here yet", not "Nothing yet."
+  const [loaded, setLoaded] = useState(false);
+  const loadSeq = useRef(0);
   const [unread, setUnread] = useUnreadCount(userId, initialUnread);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -29,13 +33,17 @@ export function NotificationsBell({
   }, []);
 
   async function load() {
+    const seq = ++loadSeq.current;
     const supabase = createClient();
     const { data } = await supabase
       .from("notifications")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(20);
+    // a newer load started meanwhile (the bell was opened again): it wins
+    if (seq !== loadSeq.current) return;
     setItems(data ?? []);
+    setLoaded(true);
   }
 
   async function markAllRead() {
@@ -87,7 +95,16 @@ export function NotificationsBell({
             </button>
           </div>
           <div className="max-h-96 overflow-y-auto">
-            {items.length === 0 ? (
+            {items.length === 0 && !loaded ? (
+              <div aria-busy="true" aria-label="Loading notifications" className="animate-pulse">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="space-y-1.5 border-b border-border px-4 py-3 last:border-0">
+                    <div className="h-3.5 w-2/3 rounded bg-elevated" />
+                    <div className="h-3 w-5/6 rounded bg-panel-2" />
+                  </div>
+                ))}
+              </div>
+            ) : items.length === 0 ? (
               <p className="px-4 py-8 text-center text-[13px] text-text-tertiary">
                 Nothing yet.
               </p>

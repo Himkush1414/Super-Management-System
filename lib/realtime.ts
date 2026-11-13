@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { channelRejoining, inAndroidApp, refreshForChange, refreshIfStale } from "@/lib/refresh";
 
 type Binding = {
   event?: "INSERT" | "UPDATE" | "DELETE" | "*";
@@ -26,12 +27,15 @@ type Chan = { on: (...args: unknown[]) => Chan; subscribe: (cb?: (status: Status
  * `onResync` runs when the channel has joined again after it was lost (the
  * connection dropped, the laptop slept, the server restarted). Realtime
  * doesn't replay what changed meanwhile, so the caller re-reads instead.
- * Returns a cleanup function.
+ * While such a channel is rejoining, lib/refresh.ts holds back other
+ * refreshes for it. Returns a cleanup function.
  */
 function subscribeAsUser(channelName: string, bindings: Binding[], onResync?: () => void): () => void {
   const supabase = createClient();
   let channel: Chan | null = null;
   let cancelled = false;
+  let joined = false;
+  let lost = false;
 
   void supabase.auth.getSession().then(({ data: { session } }) => {
     if (cancelled || !session) return;
@@ -46,16 +50,19 @@ function subscribeAsUser(channelName: string, bindings: Binding[], onResync?: ()
         b.cb,
       );
     }
-    let joined = false;
-    let lost = false;
     ch.subscribe((status) => {
       if (cancelled) return;
       if (status === "SUBSCRIBED") {
-        if (joined && lost) onResync?.();
+        if (joined && lost) {
+          if (onResync) channelRejoining(false);
+          onResync?.();
+        }
         joined = true;
         lost = false;
-      } else {
-        lost = true; // TIMED_OUT, CLOSED, CHANNEL_ERROR: the client rejoins by itself
+      } else if (!lost) {
+        // TIMED_OUT, CLOSED, CHANNEL_ERROR: the client rejoins by itself
+        lost = true;
+        if (joined && onResync) channelRejoining(true);
       }
     });
     channel = ch;
@@ -63,6 +70,7 @@ function subscribeAsUser(channelName: string, bindings: Binding[], onResync?: ()
 
   return () => {
     cancelled = true;
+    if (joined && lost && onResync) channelRejoining(false);
     if (channel) supabase.removeChannel(channel as never);
   };
 }
@@ -109,7 +117,8 @@ const HIDDEN_REFRESH_MS = 60_000;
  * used to trigger two full route refreshes back to back (each one also
  * invalidating and re-running every link prefetch on the page). Now they
  * collapse into one refresh, and a hidden tab defers its refresh until it is
- * visible again.
+ * visible again. Refreshes go through lib/refresh.ts, which merges them
+ * with the other refresh triggers on the page.
  */
 export function useLiveRefresh(channelName: string, tables: LiveTable[], debounceMs = 400) {
   // Also refreshed: after the live connection comes back (changes made while
@@ -131,7 +140,7 @@ export function useLiveRefresh(channelName: string, tables: LiveTable[], debounc
         return;
       }
       dirty = false;
-      router.refresh();
+      refreshForChange(router);
     };
     const schedule = () => {
       clearTimeout(timer);
@@ -145,7 +154,10 @@ export function useLiveRefresh(channelName: string, tables: LiveTable[], debounc
       }
       const away = hiddenAt ? Date.now() - hiddenAt : 0;
       hiddenAt = 0;
-      if (dirty || away > HIDDEN_REFRESH_MS) flush();
+      if (dirty) flush();
+      // The Android app reports its own return to the foreground a moment
+      // later (nr-app-resume, after its connection check), so it decides there.
+      else if (away > HIDDEN_REFRESH_MS && !inAndroidApp()) refreshIfStale(router);
     };
 
     const unsubscribe = subscribeAsUser(

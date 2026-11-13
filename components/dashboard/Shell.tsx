@@ -8,6 +8,7 @@ import { Sidebar } from "./Sidebar";
 import { NotificationsBell } from "./NotificationsBell";
 import { ThemeToggle } from "./ThemeToggle";
 import { logoutAction } from "@/lib/auth/actions";
+import { refreshIfStale } from "@/lib/refresh";
 import type { Role } from "@/lib/permissions";
 
 const CRUMB_LABELS: Record<string, string> = {
@@ -67,9 +68,10 @@ export function Shell({
   const router = useRouter();
 
   // The Android app, back from the background, asks for fresh data: the page
-  // re-reads it without a tab reload, so scroll and open menus stay.
+  // re-reads it without a tab reload, so scroll and open menus stay. Merged
+  // with the live channel's own refresh when it is rejoining (lib/refresh.ts).
   useEffect(() => {
-    const refresh = () => router.refresh();
+    const refresh = () => refreshIfStale(router);
     window.addEventListener("nr-app-resume", refresh);
     return () => window.removeEventListener("nr-app-resume", refresh);
   }, [router]);

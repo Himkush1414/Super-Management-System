@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { refreshIfStale } from "@/lib/refresh";
 
 /** stamp -> when this tab first showed that render (performance.now()) */
 const shown = new Map<string, number>();
@@ -36,7 +37,7 @@ export function RefreshOnRevisit({ stamp }: { stamp: string }) {
       }
       return;
     }
-    if (now - first >= FRESH_MS) router.refresh();
+    if (now - first >= FRESH_MS) refreshIfStale(router);
   }, [stamp, router]);
   return null;
 }

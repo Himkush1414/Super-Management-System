@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { browserClient } from "@/lib/supabase/lazy-client";
 import { channelRejoining, inAndroidApp, refreshForChange, refreshIfStale } from "@/lib/refresh";
 
 type Binding = {
@@ -31,18 +31,24 @@ type Chan = { on: (...args: unknown[]) => Chan; subscribe: (cb?: (status: Status
  * refreshes for it. Returns a cleanup function.
  */
 function subscribeAsUser(channelName: string, bindings: Binding[], onResync?: () => void): () => void {
-  const supabase = createClient();
+  let supabase: Awaited<ReturnType<typeof browserClient>> | null = null;
   let channel: Chan | null = null;
   let cancelled = false;
   let joined = false;
   let lost = false;
 
-  void supabase.auth.getSession().then(({ data: { session } }) => {
+  void (async () => {
+    const client = await browserClient();
+    if (cancelled) return;
+    supabase = client;
+    const {
+      data: { session },
+    } = await client.auth.getSession();
     if (cancelled || !session) return;
-    supabase.realtime.setAuth(session.access_token);
+    client.realtime.setAuth(session.access_token);
     // supabase-js overloads for "postgres_changes" are awkward to satisfy
     // generically; the runtime contract is stable.
-    let ch = supabase.channel(channelName) as unknown as Chan;
+    let ch = client.channel(channelName) as unknown as Chan;
     for (const b of bindings) {
       ch = ch.on(
         "postgres_changes",
@@ -66,12 +72,12 @@ function subscribeAsUser(channelName: string, bindings: Binding[], onResync?: ()
       }
     });
     channel = ch;
-  });
+  })();
 
   return () => {
     cancelled = true;
     if (joined && lost && onResync) channelRejoining(false);
-    if (channel) supabase.removeChannel(channel as never);
+    if (channel && supabase) supabase.removeChannel(channel as never);
   };
 }
 

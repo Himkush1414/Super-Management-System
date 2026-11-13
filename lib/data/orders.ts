@@ -41,10 +41,7 @@ export async function getOrders(
   return attach((orders ?? []) as Order[], parties);
 }
 
-/**
- * `cache()`d: the order detail page calls this from both generateMetadata and
- * the page body — without it every detail render fetched the order twice.
- */
+/** `cache()`d: one read per request, however many server components ask for it. */
 export const getOrder = cache(async (id: string): Promise<OrderRow | null> => {
   const pf = perf("getOrder");
   const supabase = await createClient();

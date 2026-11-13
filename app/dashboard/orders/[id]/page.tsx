@@ -21,16 +21,12 @@ import { perf } from "@/lib/perf";
 import { formatDateTime, formatDay } from "@/lib/utils";
 import { RefreshOnRevisit } from "@/components/dashboard/RefreshOnRevisit";
 import { renderStamp } from "@/lib/render-stamp";
+import { TabTitle } from "@/components/shared/TabTitle";
+import { tabTitle } from "@/lib/title";
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const order = await getOrder(id);
-  return { title: order ? orderTitle(order) : "Order" };
-}
+// The order's own title is set from the page (TabTitle): reading it here ran
+// for every prefetch of an order link too.
+export const metadata = { title: "Order" };
 
 export default async function OrderDetailPage({
   params,
@@ -77,6 +73,7 @@ export default async function OrderDetailPage({
   return (
     <>
       <RefreshOnRevisit stamp={renderStamp()} />
+      <TabTitle title={tabTitle(orderTitle(order))} />
       <LiveRefresh
         channel={`order-${id}`}
         tables={[

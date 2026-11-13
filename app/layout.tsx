@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { THEME_SCRIPT } from "@/lib/theme";
+import { TITLE_TEMPLATE } from "@/lib/title";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -16,7 +17,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: {
     default: "NR Industries — Power at the Best",
-    template: "%s · NR Industries",
+    template: TITLE_TEMPLATE,
   },
   description:
     "NR Industries designs and manufactures power and distribution transformers built for reliability at every scale.",

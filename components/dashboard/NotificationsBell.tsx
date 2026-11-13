@@ -47,12 +47,13 @@ export function NotificationsBell({
   }
 
   async function markAllRead() {
-    const supabase = createClient();
-    await supabase
-      .from("notifications")
-      .update({ read_at: new Date().toISOString() })
-      .is("read_at", null);
+    // shown as read at once; the same update as before, then the list is
+    // read again so it shows what the database has
+    const now = new Date().toISOString();
     setUnread(0);
+    setItems((prev) => prev.map((i) => (i.read_at ? i : { ...i, read_at: now })));
+    const supabase = createClient();
+    await supabase.from("notifications").update({ read_at: now }).is("read_at", null);
     load();
   }
 

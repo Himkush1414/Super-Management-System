@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Bell, Check } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { browserClient } from "@/lib/supabase/lazy-client";
 import { useUnreadCount } from "@/lib/realtime";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import type { NotificationRow } from "@/types/database.types";
@@ -34,7 +34,7 @@ export function NotificationsBell({
 
   async function load() {
     const seq = ++loadSeq.current;
-    const supabase = createClient();
+    const supabase = await browserClient();
     const { data } = await supabase
       .from("notifications")
       .select("*")
@@ -52,7 +52,7 @@ export function NotificationsBell({
     const now = new Date().toISOString();
     setUnread(0);
     setItems((prev) => prev.map((i) => (i.read_at ? i : { ...i, read_at: now })));
-    const supabase = createClient();
+    const supabase = await browserClient();
     await supabase.from("notifications").update({ read_at: now }).is("read_at", null);
     load();
   }
@@ -62,7 +62,7 @@ export function NotificationsBell({
     const now = new Date().toISOString();
     setItems((prev) => prev.map((i) => (i.id === n.id ? { ...i, read_at: now } : i)));
     setUnread((c) => Math.max(0, c - 1));
-    const supabase = createClient();
+    const supabase = await browserClient();
     await supabase.from("notifications").update({ read_at: now }).eq("id", n.id);
   }
 

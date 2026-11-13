@@ -49,6 +49,12 @@ const nextConfig: NextConfig = {
   experimental: {
     // server actions run behind auth; allow larger PDF/form payloads
     serverActions: { bodySizeLimit: "2mb" },
+    // A dashboard page visited in the last 30 s opens at once from the
+    // router's cache instead of showing a skeleton while the server renders
+    // it again. The page then re-reads its data in the background
+    // (components/dashboard/RefreshOnRevisit.tsx); server actions and live
+    // updates clear this cache, as before.
+    staleTimes: { dynamic: 30 },
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders() }];

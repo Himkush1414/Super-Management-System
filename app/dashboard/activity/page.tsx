@@ -10,6 +10,8 @@ import { formatDateTime, formatDay } from "@/lib/utils";
 import { stageName } from "@/lib/orders";
 import { GST_RATE, formatINR, orderMoney, plainAmount, toPaise } from "@/lib/money";
 import type { Json } from "@/types/database.types";
+import { RefreshOnRevisit } from "@/components/dashboard/RefreshOnRevisit";
+import { renderStamp } from "@/lib/render-stamp";
 
 export const metadata = { title: "Activity log" };
 
@@ -69,6 +71,7 @@ export default async function ActivityPage({
 
   return (
     <>
+      <RefreshOnRevisit stamp={renderStamp()} />
       <PageHeader
         title="Activity log"
         description="Every deletion made from Data management or an order page: what was removed, by whom, and when. Entries can't be edited or deleted."

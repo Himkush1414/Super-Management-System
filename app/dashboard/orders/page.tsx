@@ -13,6 +13,8 @@ import { OrderStatusBadge } from "@/components/shared/Badge";
 import { formatDay } from "@/lib/utils";
 import { orderTitle, stageName, totalQuantity } from "@/lib/orders";
 import { perf } from "@/lib/perf";
+import { RefreshOnRevisit } from "@/components/dashboard/RefreshOnRevisit";
+import { renderStamp } from "@/lib/render-stamp";
 
 export const metadata = { title: "Orders" };
 
@@ -39,6 +41,7 @@ export default async function OrdersPage() {
 
   return (
     <>
+      <RefreshOnRevisit stamp={renderStamp()} />
       <LiveRefresh channel="orders-list" tables={[{ table: "orders" }]} />
       <PageHeader
         title={isMarketing ? "Your orders" : "Orders"}
@@ -119,6 +122,7 @@ export default async function OrdersPage() {
 function ProductionView({ orders, userId }: { orders: OrderRow[]; userId: string }) {
   return (
     <>
+      <RefreshOnRevisit stamp={renderStamp()} />
       <LiveRefresh
         channel="orders-list-prod"
         tables={[

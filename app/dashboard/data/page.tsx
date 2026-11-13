@@ -12,6 +12,8 @@ import { DeleteButton } from "@/components/dashboard/DeleteButton";
 import { ResetAccount } from "@/components/dashboard/ResetAccount";
 import { orderTitle, stageName, totalQuantity } from "@/lib/orders";
 import { cn, formatDateTime, formatDay } from "@/lib/utils";
+import { RefreshOnRevisit } from "@/components/dashboard/RefreshOnRevisit";
+import { renderStamp } from "@/lib/render-stamp";
 
 export const metadata = { title: "Data management" };
 
@@ -47,6 +49,7 @@ export default async function DataPage({
 
   return (
     <>
+      <RefreshOnRevisit stamp={renderStamp()} />
       <PageHeader
         title="Data management"
         description="Remove data that marketing and production accounts have built up over time. Every deletion is recorded in the activity log with a copy of what was removed."

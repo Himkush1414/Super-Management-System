@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, LazyMotion, m } from "framer-motion";
 import { loadMotion } from "@/lib/motion";
@@ -21,16 +21,23 @@ export function Modal({
   children: React.ReactNode;
   wide?: boolean;
 }) {
+  // Callers pass a new onClose on every render; read the latest from a ref,
+  // so a re-render of the open dialog doesn't take the Escape listener and
+  // the page scroll lock off and put them back each time.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCloseRef.current();
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (typeof document === "undefined") return null;
 

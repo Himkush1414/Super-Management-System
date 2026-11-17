@@ -9,7 +9,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             "radial-gradient(55% 45% at 50% 0%, rgba(59,130,246,0.10), transparent 70%)",
         }}
       />
-      <div className="w-full max-w-sm">{children}</div>
+      <main className="w-full max-w-sm">{children}</main>
     </div>
   );
 }

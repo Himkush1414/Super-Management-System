@@ -19,7 +19,7 @@
  * reveals it to another role. `admin` believes it is the top level.
  */
 
-export const ROLES = ["head_admin", "admin", "marketing", "production"] as const;
+export const ROLES = ["head_admin", "admin", "marketing", "production", "inventory"] as const;
 export type Role = (typeof ROLES)[number];
 
 export type Permission =
@@ -34,7 +34,9 @@ export type Permission =
   | "profile.edit" // set your real name (marketing, production)
   | "roster.viewAll" // resolve every account's name (admin tier)
   | "data.delete" // delete orders / stage updates / reset a marketing or production account's data (admin tier)
-  | "audit.view"; // read the deletion audit trail (admin tier; head_admin's own rows only to head_admin)
+  | "audit.view" // read the deletion audit trail (admin tier; head_admin's own rows only to head_admin)
+  | "inventory.view" // open the Inventory module: list, history, exports (inventory; admin tier read-only)
+  | "inventory.manage"; // receive / issue / reverse, add / archive products, inventory settings (inventory only)
 
 const T = true;
 type Caps = Partial<Record<Permission, boolean>>;
@@ -47,6 +49,7 @@ const MATRIX: Record<Role, Caps> = {
     "roster.viewAll": T,
     "data.delete": T,
     "audit.view": T,
+    "inventory.view": T,
   },
   admin: {
     "orders.viewAll": T,
@@ -55,6 +58,7 @@ const MATRIX: Record<Role, Caps> = {
     "roster.viewAll": T,
     "data.delete": T,
     "audit.view": T,
+    "inventory.view": T,
   },
   marketing: {
     "orders.punch": T,
@@ -67,6 +71,12 @@ const MATRIX: Record<Role, Caps> = {
     "orders.advanceStage": T,
     "production.settings": T,
     "profile.edit": T,
+  },
+  // The store account: the Inventory module and nothing else (0027 / 0028;
+  // lib/auth/session.ts keeps it out of every other page).
+  inventory: {
+    "inventory.view": T,
+    "inventory.manage": T,
   },
 };
 

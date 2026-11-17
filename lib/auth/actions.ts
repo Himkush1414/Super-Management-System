@@ -109,6 +109,7 @@ export async function loginAction(
   const needsSetup =
     (me.role === "marketing" || me.role === "production") &&
     (!me.real_name || (me.role === "production" && !(ps?.phone && ps.confirmed_at)));
+  if (me.role === "inventory") redirect("/dashboard/inventory");
   redirect(needsSetup ? "/dashboard/settings" : "/dashboard/orders");
 }
 

@@ -11,7 +11,7 @@ export default async function DashboardLayout({
   // In parallel: the unread count is RLS-scoped to the caller already.
   const [ctx, { count }] = await Promise.all([
     // The shell renders even mid-setup; each page enforces the setup gate.
-    requireSession({ allowIncompleteSetup: true }),
+    requireSession({ allowIncompleteSetup: true, inventory: true }),
     supabase
       .from("notifications")
       .select("id", { count: "exact", head: true })

@@ -149,9 +149,13 @@ const loadSession = cache(async (): Promise<SessionContext> => {
  * page and its save actions pass `{ allowIncompleteSetup: true }`.
  */
 export async function requireSession(
-  opts: { allowIncompleteSetup?: boolean } = {},
+  opts: { allowIncompleteSetup?: boolean; inventory?: boolean } = {},
 ): Promise<SessionContext> {
   const ctx = await loadSession();
+  // The inventory account sees the Inventory module only: every other page,
+  // export and server action sends it there. Only the dashboard layout and
+  // the Inventory module's own pages, routes and actions pass `inventory`.
+  if (ctx.role === "inventory" && !opts.inventory) redirect("/dashboard/inventory");
   if (ctx.missingSetup.length && !opts.allowIncompleteSetup) redirect("/dashboard/settings");
   return ctx;
 }

@@ -13,7 +13,7 @@ export type Json =
 
 // "dispatcher" (0022) is retired: the database keeps the value, the app has
 // no such role (lib/permissions.ts) and those accounts can't sign in.
-export type UserRole = "head_admin" | "admin" | "marketing" | "production" | "dispatcher";
+export type UserRole = "head_admin" | "admin" | "marketing" | "production" | "dispatcher" | "inventory";
 
 export type OrderStatus = "active" | "waiting_on_production_phone";
 

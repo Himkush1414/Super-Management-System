@@ -1,4 +1,4 @@
-import { parsePaise, parseQty, sum, valueOf, formatQty, formatINR } from "@/lib/inventory/numbers";
+import { parsePaise, parseQty, summarize, valueOf, formatQty, formatINR } from "@/lib/inventory/numbers";
 import { exportFileName } from "@/lib/inventory/ranges";
 import { visibleCustomColumns, type InvColumn, type InvRangeReport } from "@/lib/inventory/types";
 
@@ -57,6 +57,8 @@ export function buildExportModel(report: InvRangeReport, rangeLabel: string, gen
       custom: customColumns.map((c) => customText(p.custom?.[c.id], c)),
     };
   });
+  // the same summary as the Inventory page: closing value counts active products only
+  const s = summarize(rows.map((x) => ({ is_active: !x.archived, r: x.received, i: x.issued, b: x.closing, ratePaise: x.rate })));
   return {
     title: exportFileName(report.from, report.to, "pdf").replace(/\.pdf$/, ""),
     from: report.from,
@@ -66,7 +68,7 @@ export function buildExportModel(report: InvRangeReport, rangeLabel: string, gen
     person: report.settings?.person_name?.trim() || null,
     customColumns,
     rows,
-    totals: { received: sum(rows.map((r) => r.received)), issued: sum(rows.map((r) => r.issued)), value: sum(rows.map((r) => r.value)) },
+    totals: { received: s.received, issued: s.issued, value: s.value },
   };
 }
 

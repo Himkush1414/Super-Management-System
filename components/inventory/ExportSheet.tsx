@@ -1,19 +1,28 @@
 "use client";
 
-import { useId, useState } from "react";
-import { FileText, FileType2, Download } from "lucide-react";
+import { useId, useRef, useState } from "react";
+import { FileText, FileType2, FileSpreadsheet, Download } from "lucide-react";
 import { RANGE_LABELS, dmySlash, resolveRange, exportFileName, type RangeKind } from "@/lib/inventory/ranges";
 import { cn } from "@/lib/utils";
 import { DayField, FieldLabel } from "./bits";
 import { Sheet } from "./Sheet";
+import { useToast } from "./Toast";
+import { downloadFile } from "./download";
+
+type Format = "pdf" | "docx" | "xlsx";
+const FORMATS: { f: Format; name: string; sub: string; icon: typeof FileText; tone: string }[] = [
+  { f: "pdf", name: "PDF", sub: "A4 landscape", icon: FileText, tone: "text-status-danger" },
+  { f: "docx", name: "Word", sub: ".docx, editable table", icon: FileType2, tone: "text-status-info" },
+  { f: "xlsx", name: "Excel", sub: ".xlsx, numbers you can sum", icon: FileSpreadsheet, tone: "text-status-success" },
+];
 
 const KINDS: RangeKind[] = ["week", "month", "prev_month", "all", "custom"];
 
 /**
  * Pick a range and a format; the file is made on the server
- * (/dashboard/inventory/export). A plain link with `download`, so the
- * Android app's existing download bridge saves and opens it like every
- * other export.
+ * (/dashboard/inventory/export). One tap: the button says "Preparing…" at
+ * once and ignores further taps until the file is saved (browser) or
+ * handed to the Android app (download.ts).
  */
 export function ExportSheet({ open, onClose, today, earliest }: { open: boolean; onClose: () => void; today: string; earliest: string }) {
   const uid = useId();
@@ -22,7 +31,25 @@ export function ExportSheet({ open, onClose, today, earliest }: { open: boolean;
   const [to, setTo] = useState(today);
   const range = resolveRange(kind, today, { from, to, earliest });
 
-  const href = (format: "pdf" | "docx") => {
+  const toast = useToast();
+  const [busy, setBusy] = useState<Format | null>(null);
+  const busyRef = useRef(false);
+
+  async function get(format: Format) {
+    if (!range || busyRef.current) return; // a second tap while preparing does nothing
+    busyRef.current = true;
+    setBusy(format);
+    try {
+      await downloadFile(href(format), exportFileName(range.from, range.to, format));
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "The download failed. Please try again.");
+    } finally {
+      busyRef.current = false;
+      setBusy(null);
+    }
+  }
+
+  const href = (format: Format) => {
     const p = new URLSearchParams({ format, range: kind });
     if (kind === "custom" && range) {
       p.set("from", range.from);
@@ -32,7 +59,7 @@ export function ExportSheet({ open, onClose, today, earliest }: { open: boolean;
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Export product specification" description="Opening = balance before the first day · Received and Issued inside the range · Closing = balance on the last day. Dates in IST.">
+    <Sheet open={open} onClose={onClose} wide title="Export product specification" description="Opening = balance before the first day · Received and Issued inside the range · Closing = balance on the last day. Dates in IST.">
       <div className="space-y-4">
         <fieldset>
           <legend className="nr-section-label">Range</legend>
@@ -79,28 +106,35 @@ export function ExportSheet({ open, onClose, today, earliest }: { open: boolean;
           )}
         </p>
 
-        <div className="grid gap-2 sm:grid-cols-2">
-          {(["pdf", "docx"] as const).map((f) =>
-            range ? (
-              <a
+        <div className="grid gap-2 sm:grid-cols-3">
+          {FORMATS.map(({ f, name, sub, icon: Icon, tone }) => {
+            const preparing = busy === f;
+            return (
+              <button
                 key={f}
-                href={href(f)}
-                download={exportFileName(range.from, range.to, f)}
-                className="nr-interactive nr-press group flex h-14 items-center gap-3 rounded-xl border border-border-strong bg-elevated px-4 text-[14px] font-medium hover:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                type="button"
+                onClick={() => get(f)}
+                disabled={!range || (busy !== null && !preparing)}
+                aria-busy={preparing}
+                aria-disabled={preparing || undefined}
+                className={cn(
+                  "nr-interactive nr-press group flex h-14 items-center gap-3 rounded-xl border px-4 text-left text-[14px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-50",
+                  preparing ? "cursor-progress border-accent/50 bg-accent/10" : "border-border-strong bg-elevated hover:border-accent/50",
+                )}
               >
-                {f === "pdf" ? <FileText size={18} className="text-status-danger" /> : <FileType2 size={18} className="text-status-info" />}
-                <span className="flex-1">
-                  {f === "pdf" ? "PDF" : "Word"}
-                  <span className="block text-[11.5px] font-normal text-text-tertiary">{f === "pdf" ? "A4 landscape" : ".docx, editable table"}</span>
+                {preparing ? (
+                  <span aria-hidden className="size-[18px] shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent motion-reduce:animate-none" />
+                ) : (
+                  <Icon size={18} className={cn("shrink-0", tone)} />
+                )}
+                <span className="min-w-0 flex-1">
+                  {preparing ? "Preparing…" : name}
+                  <span className="block truncate text-[11.5px] font-normal text-text-tertiary">{preparing ? `${name} file` : sub}</span>
                 </span>
-                <Download size={16} className="text-text-tertiary group-hover:text-text" />
-              </a>
-            ) : (
-              <span key={f} aria-disabled className="flex h-14 items-center rounded-xl border border-border px-4 text-[14px] text-text-tertiary">
-                {f === "pdf" ? "PDF" : "Word"}
-              </span>
-            ),
-          )}
+                {!preparing && <Download size={16} className="shrink-0 text-text-tertiary group-hover:text-text" />}
+              </button>
+            );
+          })}
         </div>
       </div>
     </Sheet>

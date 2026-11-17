@@ -80,6 +80,11 @@ export function resolveRange(
 }
 
 /** "NR Industries Product Specification 01-11-2026 to 17-11-2026.pdf" */
-export function exportFileName(from: string, to: string, ext: "pdf" | "docx"): string {
+export function exportFileName(from: string, to: string, ext: "pdf" | "docx" | "xlsx"): string {
   return `NR Industries Product Specification ${dmyDash(from)} to ${dmyDash(to)}.${ext}`;
+}
+
+/** Today's calendar date in India (YYYY-MM-DD), whatever the device's time zone. */
+export function istToday(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }

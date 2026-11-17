@@ -121,3 +121,22 @@ export function checkQty(text: string): { ok: true; qty: Milli } | { ok: false; 
   if (q >= MAX_QTY) return { ok: false, message: "That quantity is too large." };
   return { ok: true, qty: q };
 }
+
+/**
+ * The summary cards' figures — ONE definition, used by the screen and by
+ * the exports' totals, so the two always agree:
+ *   products / zero stock / stock value: active products only
+ *   received / issued (+ their value at each product's rate): every product
+ */
+export function summarize(rows: Array<{ is_active: boolean; r: Milli; i: Milli; b: Milli; ratePaise: Paise | null }>) {
+  const active = rows.filter((x) => x.is_active);
+  return {
+    products: active.length,
+    zero: active.filter((x) => x.b === ZERO).length,
+    value: sum(active.map((x) => valueOf(x.b, x.ratePaise))),
+    received: sum(rows.map((x) => x.r)),
+    receivedValue: sum(rows.map((x) => valueOf(x.r, x.ratePaise))),
+    issued: sum(rows.map((x) => x.i)),
+    issuedValue: sum(rows.map((x) => valueOf(x.i, x.ratePaise))),
+  };
+}

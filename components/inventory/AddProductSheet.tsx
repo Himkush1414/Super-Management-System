@@ -1,7 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { parsePaise, parseQty } from "@/lib/inventory/numbers";
 import { addProduct } from "@/lib/inventory/actions";
@@ -27,7 +26,7 @@ export function AddProductSheet({
 }) {
   const uid = useId();
   const toast = useToast();
-  const router = useRouter();
+  const savingRef = useRef(false);
   const [serial, setSerial] = useState("");
   const [description, setDescription] = useState("");
   const [specification, setSpecification] = useState("");
@@ -64,17 +63,24 @@ export function AddProductSheet({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setTried(true);
-    if (saving || dup || !serial.trim() || !description.trim() || rateError || openingError) return;
+    if (savingRef.current || dup || !serial.trim() || !description.trim() || rateError || openingError) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
-    const res = await addProduct({ serialNo: serial, description, specification, rate, openingQty: opening, custom });
-    setSaving(false);
-    if (res.ok) {
-      toast("success", `${serial.trim()} added.`);
-      reset();
-      router.refresh();
-      onClose();
-    } else setError(res.error);
+    try {
+      // the action re-renders the page in the same response (no second request)
+      const res = await addProduct({ serialNo: serial, description, specification, rate, openingQty: opening, custom });
+      if (res.ok) {
+        toast("success", `${serial.trim()} added.`);
+        reset();
+        onClose();
+      } else setError(res.error);
+    } catch {
+      setError("No answer from the server. Please try again.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   }
 
   const err = (id: string, msg: string | null) =>

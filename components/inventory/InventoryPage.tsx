@@ -1,30 +1,37 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Download, Phone, UserRound, CalendarRange } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { parseQty } from "@/lib/inventory/numbers";
-import { activeCustomColumns, visibleCustomColumns, type InvOverview } from "@/lib/inventory/types";
+import { parseQty, valueOf } from "@/lib/inventory/numbers";
+import { activeCustomColumns, pageProducts, visibleCustomColumns, type InvPage } from "@/lib/inventory/types";
+import { monthOf } from "@/lib/inventory/ledger";
 import { ProductList } from "./ProductList";
-import { SummaryCards, TopIssued, TrendChart } from "./Overview";
+import { SummaryCards } from "./Overview";
 import { ToastProvider } from "./Toast";
 import { monthLabel, toRow, type Row } from "./model";
+import { pruneSaved, rememberSaved, savedNewerThan, useSavedVersion } from "./stores";
 
-// export UI and the add-product form load only when opened
-const ExportSheet = dynamic(() => import("./ExportSheet").then((m) => m.ExportSheet), { ssr: false });
-const AddProductSheet = dynamic(() => import("./AddProductSheet").then((m) => m.AddProductSheet), { ssr: false });
-
-type Patch = { r: bigint; i: bigint; b: bigint };
+// loaded only when needed (and fetched in the background once the page is idle)
+const loadExport = () => import("./ExportSheet").then((m) => m.ExportSheet);
+const loadAdd = () => import("./AddProductSheet").then((m) => m.AddProductSheet);
+const loadCharts = () => import("./Charts");
+const ExportSheet = dynamic(loadExport, { ssr: false });
+const AddProductSheet = dynamic(loadAdd, { ssr: false });
+const Charts = dynamic(() => loadCharts().then((m) => m.Charts), {
+  ssr: false,
+  loading: () => <div aria-hidden className="mt-3 h-[13.5rem] animate-pulse rounded-xl border border-border bg-panel/40 motion-reduce:animate-none" />,
+});
 
 export function InventoryPage({
   data,
   canManage,
   showAnalytics,
 }: {
-  data: InvOverview;
+  data: InvPage;
   canManage: boolean;
   /** admin tier: trend, top 10, month selector */
   showAnalytics: boolean;
@@ -32,37 +39,57 @@ export function InventoryPage({
   const router = useRouter();
   const [exporting, setExporting] = useState(false);
   const [adding, setAdding] = useState(false);
-  // figures the server has just confirmed, shown until the refreshed page arrives
-  // (kept per data object: a refreshed page from the server replaces them)
-  const [patchState, setPatchState] = useState<{ data: InvOverview; map: Record<string, Patch> }>({ data, map: {} });
-  const patches = useMemo(() => (patchState.data === data ? patchState.map : {}), [patchState, data]);
 
-  const base = useMemo(() => data.products.map(toRow), [data.products]);
-  const rows: Row[] = useMemo(
-    () => base.map((r) => (patches[r.id] ? { ...r, r: patches[r.id].r, i: patches[r.id].i, b: patches[r.id].b, value: r.ratePaise === null ? r.value : (patches[r.id].b * r.ratePaise + BigInt(500)) / BigInt(1000) } : r)),
-    [base, patches],
-  );
+  // warm the lazy parts once the page has settled, so the first tap is instant
+  useEffect(() => {
+    const warm = () => {
+      void loadExport();
+      if (canManage) void loadAdd();
+    };
+    const ric = (window as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    if (ric) {
+      const id = ric(warm, { timeout: 2500 });
+      return () => window.cancelIdleCallback?.(id);
+    }
+    const t = setTimeout(warm, 1200);
+    return () => clearTimeout(t);
+  }, [canManage]);
+
+  // figures confirmed by a save that this page data doesn't include yet
+  const savedVersion = useSavedVersion();
+  useEffect(() => pruneSaved(data.ledger_seq), [data.ledger_seq]);
+  const base = useMemo(() => pageProducts(data).map(toRow), [data]);
+  const rows: Row[] = useMemo(() => {
+    void savedVersion;
+    const newer = savedNewerThan(data.ledger_seq);
+    if (!newer.size) return base;
+    return base.map((r) => {
+      const s = newer.get(r.id);
+      return s ? { ...r, r: s.received, i: s.issued, b: s.balance, value: valueOf(s.balance, r.ratePaise) } : r;
+    });
+  }, [base, data.ledger_seq, savedVersion]);
   const customCols = useMemo(() => visibleCustomColumns(data.columns), [data.columns]);
   const formCols = useMemo(() => activeCustomColumns(data.columns), [data.columns]);
 
   const onRecorded = useCallback(
-    (id: string, kind: "receive" | "issue", qtyText: string, after: string | undefined, reversal?: boolean) => {
-      const q = parseQty(qtyText) ?? BigInt(0);
-      setPatchState((st) => {
-        const p = st.data === data ? st.map : {};
-        const row = rows.find((x) => x.id === id);
-        if (!row) return { data, map: p };
-        const cur = p[id] ?? { r: row.r, i: row.i, b: row.b };
-        const sign = reversal ? -BigInt(1) : BigInt(1);
-        const next = {
-          r: kind === "receive" ? cur.r + sign * q : cur.r,
-          i: kind === "issue" ? cur.i + sign * q : cur.i,
-          b: after !== undefined ? (parseQty(after) ?? cur.b) : cur.b,
-        };
-        return { data, map: { ...p, [id]: next } };
+    (e: { productId: string; kind: "receive" | "issue"; qty: string; balanceAfter?: string; reversal?: boolean; seq?: number; date: string }) => {
+      const row = rows.find((x) => x.id === e.productId);
+      const after = e.balanceAfter !== undefined ? parseQty(e.balanceAfter) : null;
+      // the month turned since this page was loaded, or the answer is incomplete: read it all again
+      if (!row || after === null || !e.seq || monthOf(e.date) !== data.current_month) {
+        router.refresh();
+        return;
+      }
+      const q = parseQty(e.qty) ?? BigInt(0);
+      const sign = e.reversal ? -BigInt(1) : BigInt(1);
+      rememberSaved(e.productId, {
+        received: e.kind === "receive" ? row.r + sign * q : row.r,
+        issued: e.kind === "issue" ? row.i + sign * q : row.i,
+        balance: after,
+        seq: e.seq,
       });
     },
-    [rows, data],
+    [rows, data.current_month, router],
   );
 
   const person = data.settings?.person_name?.trim();
@@ -127,12 +154,7 @@ export function InventoryPage({
 
       <SummaryCards rows={rows} month={data.month} />
 
-      {showAnalytics && (
-        <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-          <TrendChart trend={data.trend} />
-          <TopIssued top={data.top_issued} month={data.month} />
-        </div>
-      )}
+      {showAnalytics && data.trend && data.top_issued && <Charts trend={data.trend} top={data.top_issued} month={data.month} />}
 
       <div className="mt-5">
         <ProductList
@@ -150,6 +172,7 @@ export function InventoryPage({
                 variant="secondary"
                 className="h-11 w-11 px-0 sm:w-auto sm:px-4 md:h-9"
                 onClick={() => setExporting(true)}
+                onPointerEnter={() => void loadExport()}
                 aria-haspopup="dialog"
                 aria-label="Export"
               >

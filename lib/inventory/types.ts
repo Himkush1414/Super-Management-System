@@ -97,3 +97,35 @@ export function visibleCustomColumns(columns: InvColumn[]): InvColumn[] {
 export function activeCustomColumns(columns: InvColumn[]): InvColumn[] {
   return columns.filter((c) => !c.is_default && !c.archived).sort((a, b) => a.position - b.position);
 }
+
+/** inv_page (0029): the same data as InvOverview, products as arrays in `fields` order. */
+export interface InvPage extends Omit<InvOverview, "products" | "trend" | "top_issued"> {
+  ledger_seq: number;
+  fields: string[];
+  rows: unknown[][];
+  trend: InvOverview["trend"] | null;
+  top_issued: InvOverview["top_issued"] | null;
+}
+
+/** inv_page rows -> product objects (pure; tested). */
+export function pageProducts(page: Pick<InvPage, "fields" | "rows">): InvProductRow[] {
+  const at = (name: string) => page.fields.indexOf(name);
+  const i = {
+    id: at("id"), serial_no: at("serial_no"), description: at("description"), specification: at("specification"),
+    rate: at("rate"), custom: at("custom"), is_active: at("is_active"), opening: at("opening"),
+    received: at("received"), issued: at("issued"), balance: at("balance"),
+  };
+  return page.rows.map((r) => ({
+    id: r[i.id] as string,
+    serial_no: r[i.serial_no] as string,
+    description: (r[i.description] as string) ?? "",
+    specification: (r[i.specification] as string) ?? "",
+    rate: (r[i.rate] as string | null) ?? null,
+    custom: (r[i.custom] as Record<string, string>) ?? {},
+    is_active: r[i.is_active] as boolean,
+    opening: r[i.opening] as string,
+    received: r[i.received] as string,
+    issued: r[i.issued] as string,
+    balance: r[i.balance] as string,
+  }));
+}

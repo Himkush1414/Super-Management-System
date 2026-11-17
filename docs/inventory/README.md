@@ -16,6 +16,8 @@ Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with
 
 ---
 
+> **Guides:** [Quick guide for the store person](USER-GUIDE.md) · [How it works, in plain words](HOW-IT-WORKS.md) (ledger, rollover, low-stock alert) · [Backup and restore](BACKUP.md)
+
 ## Contents
 
 - [What it does](#what-it-does)
@@ -28,6 +30,7 @@ Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with
 - [Speed](#speed)
 - [Data model](#data-model)
 - [Setup](#setup)
+- [Backup](#backup)
 - [Security](#security)
 - [Testing](#testing)
 
@@ -173,17 +176,21 @@ Party search's data is computed in SQL (`inv_party_index`) and loaded in the bac
 
 ## Speed
 
-Measured on a local production build with fake data and 40 ms of added database latency, on a phone profile (4× slower CPU, 4G). The table shows the targets; the latest numbers are in the pull requests.
+Measured on a local production build with fake data and 40 ms of added database latency, on a phone profile (4× slower CPU, 4G), on 2026-11-17 (PR #59). The live store has under 350 products.
 
-| | Target |
-|---|---|
-| Skeleton on navigation | ≤ 300 ms |
-| Data visible | ≤ 1000 ms |
-| Tab switch reaction | ≤ 100 ms |
-| Search and Party search per keystroke | ≤ 100 ms |
-| Row expand starts | ≤ 50 ms |
-| Save round trip | ≤ 400 ms |
-| Exports (All) | ≤ 2000 ms (≤ 4000 ms) |
+| | Target | 350 products | 3,500 products |
+|---|---|---:|---:|
+| Skeleton on navigation | ≤ 300 ms | 35 ms | 35 ms |
+| Data visible (opened from the menu) | ≤ 1000 ms | 369 ms | 401 ms |
+| Tab switch back to Inventory | ≤ 100 ms | 63 ms | 87 ms |
+| Search per keystroke (median) | ≤ 100 ms | 50 ms | 34 ms |
+| Party search per keystroke (median / slowest) | ≤ 100 ms | 34 / 54 ms | 34 / 51 ms |
+| Row expand starts | ≤ 50 ms | 21 ms | 22 ms |
+| Save round trip | ≤ 400 ms | 158 ms | 156 ms |
+| Export, one month: PDF / Word / Excel | ≤ 2000 ms | 751 / 77 / 74 ms | **6958** / 221 / 199 ms |
+| Export, All: PDF / Word / Excel | ≤ 4000 ms | 731 / 76 / 73 ms | **6638** / 217 / 203 ms |
+
+Every target is met at 350 products. At 3,500 products a PDF of every product takes about 7 s (it is 167 A4 pages); Word and Excel stay well under 1 s.
 
 **How the speed targets are met:**
 - The main page is **one** SQL call that returns compact rows, with the session check running in parallel.
@@ -242,12 +249,17 @@ Environment variable **names** (values live in `.env.local`, which is gitignored
 | `INVENTORY_USERNAME`, `INVENTORY_PIN` | the account script (generated into `.env.local` if missing) |
 | `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF` | the scripts, for the live project (set in the shell for one run) |
 | `INVENTORY_ENV_FILE` | the scripts, to use another env file |
+| `INVENTORY_BACKUP_DIR` | the backup script's folder (default `D:\NR-Backups\inventory`) |
 
 1. Apply the migrations in order (`0027` → `0030`) to the database, after checking them. They only add objects.
 2. Create the inventory account: `node scripts/inventory/create-account.mjs`.
 3. Import the product list: run `node scripts/inventory/import-docx.mjs` (a dry run that prints counts and issues only), then add `--apply`.
 
 More in [`scripts/inventory/README.md`](../../scripts/inventory/README.md).
+
+## Backup
+
+`node scripts/inventory/backup.mjs` copies all 7 `inv_` tables to `D:\NR-Backups\inventory` (JSON + an additive restore `.sql` + checksums). It only reads, prints only counts, and refuses a folder inside the repository. How to run it and how to restore: [BACKUP.md](BACKUP.md).
 
 ## Security
 
@@ -256,6 +268,7 @@ More in [`scripts/inventory/README.md`](../../scripts/inventory/README.md).
 - No hard deletes anywhere in the module; history is append-only and archive replaces delete.
 - All text is escaped on display and in every export (XML-escaped in Word and Excel).
 - The repository holds only the mechanism: code, schema-only migrations, scripts without values, and fake sample data (`scripts/inventory/inventory-sample.dummy.json`).
+- Backups are written only outside the repository; the script refuses a folder inside it.
 
 ## Testing
 
@@ -263,11 +276,10 @@ More in [`scripts/inventory/README.md`](../../scripts/inventory/README.md).
 |---|---|
 | `tests/inventory.test.mjs` (`npm test`) | exact quantities and money, ledger rules, month rollover and gaps, reversal, double submit, search, ranges, low-stock boundaries, party matching (fast on 3,500 products) |
 | `tests/permissions.test.mjs` | the role matrix in code |
-| `tests/sql/*.test.mjs` | every migration on a real Postgres 17 (PGlite): the role matrix in RLS and functions, append-only guards, the ledger rules, field validation, the old functions still working, reversal copying details, the party index, the compact page equal to the full one |
+| `tests/sql/*.test.mjs` | every migration on a real Postgres 17 (PGlite): the role matrix in RLS and functions, append-only guards, the ledger rules, field validation, the old functions still working, reversal copying details, the party index, the compact page equal to the full one, and a backup restored into an empty database giving the same ledger and balances |
 
 ```sh
-npm test
-npm i --no-save @electric-sql/pglite@0.3.15 && node --test tests/sql/*.test.mjs
+npm test        # all of the above: 58 tests, about 10 s; CI runs it on every pull request
 ```
 
 Browser checks (role matrix on every page, the flows, layout at 360 / 390 / 768 / 1024 / 1440 px, exports through the Android app's bridge) run locally against a fake Supabase that applies every migration, so RLS is the real thing.

@@ -1,6 +1,6 @@
 // 0030 (receive / issue details, minimum stock, Party search) on a real
 // Postgres 17 in-process (PGlite), every migration applied. Fake data only.
-//   npm i --no-save @electric-sql/pglite@0.3.15 && node --test tests/sql/*.test.mjs
+//   npm test   (or only these: node --test tests/sql/*.test.mjs)
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";

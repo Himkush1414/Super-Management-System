@@ -158,7 +158,7 @@ export function OrdersTable({
               <tbody>
                 {filtered.map((o) => (
                   <TR key={o.id} className="group relative cursor-pointer">
-                    <TD className="min-w-[220px]">
+                    <TD className="min-w-[180px] xl:min-w-[220px]">
                       <Link
                         href={`/dashboard/orders/${o.id}`}
                         className="font-medium text-text group-hover:text-accent after:absolute after:inset-0"
@@ -173,12 +173,12 @@ export function OrdersTable({
                       </span>
                     </TD>
                     {showPuncher && (
-                      <TD className="whitespace-nowrap text-text-secondary">
+                      <TD className="min-w-[130px] text-text-secondary">
                         {o.puncher?.label ?? "—"}
                       </TD>
                     )}
                     {showAssignees && (
-                      <TD className="max-w-[170px] truncate text-text-secondary" title={names(o)}>
+                      <TD className="min-w-[130px] max-w-[200px] text-text-secondary">
                         {names(o) || "—"}
                       </TD>
                     )}

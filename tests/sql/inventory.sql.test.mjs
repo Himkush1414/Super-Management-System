@@ -5,8 +5,7 @@
 // calls them (session user `authenticator`, role `authenticated`, JWT claims).
 // No real database is involved, and nothing here holds real data.
 //
-//   npm i --no-save @electric-sql/pglite@0.3.15
-//   node --test tests/sql/*.test.mjs
+//   npm test   (or only these: node --test tests/sql/*.test.mjs)
 //
 // (Not part of `npm test`, so the website gets no new dependency.)
 import test from "node:test";

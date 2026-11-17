@@ -71,7 +71,7 @@ export default async function OrdersPage() {
             {isMarketing && (
               <Link
                 href="/dashboard/orders/new"
-                className="nr-interactive nr-press ml-auto inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-fg hover:bg-accent-hover sm:ml-0"
+                className="nr-interactive nr-press ml-auto inline-flex h-8 items-center gap-1.5 rounded-md bg-accent-solid px-3 text-[13px] font-medium text-accent-fg hover:bg-accent-hover sm:ml-0"
               >
                 <Plus size={15} /> Punch Order
               </Link>
@@ -100,7 +100,7 @@ export default async function OrdersPage() {
             isMarketing ? (
               <Link
                 href="/dashboard/orders/new"
-                className="nr-interactive nr-press inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-[13px] font-medium text-accent-fg hover:bg-accent-hover"
+                className="nr-interactive nr-press inline-flex h-8 items-center gap-1.5 rounded-md bg-accent-solid px-3 text-[13px] font-medium text-accent-fg hover:bg-accent-hover"
               >
                 <Plus size={15} /> Punch Order
               </Link>

@@ -58,7 +58,7 @@ export function SettingsForm({
           placeholder="e.g. Manik Rana"
         />
         <p className="mt-1.5 text-[12px] text-text-tertiary">
-          Shown to others as <span className="text-text-secondary">Your Name ({accountLabel})</span> on
+          Shown to others as <span className="text-text-secondary">{realName?.trim() || "Your Name"} ({accountLabel})</span> on
           orders, exports and the activity log.
         </p>
       </FormRow>

@@ -17,6 +17,7 @@ import type { InvHistory, InvWriteResult } from "@/lib/inventory/types";
  */
 
 export type ActionResult =
+  /** id: the new ledger entry's id (receive / issue / reverse) or the new product's id */
   | { ok: true; message?: string; balanceAfter?: string; id?: string | number }
   | { ok: false; error: string; balance?: string };
 
@@ -38,6 +39,24 @@ function asResult(r: InvWriteResult | null, ok: string): ActionResult {
     return { ok: true, message: "Already saved.", balanceAfter: r.balance_after, id: r.id };
   }
   return { ok: false, error: r.message ?? FAILED, balance: r.balance };
+}
+
+/**
+ * A ledger write (receive / issue / reverse): the session check and the RPC
+ * run in PARALLEL, one round trip instead of two. That's safe because the
+ * RPC runs with the caller's own session and checks the role itself
+ * (inv_can_manage) before anything is written: for anyone but the inventory
+ * account it writes nothing. The answer is only used once the session check
+ * has passed too. No page re-render is sent back: the screen shows the
+ * figures the database returns (ledger id + balance), which keeps a save
+ * to one small response.
+ */
+async function ledgerWrite(fn: string, args: Record<string, unknown>, ok: string): Promise<ActionResult> {
+  const rpcP = call(fn, args);
+  const ctx = await requireSession({ inventory: true });
+  const r = await rpcP;
+  if (!ctx.can("inventory.manage")) return { ok: false, error: "Not permitted." };
+  return asResult(r, ok);
 }
 
 async function call(fn: string, args: Record<string, unknown>): Promise<InvWriteResult | null> {
@@ -63,39 +82,31 @@ export async function recordEntry(input: {
   note: string;
   key: string;
 }): Promise<ActionResult> {
-  if (!(await manager())) return { ok: false, error: "Not permitted." };
   if (!UUID.test(input.productId) || !KEY.test(input.key)) return { ok: false, error: "Product not found." };
   if (input.kind !== "receive" && input.kind !== "issue") return { ok: false, error: "Choose Receive or Issue." };
   const q = checkQty(input.qty);
   if (!q.ok) return { ok: false, error: q.message };
   if (!DAY.test(input.date)) return { ok: false, error: "Choose a date." };
-  const r = await call("inv_record_transaction", {
+  return ledgerWrite("inv_record_transaction", {
     p_product_id: input.productId,
     p_kind: input.kind,
     p_qty: qtyToText(q.qty),
     p_entry_date: input.date,
     p_note: input.note.trim().slice(0, 300) || null,
     p_idempotency_key: input.key,
-  });
-  const res = asResult(r, input.kind === "receive" ? "Receipt saved." : "Issue saved.");
-  if (res.ok) done();
-  return res;
+  }, input.kind === "receive" ? "Receipt saved." : "Issue saved.");
 }
 
 /** Reverse an entry of this month (a new opposite entry; nothing is edited or deleted). */
 export async function reverseEntry(input: { entryId: number; note: string; key: string }): Promise<ActionResult> {
-  if (!(await manager())) return { ok: false, error: "Not permitted." };
   if (!Number.isSafeInteger(input.entryId) || input.entryId <= 0 || !KEY.test(input.key)) {
     return { ok: false, error: "Entry not found." };
   }
-  const r = await call("inv_reverse_transaction", {
+  return ledgerWrite("inv_reverse_transaction", {
     p_transaction_id: input.entryId,
     p_note: input.note.trim().slice(0, 300) || null,
     p_idempotency_key: input.key,
-  });
-  const res = asResult(r, "Entry reversed.");
-  if (res.ok) done();
-  return res;
+  }, "Entry reversed.");
 }
 
 function cleanCustom(custom: Record<string, string>): Record<string, string> {

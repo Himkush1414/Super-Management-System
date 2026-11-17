@@ -1,18 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ArrowDownToLine, ArrowUpFromLine, ArrowRight, RotateCcw, Pencil, Archive, ArchiveRestore, History } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { checkQty, formatQty, parseQty, qtyToText } from "@/lib/inventory/numbers";
-import { isEntryDateAllowed, monthOf } from "@/lib/inventory/ledger";
-import { recordEntry, reverseEntry, loadHistory, setProductActive, updateProduct } from "@/lib/inventory/actions";
+import { entryFingerprint, isEntryDateAllowed, monthOf, nextKey } from "@/lib/inventory/ledger";
+import { istToday } from "@/lib/inventory/ranges";
+import { recordEntry, reverseEntry, setProductActive, updateProduct } from "@/lib/inventory/actions";
 import type { InvColumn, InvHistory, InvHistoryEntry } from "@/lib/inventory/types";
 import { cn, formatDateTime, formatDay } from "@/lib/utils";
 import { DayField, Field, FieldLabel, newKey, qty } from "./bits";
 import { Sheet } from "./Sheet";
 import { useToast } from "./Toast";
 import { customText, monthLabel, type Row } from "./model";
+import { invalidateHistory, loadHistory } from "./stores";
 
 export type PanelProps = {
   row: Row;
@@ -22,50 +23,67 @@ export type PanelProps = {
   /** viewing the current month (entries allowed) */
   isCurrent: boolean;
   today: string;
-  /** the server confirmed an entry: show the new figures at once */
-  onRecorded: (productId: string, kind: "receive" | "issue", qtyText: string, balanceAfter: string | undefined, reversal?: boolean) => void;
+  /** the server confirmed an entry (ledger id `seq`): show the new figures at once */
+  onRecorded: (e: { productId: string; kind: "receive" | "issue"; qty: string; balanceAfter?: string; reversal?: boolean; seq?: number; date: string }) => void;
 };
+
+/** Today in India on this device, never before the server's today (a clock running behind). */
+function deviceToday(serverToday: string): string {
+  const t = istToday();
+  return t < serverToday ? serverToday : t;
+}
 
 export function ProductPanel({ row, customCols, formCols, canManage, isCurrent, today, onRecorded }: PanelProps) {
   const [history, setHistory] = useState<InvHistory | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [, startLoad] = useTransition();
   const writable = canManage && isCurrent && row.is_active;
+  // only the newest request may set the list (an older answer arriving late is dropped)
+  const ticket = useRef(0);
 
-  const refreshHistory = useCallback(() => {
-    startLoad(async () => {
-      const r = await loadHistory(row.id);
-      if (r.ok) {
-        setHistory(r.history);
+  const refreshHistory = useCallback((fresh?: boolean) => {
+    const my = ++ticket.current;
+    if (fresh) invalidateHistory(row.id);
+    loadHistory(row.id).then(
+      (h) => {
+        if (my !== ticket.current) return;
+        setHistory(h);
         setHistoryError(null);
-      } else setHistoryError(r.error);
-    });
+      },
+      (e: unknown) => {
+        if (my !== ticket.current) return;
+        setHistoryError(e instanceof Error ? e.message : "The history didn't load. Please try again.");
+      },
+    );
   }, [row.id]);
 
   useEffect(() => {
     refreshHistory();
+    const t = ticket;
+    return () => {
+      t.current++; // closed: ignore anything still on its way
+    };
   }, [refreshHistory]);
 
   return (
     <div className="border-t border-border px-4 pb-5 pt-4 md:px-5">
       <div className={cn("grid gap-5", writable ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]" : "")}>
         {writable && (
-          <EntryForm row={row} today={today} onSaved={(kind, q, after) => {
-            onRecorded(row.id, kind, q, after);
-            refreshHistory();
+          <EntryForm row={row} today={today} onSaved={(e) => {
+            onRecorded({ productId: row.id, ...e });
+            refreshHistory(true);
           }} />
         )}
         <div className="min-w-0">
           <HistoryList
             history={history}
             error={historyError}
-            onRetry={refreshHistory}
+            onRetry={() => refreshHistory(true)}
             row={row}
             canReverse={writable}
             today={today}
-            onReversed={(e, after) => {
-              onRecorded(row.id, e.kind, e.qty, after, true);
-              refreshHistory();
+            onReversed={(e, after, seq) => {
+              onRecorded({ productId: row.id, kind: e.kind, qty: e.qty, balanceAfter: after, reversal: true, seq, date: deviceToday(today) });
+              refreshHistory(true);
             }}
           />
         </div>
@@ -94,25 +112,28 @@ function EntryForm({
 }: {
   row: Row;
   today: string;
-  onSaved: (kind: "receive" | "issue", qty: string, balanceAfter: string | undefined) => void;
+  onSaved: (e: { kind: "receive" | "issue"; qty: string; balanceAfter?: string; seq?: number; date: string }) => void;
 }) {
   const uid = useId();
   const toast = useToast();
-  const router = useRouter();
   const [kind, setKind] = useState<"receive" | "issue">("receive");
   const [qtyText, setQtyText] = useState("");
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(() => deviceToday(today));
   const [note, setNote] = useState("");
   const [touched, setTouched] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  // one key per entry: a double tap or a retried request records once
-  const [key, setKey] = useState(newKey);
+  // One key per entry: a double tap or a retried request records once. If
+  // anything in the entry changes after an attempt, it gets a new key, so a
+  // changed entry can never come back as "already saved" for the old one.
+  const attempt = useRef<{ key: string; fp: string } | null>(null);
+  const savingRef = useRef(false);
+  const dayNow = deviceToday(today);
 
   const q = checkQty(qtyText);
   const after = q.ok ? (kind === "receive" ? row.b + q.qty : row.b - q.qty) : null;
-  const dateOk = isEntryDateAllowed(date, today);
+  const dateOk = isEntryDateAllowed(date, dayNow);
   const overIssue = kind === "issue" && q.ok && q.qty > row.b;
   const qtyError = touched && qtyText.trim() !== "" && !q.ok ? q.message : overIssue ? `Only ${formatQty(row.b)} in stock.` : null;
   const dateError = touched && !dateOk ? "Choose a date in this month, not after today." : null;
@@ -121,25 +142,34 @@ function EntryForm({
   function reset() {
     setQtyText("");
     setNote("");
-    setDate(today);
+    setDate(deviceToday(today));
     setTouched(false);
-    setKey(newKey());
+    attempt.current = null;
   }
 
   async function confirm() {
-    if (!q.ok || saving) return;
+    // synchronous guard: a second tap in the same frame never sends twice
+    if (!q.ok || savingRef.current) return;
+    savingRef.current = true;
+    const qtyNorm = qtyToText(q.qty);
+    attempt.current = nextKey(attempt.current, entryFingerprint(row.id, kind, qtyNorm, date, note), newKey);
     setSaving(true);
     setServerError(null);
-    const res = await recordEntry({ productId: row.id, kind, qty: qtyText, date, note, key });
-    setSaving(false);
-    if (res.ok) {
-      setConfirming(false);
-      onSaved(kind, qtyToText(q.qty), res.balanceAfter);
-      toast("success", `${kind === "receive" ? "Received" : "Issued"} ${formatQty(q.qty)} · ${row.serial_no}. Balance ${qty(res.balanceAfter ?? null)}.`);
-      reset();
-      router.refresh();
-    } else {
-      setServerError(res.error);
+    try {
+      const res = await recordEntry({ productId: row.id, kind, qty: qtyText, date, note, key: attempt.current.key });
+      if (res.ok) {
+        setConfirming(false);
+        onSaved({ kind, qty: qtyNorm, balanceAfter: res.balanceAfter, seq: typeof res.id === "number" ? res.id : Number(res.id), date });
+        toast("success", `${kind === "receive" ? "Received" : "Issued"} ${formatQty(q.qty)} · ${row.serial_no}. Balance ${qty(res.balanceAfter ?? null)}.`);
+        reset();
+      } else {
+        setServerError(res.error);
+      }
+    } catch {
+      setServerError("No answer from the server. Check the connection, then confirm again: it won't be saved twice.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   }
 
@@ -209,8 +239,8 @@ function EntryForm({
             id={`${uid}-d`}
             value={date}
             onChange={setDate}
-            min={monthOf(today)}
-            max={today}
+            min={monthOf(dayNow)}
+            max={dayNow}
             describedBy={dateError ? `${uid}-de` : undefined}
           />
           {dateError && (
@@ -321,7 +351,7 @@ function HistoryList({
   row: Row;
   canReverse: boolean;
   today: string;
-  onReversed: (e: InvHistoryEntry, balanceAfter: string | undefined) => void;
+  onReversed: (e: InvHistoryEntry, balanceAfter: string | undefined, seq: number | undefined) => void;
 }) {
   const [reversing, setReversing] = useState<InvHistoryEntry | null>(null);
   const byId = new Map((history?.entries ?? []).map((e) => [e.id, e]));
@@ -437,8 +467,8 @@ function HistoryList({
       )}
 
       {reversing && (
-        <ReverseSheet entry={reversing} row={row} today={today} onClose={() => setReversing(null)} onDone={(after) => {
-          onReversed(reversing, after);
+        <ReverseSheet entry={reversing} row={row} today={today} onClose={() => setReversing(null)} onDone={(after, seq) => {
+          onReversed(reversing, after, seq);
           setReversing(null);
         }} />
       )}
@@ -456,30 +486,36 @@ function ReverseSheet({
   row: Row;
   today: string;
   onClose: () => void;
-  onDone: (balanceAfter: string | undefined) => void;
+  onDone: (balanceAfter: string | undefined, seq: number | undefined) => void;
 }) {
   const uid = useId();
   const toast = useToast();
-  const router = useRouter();
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [key] = useState(newKey);
+  const savingRef = useRef(false);
   const d = parseQty(entry.delta) ?? BigInt(0);
   const after = row.b - d;
   const blocked = after < BigInt(0);
 
   async function go() {
-    if (saving || blocked) return;
+    if (savingRef.current || blocked) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
-    const res = await reverseEntry({ entryId: entry.id, note, key });
-    setSaving(false);
-    if (res.ok) {
-      toast("success", `Entry #${entry.id} reversed. Balance ${qty(res.balanceAfter ?? null)}.`);
-      onDone(res.balanceAfter);
-      router.refresh();
-    } else setError(res.error);
+    try {
+      const res = await reverseEntry({ entryId: entry.id, note, key });
+      if (res.ok) {
+        toast("success", `Entry #${entry.id} reversed. Balance ${qty(res.balanceAfter ?? null)}.`);
+        onDone(res.balanceAfter, typeof res.id === "number" ? res.id : Number(res.id));
+      } else setError(res.error);
+    } catch {
+      setError("No answer from the server. Check the connection, then try again: it won't be reversed twice.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   }
 
   return (
@@ -554,26 +590,33 @@ function ProductActions({ row, formCols }: { row: Row; formCols: InvColumn[] }) 
 function EditSheet({ row, formCols, onClose }: { row: Row; formCols: InvColumn[]; onClose: () => void }) {
   const uid = useId();
   const toast = useToast();
-  const router = useRouter();
   const [description, setDescription] = useState(row.description);
   const [specification, setSpecification] = useState(row.specification);
   const [rate, setRate] = useState(row.rate ?? "");
   const [custom, setCustom] = useState<Record<string, string>>(() => ({ ...row.custom }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const savingRef = useRef(false);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (saving) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
-    const res = await updateProduct({ productId: row.id, description, specification, rate, custom });
-    setSaving(false);
-    if (res.ok) {
-      toast("success", `${row.serial_no}: details saved.`);
-      router.refresh();
-      onClose();
-    } else setError(res.error);
+    try {
+      // the action re-renders the page in the same response (no second request)
+      const res = await updateProduct({ productId: row.id, description, specification, rate, custom });
+      if (res.ok) {
+        toast("success", `${row.serial_no}: details saved.`);
+        onClose();
+      } else setError(res.error);
+    } catch {
+      setError("No answer from the server. Please try again.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   }
 
   return (
@@ -616,22 +659,29 @@ function EditSheet({ row, formCols, onClose }: { row: Row; formCols: InvColumn[]
 
 function ArchiveSheet({ row, onClose }: { row: Row; onClose: () => void }) {
   const toast = useToast();
-  const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const savingRef = useRef(false);
   const archive = row.is_active;
 
   async function go() {
-    if (saving) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
-    const res = await setProductActive(row.id, !archive);
-    setSaving(false);
-    if (res.ok) {
-      toast("success", `${row.serial_no} ${archive ? "archived" : "restored"}.`);
-      router.refresh();
-      onClose();
-    } else setError(res.error);
+    try {
+      // the action re-renders the page in the same response (no second request)
+      const res = await setProductActive(row.id, !archive);
+      if (res.ok) {
+        toast("success", `${row.serial_no} ${archive ? "archived" : "restored"}.`);
+        onClose();
+      } else setError(res.error);
+    } catch {
+      setError("No answer from the server. Please try again.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   }
 
   return (

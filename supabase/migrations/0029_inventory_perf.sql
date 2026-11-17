@@ -23,7 +23,8 @@ create index if not exists inv_month_snapshots_month
 
 -- The main page's data, compact: field names once, every product as an
 -- array in that order, numbers as plain decimal text without trailing zeros.
--- Trend and top 10 only when asked (admin tier shows them). `ledger_seq` is
+-- Trend and top 10 only when asked AND the caller is admin tier (the only
+-- ones who see them), so the page can ask before it knows the role. `ledger_seq` is
 -- the newest ledger entry the figures include, so the screen can tell
 -- whether an entry it just saved is already counted.
 -- SECURITY INVOKER: RLS applies, like inv_overview; it also closes ended
@@ -37,10 +38,12 @@ declare
   v_month date := date_trunc('month', coalesce(p_month, public.inv_today()))::date;
   v_past  boolean;
   v_rows  jsonb;
+  v_stats boolean;
 begin
   if not public.inv_can_view() then
     raise exception 'not permitted' using errcode = '42501';
   end if;
+  v_stats := coalesce(p_analytics, false) and public.current_role_name()::text in ('head_admin', 'admin');
   perform public.inv_rollover();
 
   v_past := v_month < v_cur and exists (select 1 from public.inv_closed_months where month = v_month);
@@ -90,7 +93,7 @@ begin
     'fields', jsonb_build_array('id', 'serial_no', 'description', 'specification', 'rate', 'custom', 'is_active',
                                 'opening', 'received', 'issued', 'balance'),
     'rows', v_rows,
-    'trend', case when p_analytics then (
+    'trend', case when v_stats then (
                select coalesce(jsonb_agg(jsonb_build_object(
                         'month', z.m, 'received', trim_scale(z.received)::text, 'issued', trim_scale(z.issued)::text)
                       order by z.m), '[]'::jsonb)
@@ -102,7 +105,7 @@ begin
                            on t.entry_date >= g.m::date and t.entry_date < (g.m + interval '1 month')::date
                         group by g.m) z
              ) end,
-    'top_issued', case when p_analytics then (
+    'top_issued', case when v_stats then (
                select coalesce(jsonb_agg(jsonb_build_object(
                         'id', q.id, 'serial_no', q.serial_no, 'description', q.description,
                         'specification', q.specification, 'issued', trim_scale(q.issued)::text)

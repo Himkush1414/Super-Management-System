@@ -1,7 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useId, useRef, useState } from "react";
 import { Lock, ArrowUp, ArrowDown, Eye, EyeOff, Archive, ArchiveRestore, Plus, Check } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { addColumn, reorderColumns, saveInventorySettings, setColumnArchived, updateColumn } from "@/lib/inventory/actions";
@@ -46,7 +45,7 @@ function Card({ title, description, children }: { title: string; description?: s
 function PersonCard({ settings }: { settings: InvSettings }) {
   const uid = useId();
   const toast = useToast();
-  const router = useRouter();
+  const savingRef = useRef(false);
   const [name, setName] = useState(settings.person_name);
   const [phone, setPhone] = useState(settings.phone);
   const [saving, setSaving] = useState(false);
@@ -55,14 +54,15 @@ function PersonCard({ settings }: { settings: InvSettings }) {
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (saving) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
-    const res = await saveInventorySettings({ personName: name, phone });
+    const res = await saveInventorySettings({ personName: name, phone }).catch(() => ({ ok: false as const, error: "No answer from the server. Please try again." }));
+    savingRef.current = false;
     setSaving(false);
     if (res.ok) {
       toast("success", "Saved. The name and phone show on the Inventory page.");
-      router.refresh();
     } else setError(res.error);
   }
 
@@ -94,7 +94,6 @@ function PersonCard({ settings }: { settings: InvSettings }) {
 
 function ColumnsCard({ columns }: { columns: InvColumn[] }) {
   const toast = useToast();
-  const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<InvColumn | null>(null);
@@ -105,10 +104,9 @@ function ColumnsCard({ columns }: { columns: InvColumn[] }) {
 
   async function run(id: string, p: Promise<{ ok: boolean; error?: string; message?: string }>) {
     setBusy(id);
-    const res = await p;
+    const res = await p.catch(() => ({ ok: false, error: "No answer from the server. Please try again." }));
     setBusy(null);
-    if (res.ok) router.refresh();
-    else toast("error", res.error ?? "Could not save.");
+    if (!res.ok) toast("error", res.error ?? "Could not save.");
   }
   const move = (i: number, d: -1 | 1) => {
     const ids = custom.map((c) => c.id);
@@ -269,21 +267,22 @@ function IconBtn({
 function AddColumnSheet({ onClose }: { onClose: () => void }) {
   const uid = useId();
   const toast = useToast();
-  const router = useRouter();
+  const savingRef = useRef(false);
   const [label, setLabel] = useState("");
   const [type, setType] = useState<ColumnType>("text");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (saving || !label.trim()) return;
+    if (savingRef.current || !label.trim()) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
-    const res = await addColumn({ label, dataType: type });
+    const res = await addColumn({ label, dataType: type }).catch(() => ({ ok: false as const, error: "No answer from the server. Please try again." }));
+    savingRef.current = false;
     setSaving(false);
     if (res.ok) {
       toast("success", `Column “${label.trim()}” added.`);
-      router.refresh();
       onClose();
     } else setError(res.error);
   }
@@ -331,21 +330,21 @@ function AddColumnSheet({ onClose }: { onClose: () => void }) {
 
 function RenameSheet({ column, onClose }: { column: InvColumn; onClose: () => void }) {
   const uid = useId();
-  const router = useRouter();
+  const savingRef = useRef(false);
   const [label, setLabel] = useState(column.label);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (saving || !label.trim()) return;
+    if (savingRef.current || !label.trim()) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
-    const res = await updateColumn({ columnId: column.id, label });
+    const res = await updateColumn({ columnId: column.id, label }).catch(() => ({ ok: false as const, error: "No answer from the server. Please try again." }));
+    savingRef.current = false;
     setSaving(false);
-    if (res.ok) {
-      router.refresh();
-      onClose();
-    } else setError(res.error);
+    if (res.ok) onClose();
+    else setError(res.error);
   }
   return (
     <Sheet open onClose={onClose} busy={saving} title={`Rename “${column.label}”`}>

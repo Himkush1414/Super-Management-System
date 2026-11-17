@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, startTransition, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Search, X, PackageSearch, Archive } from "lucide-react";
 import { buildIndex, search } from "@/lib/inventory/search";
 import { formatINR, formatQty } from "@/lib/inventory/numbers";
@@ -9,17 +9,24 @@ import { cn } from "@/lib/utils";
 import { Expand, Highlight } from "./bits";
 import { customText, type Row } from "./model";
 import { ProductPanel, type PanelProps } from "./ProductPanel";
+import { prefetchHistory } from "./stores";
 
+type PanelShared = Omit<PanelProps, "row" | "customCols" | "formCols">;
 type Props = {
   rows: Row[];
   customCols: InvColumn[];
   /** every active custom column (forms) */
   formCols: InvColumn[];
   toolbar?: React.ReactNode;
-} & Omit<PanelProps, "row" | "customCols" | "formCols">;
+} & PanelShared;
+
+/** Rows rendered at first, and added each time the list end comes near. */
+export const FIRST_ROWS = 40;
+const MORE_ROWS = 60;
 
 // md+ grid: Serial | Description | Specification | Rate | Opening | Receiving | Issue | Balance | custom… | chevron
 const FIXED = ["minmax(5.5rem,0.7fr)", "minmax(10rem,2fr)", "minmax(7.5rem,1.3fr)", "6rem", "6.5rem", "6.5rem", "6.5rem", "7rem"];
+const ZERO = BigInt(0);
 
 function useWidth<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -35,11 +42,12 @@ function useWidth<T extends HTMLElement>() {
   return [ref, w] as const;
 }
 
-export function ProductList({ rows, customCols, formCols, toolbar, ...panel }: Props) {
+export function ProductList({ rows, customCols, formCols, toolbar, canManage, isCurrent, today, onRecorded }: Props) {
   const [query, setQuery] = useState("");
   const deferred = useDeferredValue(query);
   const [showArchived, setShowArchived] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [limit, setLimit] = useState(FIRST_ROWS);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const archivedCount = useMemo(() => rows.filter((r) => !r.is_active).length, [rows]);
@@ -50,6 +58,26 @@ export function ProductList({ rows, customCols, formCols, toolbar, ...panel }: P
   );
   const shown = useMemo(() => search(index, deferred).map((i) => pool[i]), [index, deferred, pool]);
   const stale = query !== deferred;
+  // a new search starts from the top of a short list again
+  const [lastQuery, setLastQuery] = useState(deferred);
+  if (lastQuery !== deferred) {
+    setLastQuery(deferred);
+    setLimit(FIRST_ROWS);
+  }
+  const visible = shown.length > limit ? shown.slice(0, limit) : shown;
+
+  // more rows as the end of the list comes near (well before it's on screen)
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || shown.length <= limit) return;
+    const io = new IntersectionObserver(
+      (e) => e[0]?.isIntersecting && startTransition(() => setLimit((l) => l + MORE_ROWS)),
+      { rootMargin: "1200px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [shown.length, limit]);
 
   // "/" focuses the search (desktop keyboards)
   useEffect(() => {
@@ -64,7 +92,7 @@ export function ProductList({ rows, customCols, formCols, toolbar, ...panel }: P
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  const template = [...FIXED, ...customCols.map(() => "minmax(6.5rem,1fr)"), "2.75rem"].join(" ");
+  const template = useMemo(() => [...FIXED, ...customCols.map(() => "minmax(6.5rem,1fr)"), "2.75rem"].join(" "), [customCols]);
   const minWidth = `${51.5 + customCols.length * 6.5 + 2.75}rem`;
 
   // header row follows the list's horizontal scroll (it sits outside the scroller to stay sticky)
@@ -79,6 +107,10 @@ export function ProductList({ rows, customCols, formCols, toolbar, ...panel }: P
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // stable props, so a toggle or a keystroke re-renders only the rows that changed
+  const toggle = useCallback((id: string) => setOpenId((cur) => (cur === id ? null : id)), []);
+  const panel = useMemo<PanelShared>(() => ({ canManage, isCurrent, today, onRecorded }), [canManage, isCurrent, today, onRecorded]);
 
   return (
     <section aria-label="Products" className="relative">
@@ -119,7 +151,7 @@ export function ProductList({ rows, customCols, formCols, toolbar, ...panel }: P
             )}
           </div>
           <div className="flex items-center gap-2 lg:ml-auto">
-            <p className="tnum mr-auto text-[12.5px] text-text-tertiary lg:mr-1" aria-live="polite" aria-atomic="true">
+            <p className="tnum mr-auto text-[12.5px] text-text-tertiary lg:mr-1" aria-live="polite" aria-atomic="true" data-inv-count>
               {deferred.trim()
                 ? `${shown.length} of ${pool.length} product${pool.length === 1 ? "" : "s"}`
                 : `${pool.length} product${pool.length === 1 ? "" : "s"}`}
@@ -152,7 +184,7 @@ export function ProductList({ rows, customCols, formCols, toolbar, ...panel }: P
             <>
               <p className="text-sm font-medium">No products yet</p>
               <p className="mt-1 max-w-sm text-[13px] text-text-secondary">
-                {panel.canManage ? "Add the first product to start recording stock." : "The store hasn't added any products yet."}
+                {canManage ? "Add the first product to start recording stock." : "The store hasn't added any products yet."}
               </p>
             </>
           ) : (
@@ -173,7 +205,7 @@ export function ProductList({ rows, customCols, formCols, toolbar, ...panel }: P
           )}
         </div>
       ) : (
-        <div className={cn("mt-4 transition-opacity", stale && "opacity-70")}>
+        <div className={cn("mt-4 transition-opacity", stale && "opacity-70")} data-stale={stale || undefined}>
           {/* md+: column header, sticky under the toolbar, scrolled with the list */}
           <div
             aria-hidden
@@ -210,13 +242,13 @@ export function ProductList({ rows, customCols, formCols, toolbar, ...panel }: P
             className="md:overflow-x-auto md:rounded-b-xl md:border md:border-border"
           >
             <ul id="inv-results" role="list" className="space-y-2.5 md:space-y-0">
-              {shown.map((r) => (
+              {visible.map((r) => (
                 <ProductRow
                   key={r.id}
                   row={r}
                   query={deferred}
                   open={openId === r.id}
-                  onToggle={() => setOpenId((cur) => (cur === r.id ? null : r.id))}
+                  onToggle={toggle}
                   template={template}
                   minWidth={minWidth}
                   viewW={viewW}
@@ -226,6 +258,17 @@ export function ProductList({ rows, customCols, formCols, toolbar, ...panel }: P
                 />
               ))}
             </ul>
+            {shown.length > limit && (
+              <div ref={sentinel} className="flex justify-center py-4">
+                <button
+                  type="button"
+                  onClick={() => setLimit((l) => l + MORE_ROWS)}
+                  className="nr-interactive inline-flex h-11 items-center rounded-lg border border-border px-4 text-[13px] font-medium text-text-secondary hover:border-border-strong hover:text-text"
+                >
+                  Show more ({shown.length - limit} left)
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -233,6 +276,12 @@ export function ProductList({ rows, customCols, formCols, toolbar, ...panel }: P
   );
 }
 
+/**
+ * One product: ONE set of elements for every screen size (it used to be a
+ * card AND a table row, both in the page). Under 768px it lays out as a
+ * card; from 768px the same cells sit in the table grid (the figure and
+ * custom-column wrappers become `display: contents` there).
+ */
 const ProductRow = memo(function ProductRow({
   row: r,
   query,
@@ -248,16 +297,17 @@ const ProductRow = memo(function ProductRow({
   row: Row;
   query: string;
   open: boolean;
-  onToggle: () => void;
+  onToggle: (id: string) => void;
   template: string;
   minWidth: string;
   viewW: number;
   customCols: InvColumn[];
   formCols: InvColumn[];
-  panel: Omit<PanelProps, "row" | "customCols" | "formCols">;
+  panel: PanelShared;
 }) {
-  const zero = r.is_active && r.b === BigInt(0);
+  const zero = r.is_active && r.b === ZERO;
   const panelId = `inv-panel-${r.id}`;
+  const customs = customCols.map((c) => [c, customText(r, c)] as const);
   return (
     <li
       className={cn(
@@ -266,107 +316,74 @@ const ProductRow = memo(function ProductRow({
         // off-screen rows skip layout and paint until scrolled near
         !open && "[contain-intrinsic-size:auto_9rem] [content-visibility:auto] md:[contain-intrinsic-size:auto_3.25rem]",
       )}
-     
     >
       <button
         type="button"
-        onClick={onToggle}
+        onClick={() => onToggle(r.id)}
+        onPointerDown={() => prefetchHistory(r.id)}
         aria-expanded={open}
         aria-controls={panelId}
+        style={{ ["--inv-cols" as string]: template, minWidth: viewW >= 700 ? minWidth : undefined }}
         className={cn(
-          "group block w-full rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60 md:rounded-none",
-          "nr-interactive md:hover:bg-overlay/[0.03]",
+          "group nr-interactive grid w-full grid-cols-4 gap-x-2 rounded-xl p-4 text-left text-[13px] md:gap-x-0 md:rounded-none md:p-0 md:[grid-template-columns:var(--inv-cols)] md:hover:bg-overlay/[0.03]",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60",
         )}
       >
-        {/* phones: a card */}
-        <span className="block p-4 md:hidden">
-          <span className="flex items-start justify-between gap-3">
-            <span className="min-w-0">
-              <span className="tnum block text-[12px] font-semibold tracking-[0.02em] text-accent">
-                <Highlight text={r.serial_no} query={query} />
-              </span>
-              <span className="mt-0.5 block text-[15px] font-medium leading-snug">
-                <Highlight text={r.description} query={query} />
-              </span>
-              {r.specification && (
-                <span className="mt-0.5 block text-[13px] text-text-secondary">
-                  <Highlight text={r.specification} query={query} />
-                </span>
-              )}
-            </span>
-            <span className="flex shrink-0 flex-col items-end gap-1.5">
-              <span className={cn("tnum text-[17px] font-semibold leading-none", zero && "text-status-warning")}>{formatQty(r.b)}</span>
-              <span className="text-[11px] uppercase tracking-[0.05em] text-text-tertiary">Balance</span>
-            </span>
-          </span>
-          <span className="mt-3 grid grid-cols-4 gap-2 rounded-lg bg-bg-subtle/80 px-3 py-2.5">
-            <Fig label="Opening" value={formatQty(r.o)} />
-            <Fig label="Receiving" value={formatQty(r.r)} tone={r.r > BigInt(0) ? "in" : undefined} />
-            <Fig label="Issue" value={formatQty(r.i)} tone={r.i > BigInt(0) ? "out" : undefined} />
-            <Fig label="Rate" value={r.ratePaise === null ? "—" : formatINR(r.ratePaise)} />
-          </span>
-          {(customCols.length > 0 || !r.is_active || zero) && (
-            <span className="mt-2.5 flex flex-wrap items-center gap-1.5">
-              {!r.is_active && <Chip tone="muted">Archived</Chip>}
-              {zero && <Chip tone="warn">Out of stock</Chip>}
-              {customCols.map((c) => {
-                const v = customText(r, c);
-                return v ? (
-                  <Chip key={c.id}>
-                    <span className="text-text-tertiary">{c.label}:</span> <Highlight text={v} query={query} />
-                  </Chip>
-                ) : null;
-              })}
-            </span>
-          )}
-          <span className="mt-2 flex items-center justify-end gap-1 text-[12px] font-medium text-text-tertiary">
-            {open ? "Close" : panel.canManage && panel.isCurrent && r.is_active ? "Receive · Issue · History" : "History"}
-            <ChevronDown size={14} className={cn("transition-transform duration-200 motion-reduce:transition-none", open && "rotate-180")} />
-          </span>
+        <span className="tnum col-span-3 row-start-1 text-[12px] font-semibold tracking-[0.02em] text-accent md:sticky md:left-0 md:col-span-1 md:row-auto md:flex md:items-center md:bg-bg md:px-3 md:py-3 md:text-[13px] md:tracking-normal md:text-text md:group-hover:bg-[color-mix(in_srgb,var(--bg)_97%,var(--overlay))]">
+          <Highlight text={r.serial_no} query={query} />
         </span>
-
-        {/* md+: a table row */}
-        <span className="hidden text-[13px] md:grid" style={{ gridTemplateColumns: template, minWidth }}>
-          <span className="tnum sticky left-0 flex items-center gap-2 bg-bg px-3 py-3 font-semibold text-text group-hover:bg-[color-mix(in_srgb,var(--bg)_97%,var(--overlay))]">
-            <Highlight text={r.serial_no} query={query} />
+        <span className="col-span-3 row-start-2 mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 md:col-span-1 md:row-auto md:mt-0 md:flex-nowrap md:px-3 md:py-3">
+          <span className="text-[15px] font-medium leading-snug md:line-clamp-2 md:min-w-0 md:text-[13px]">
+            <Highlight text={r.description} query={query} />
           </span>
-          <span className="flex min-w-0 items-center gap-2 px-3 py-3">
-            <span className="line-clamp-2 min-w-0 font-medium">
-              <Highlight text={r.description} query={query} />
-            </span>
-            {!r.is_active && <Chip tone="muted">Archived</Chip>}
+          {!r.is_active && <Chip tone="muted">Archived</Chip>}
+        </span>
+        <span className="col-span-4 mt-0.5 text-[13px] text-text-secondary empty:hidden md:col-span-1 md:mt-0 md:line-clamp-2 md:flex md:items-center md:px-3 md:py-3">
+          {r.specification ? <Highlight text={r.specification} query={query} /> : null}
+        </span>
+        {/* figures: a strip under the card on phones, four table cells from 768px */}
+        <span className="col-span-4 mt-3 grid grid-cols-4 gap-2 rounded-lg bg-bg-subtle/80 px-3 py-2.5 md:contents">
+          <Fig label="Rate" value={r.ratePaise === null ? "—" : formatINR(r.ratePaise)} muted order="order-4 md:order-none" />
+          <Fig label="Opening" value={formatQty(r.o)} muted order="order-1 md:order-none" />
+          <Fig label="Receiving" value={formatQty(r.r)} tone={r.r > ZERO ? "in" : undefined} order="order-2 md:order-none" />
+          <Fig label="Issue" value={formatQty(r.i)} tone={r.i > ZERO ? "out" : undefined} order="order-3 md:order-none" />
+        </span>
+        <span className="col-start-4 row-span-2 row-start-1 flex flex-col items-end gap-1.5 md:col-auto md:row-auto md:flex-row md:items-center md:justify-end md:px-3 md:py-3">
+          <span
+            className={cn(
+              "tnum text-[17px] font-semibold leading-none md:rounded-md md:px-2 md:py-0.5 md:text-[13.5px]",
+              zero && "text-status-warning md:bg-status-warning/12 md:ring-1 md:ring-inset md:ring-status-warning/30",
+            )}
+          >
+            {formatQty(r.b)}
           </span>
-          <span className="line-clamp-2 flex items-center px-3 py-3 text-text-secondary">
-            <Highlight text={r.specification} query={query} />
+          <span className="text-[11px] uppercase tracking-[0.05em] text-text-tertiary md:hidden">{zero ? "Zero stock" : "Balance"}</span>
+        </span>
+        {customs.length > 0 && (
+          <span className="col-span-4 mt-2.5 flex flex-wrap gap-1.5 md:contents">
+            {customs.map(([c, v]) => (
+              <span
+                key={c.id}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full bg-overlay/[0.05] px-2 py-0.5 text-[11px] font-medium text-text-secondary ring-1 ring-inset ring-overlay/10",
+                  "md:flex md:min-w-0 md:truncate md:rounded-none md:bg-transparent md:px-3 md:py-3 md:text-[13px] md:font-normal md:ring-0",
+                  !v && "max-md:hidden",
+                )}
+              >
+                <span className="text-text-tertiary md:hidden">{c.label}:</span> <Highlight text={v} query={query} />
+              </span>
+            ))}
           </span>
-          <Num value={r.ratePaise === null ? "—" : formatINR(r.ratePaise)} muted />
-          <Num value={formatQty(r.o)} muted />
-          <Num value={formatQty(r.r)} tone={r.r > BigInt(0) ? "in" : undefined} />
-          <Num value={formatQty(r.i)} tone={r.i > BigInt(0) ? "out" : undefined} />
-          <span className="flex items-center justify-end px-3 py-3">
-            <span
-              className={cn(
-                "tnum rounded-md px-2 py-0.5 text-[13.5px] font-semibold",
-                zero ? "bg-status-warning/12 text-status-warning ring-1 ring-inset ring-status-warning/30" : "text-text",
-              )}
-            >
-              {formatQty(r.b)}
-            </span>
-          </span>
-          {customCols.map((c) => (
-            <span key={c.id} className="flex min-w-0 items-center truncate px-3 py-3 text-text-secondary">
-              <Highlight text={customText(r, c)} query={query} />
-            </span>
-          ))}
-          <span className="flex items-center justify-center text-text-tertiary">
-            <ChevronDown size={16} className={cn("transition-transform duration-200 motion-reduce:transition-none", open && "rotate-180 text-text")} />
-          </span>
+        )}
+        <span className="col-span-4 mt-2 flex items-center justify-end gap-1 text-[12px] font-medium text-text-tertiary md:col-span-1 md:mt-0 md:justify-center">
+          <span className="md:hidden">{open ? "Close" : panel.canManage && panel.isCurrent && r.is_active ? "Receive · Issue · History" : "History"}</span>
+          <ChevronDown size={16} className={cn("transition-transform duration-200 motion-reduce:transition-none", open && "rotate-180 md:text-text")} />
         </span>
       </button>
 
       <Expand open={open} id={panelId}>
         {/* stays in view while the md+ table scrolls sideways */}
-        <div className="md:sticky md:left-0" style={viewW ? { maxWidth: viewW } : undefined}>
+        <div className="md:sticky md:left-0" style={viewW ? { maxWidth: viewW } : undefined} data-inv-panel>
           <ProductPanel row={r} customCols={customCols} formCols={formCols} {...panel} />
         </div>
       </Expand>
@@ -374,34 +391,20 @@ const ProductRow = memo(function ProductRow({
   );
 });
 
-function Fig({ label, value, tone }: { label: string; value: string; tone?: "in" | "out" }) {
+function Fig({ label, value, tone, muted, order }: { label: string; value: string; tone?: "in" | "out"; muted?: boolean; order: string }) {
   return (
-    <span className="min-w-0">
-      <span className="block text-[10.5px] uppercase tracking-[0.05em] text-text-tertiary">{label}</span>
+    <span className={cn("min-w-0 md:flex md:items-center md:justify-end md:px-3 md:py-3", order)}>
+      <span className="block text-[10.5px] uppercase tracking-[0.05em] text-text-tertiary md:hidden">{label}</span>
       <span
         className={cn(
-          "tnum mt-0.5 block truncate text-[13px] font-medium",
+          "tnum mt-0.5 block truncate text-[13px] font-medium md:mt-0 md:font-normal",
+          muted && "md:text-text-secondary",
           tone === "in" && "text-status-success",
           tone === "out" && "text-status-info",
         )}
       >
         {value}
       </span>
-    </span>
-  );
-}
-
-function Num({ value, tone, muted }: { value: string; tone?: "in" | "out"; muted?: boolean }) {
-  return (
-    <span
-      className={cn(
-        "tnum flex items-center justify-end px-3 py-3",
-        muted && "text-text-secondary",
-        tone === "in" && "text-status-success",
-        tone === "out" && "text-status-info",
-      )}
-    >
-      {value}
     </span>
   );
 }

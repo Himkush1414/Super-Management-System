@@ -399,7 +399,8 @@ test("inv_page = inv_overview: same products, same figures (current and closed m
   for (const month of [null, "2026-10-01"]) {
     for (const role of ["inventory", "admin", "head_admin"]) {
       const ov = await overview(db, ids[role], month);
-      const pg = await as(db, ids[role], (tx) => rpc(tx, "inv_page", { p_month: month, p_analytics: role !== "inventory" }));
+      // everyone asks; only the admin tier gets the trend / top 10
+      const pg = await as(db, ids[role], (tx) => rpc(tx, "inv_page", { p_month: month, p_analytics: true }));
       assert.equal(pg.month, ov.month);
       assert.equal(pg.is_current, ov.is_current);
       const rows = pageRows(pg);

@@ -215,3 +215,19 @@ export function currentFigures(s: LedgerState, productId: string, today: string)
   const p = s.products.get(productId)!;
   return rangeFigures(p, s.entries, monthOf(today), today);
 }
+
+// ── idempotency keys ────────────────────────────────────────────────────
+
+/** What makes an entry "the same entry" for a retry: product, kind, quantity, date, note. */
+export function entryFingerprint(productId: string, kind: Kind, qtyText: string, date: string, note: string): string {
+  return [productId, kind, qtyText, date, note.trim()].join("\u0001");
+}
+
+/**
+ * The key for this attempt: the previous key if the entry is unchanged (a
+ * retry after a lost answer records once), a new one if anything changed
+ * (a corrected entry is never mistaken for the earlier one).
+ */
+export function nextKey(prev: { key: string; fp: string } | null, fp: string, make: () => string): { key: string; fp: string } {
+  return prev && prev.fp === fp ? prev : { key: make(), fp };
+}

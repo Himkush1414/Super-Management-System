@@ -206,3 +206,55 @@ test("export ranges (IST days) and the file name", () => {
   assert.equal(addMonths("2026-12-01", 1), "2027-01-01");
   assert.equal(monthEnd("2028-02-10"), "2028-02-29");
 });
+
+// ── speed & quality pass ─────────────────────────────────────────────────
+import { pageProducts } from "../lib/inventory/types.ts";
+import { summarize } from "../lib/inventory/numbers.ts";
+import { entryFingerprint, nextKey } from "../lib/inventory/ledger.ts";
+import { istToday } from "../lib/inventory/ranges.ts";
+
+test("compact page rows become the same product objects", () => {
+  const fields = ["id", "serial_no", "description", "specification", "rate", "custom", "is_active", "opening", "received", "issued", "balance"];
+  const rows = [["p1", "AB-1", "Sample", "", "3.5", { c1: "Nos." }, true, "10", "2.5", "1", "11.5"], ["p2", "AB-2", "Dummy", "x", null, {}, false, "0", "0", "0", "0"]];
+  const out = pageProducts({ fields, rows });
+  assert.deepEqual(out[0], { id: "p1", serial_no: "AB-1", description: "Sample", specification: "", rate: "3.5", custom: { c1: "Nos." }, is_active: true, opening: "10", received: "2.5", issued: "1", balance: "11.5" });
+  assert.equal(out[1].rate, null);
+  // field order is read from `fields`, not assumed
+  const shuffled = pageProducts({ fields: [...fields].reverse(), rows: rows.map((r) => [...r].reverse()) });
+  assert.deepEqual(shuffled, out);
+});
+
+test("summary: one definition for the screen and the exports (archived not in stock value)", () => {
+  const P = (v) => parsePaise(v);
+  const rows = [
+    { is_active: true, r: q("5"), i: q("1"), b: q("10"), ratePaise: P("2.50") },
+    { is_active: true, r: q("0"), i: q("0"), b: q("0"), ratePaise: P("1") },
+    { is_active: false, r: q("2"), i: q("0"), b: q("2"), ratePaise: P("100") },
+  ];
+  const s = summarize(rows);
+  assert.equal(s.products, 2);
+  assert.equal(s.zero, 1);
+  assert.equal(formatINR(s.value), "₹25.00"); // 10 × 2.50; the archived 2 × 100 is not counted
+  assert.equal(formatQty(s.received), "7"); // movements count for every product
+  assert.equal(formatINR(s.receivedValue), "₹212.50");
+  assert.equal(formatQty(s.issued), "1");
+});
+
+test("idempotency key: same entry keeps its key, a changed entry gets a new one", () => {
+  let n = 0;
+  const make = () => `k${++n}`;
+  const a = nextKey(null, entryFingerprint("p1", "receive", "5", "2026-11-17", ""), make);
+  assert.equal(a.key, "k1");
+  // retry of the same entry (lost answer): same key, recorded once
+  assert.equal(nextKey(a, entryFingerprint("p1", "receive", "5", "2026-11-17", " "), make).key, "k1");
+  // quantity corrected after a failed attempt: new key, never "already saved" for the old one
+  assert.equal(nextKey(a, entryFingerprint("p1", "receive", "50", "2026-11-17", ""), make).key, "k2");
+  assert.notEqual(nextKey(a, entryFingerprint("p1", "issue", "5", "2026-11-17", ""), make).key, "k1");
+  assert.notEqual(nextKey(a, entryFingerprint("p1", "receive", "5", "2026-11-16", ""), make).key, "k1");
+});
+
+test("today in IST, whatever the device's zone (a tab left open past midnight moves on)", () => {
+  assert.equal(istToday(new Date("2026-11-17T18:29:59Z")), "2026-11-17"); // 23:59:59 IST
+  assert.equal(istToday(new Date("2026-11-17T18:30:00Z")), "2026-11-18"); // 00:00 IST next day
+  assert.equal(istToday(new Date("2026-11-30T19:00:00Z")), "2026-12-01"); // month turns in India first
+});

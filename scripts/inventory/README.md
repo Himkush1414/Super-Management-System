@@ -1,17 +1,18 @@
 # Inventory scripts
 
-Local, one-off tools for the Inventory module (migrations `0027`, `0028`).
-They contain no data, no account values and no keys. Everything they need
-comes from `.env.local` (gitignored) or from the shell, and they never print
-a secret. Neither script deletes anything.
+Local tools for the Inventory module (migrations `0027`–`0030`): import,
+account and backup. They contain no data, no account values and no keys.
+Everything they need comes from `.env.local` (gitignored) or from the shell,
+and they never print a secret. None of them deletes anything.
 
 | Variable | Used by | What it is |
 | --- | --- | --- |
 | `INVENTORY_DOCX_PATH` | import | the product list: a `.docx`, a PDF of the same sheet, or a `.json` in the format of `inventory-sample.dummy.json` |
 | `INVENTORY_USERNAME`, `INVENTORY_PIN` | account | the inventory login; generated into `.env.local` if missing |
-| `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF` | both (live) | a personal access token, set in the shell only for the run |
-| `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | import (other databases) | used when no access token is set |
-| `INVENTORY_ENV_FILE` | both | another env file instead of `./.env.local` |
+| `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF` | all (live) | a personal access token, set in the shell only for the run |
+| `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | import, backup (other databases) | used when no access token is set |
+| `INVENTORY_ENV_FILE` | all | another env file instead of `./.env.local` |
+| `INVENTORY_BACKUP_DIR` | backup | where backups go (default `D:\NR-Backups\inventory`; never inside the repo) |
 
 ## Import the product list
 
@@ -49,12 +50,24 @@ owner, with an unknowable Auth password and a bcrypt PIN set through
 6-digit PIN, through `pin_login_attempt()` and its lockout. It has no
 sign-up and no recovery.
 
-## Tests
-
-`tests/sql/inventory.sql.test.mjs` runs every migration on an in-process
-Postgres (PGlite) and checks the role matrix and the ledger rules:
+## Back up the inventory tables
 
 ```sh
-npm i --no-save @electric-sql/pglite@0.3.15
-node --test tests/sql/*.test.mjs
+SUPABASE_ACCESS_TOKEN=<token> SUPABASE_PROJECT_REF=<ref> node scripts/inventory/backup.mjs
+node scripts/inventory/backup.mjs --out "E:\Backups\inventory"   # another folder
+```
+
+Read-only (a `begin read only` transaction, or GET requests only). It writes
+JSON, an additive `.restore.sql` and checksums to a folder outside the
+repository, and prints only row counts. Restore steps:
+[docs/inventory/BACKUP.md](../../docs/inventory/BACKUP.md).
+
+## Tests
+
+`tests/sql/*.test.mjs` run every migration on an in-process Postgres
+(PGlite) and check the role matrix, the ledger rules and the backup's
+restore. They are part of `npm test`, which CI runs on every pull request:
+
+```sh
+npm test
 ```

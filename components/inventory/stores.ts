@@ -103,3 +103,65 @@ export function useSavedVersion(): number {
     () => 0,
   );
 }
+
+// ── minimums saved in Inventory settings (one row at a time) ─────────────
+
+const savedMins = new Map<string, string | null>();
+let pageStale = false;
+
+/** A minimum the database just confirmed (decimal text, null = none). */
+export function rememberMin(productId: string, min: string | null) {
+  savedMins.set(productId, min);
+  pageStale = true;
+  emit();
+}
+
+/** Minimums saved this session that the page data may not show yet. */
+export function savedMinimums(): Map<string, string | null> {
+  return savedMins;
+}
+
+/** Forget those the page data already shows. */
+export function pruneMins(current: Map<string, string | null>) {
+  let changed = false;
+  for (const [id, m] of savedMins) {
+    const c = current.get(id);
+    if (c !== undefined && (c ?? null) === (m ?? null)) {
+      savedMins.delete(id);
+      changed = true;
+    }
+  }
+  if (changed) emit();
+}
+
+/** True once per change: the Inventory page should read its data again (in the background). */
+export function takePageStale(): boolean {
+  const s = pageStale;
+  pageStale = false;
+  return s;
+}
+
+// ── Party search's data: loaded once per tab, after the page is on screen ─
+
+type PartyIndex = { fields: string[]; rows: unknown[][] };
+let partyIndex: { at: number; p: Promise<PartyIndex> } | null = null;
+
+export function loadPartyIndex(): Promise<PartyIndex> {
+  if (partyIndex && Date.now() - partyIndex.at < 120_000) return partyIndex.p;
+  const p = fetch("/dashboard/inventory/parties", { cache: "no-store", credentials: "same-origin", headers: { accept: "application/json" } }).then(
+    async (res) => {
+      if (!res.ok || !(res.headers.get("content-type") ?? "").includes("json")) throw new Error("The party list didn't load.");
+      return (await res.json()) as PartyIndex;
+    },
+  );
+  partyIndex = { at: Date.now(), p };
+  p.catch(() => {
+    partyIndex = null;
+  });
+  return p;
+}
+
+/** A receipt with a party was saved: read the party list again next time. */
+export function invalidatePartyIndex() {
+  partyIndex = null;
+}

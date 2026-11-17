@@ -97,10 +97,26 @@ export function Sheet({
     };
   }, [open, mounted]);
 
+  // the on-screen keyboard: keep the sheet above it, the focused field in view
+  const [kb, setKb] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => setKb(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
+    vv.addEventListener("resize", onResize);
+    vv.addEventListener("scroll", onResize);
+    onResize();
+    return () => {
+      vv.removeEventListener("resize", onResize);
+      vv.removeEventListener("scroll", onResize);
+    };
+  }, [open]);
+
   if (!mounted || typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[110] flex items-end justify-center md:items-center md:p-6">
+    <div className="fixed inset-0 z-[110] flex items-end justify-center md:items-center md:p-6" style={kb ? { paddingBottom: kb } : undefined}>
       <div
         aria-hidden
         onClick={() => !busy && onClose()}
@@ -147,7 +163,13 @@ export function Sheet({
             <X size={16} />
           </button>
         </div>
-        <div className="overflow-y-auto overscroll-contain px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4">
+        <div
+          className="overflow-y-auto overscroll-contain px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-4"
+          onFocus={(e) => {
+            const t = e.target as HTMLElement;
+            if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) setTimeout(() => t.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
+          }}
+        >
           {children}
         </div>
       </div>

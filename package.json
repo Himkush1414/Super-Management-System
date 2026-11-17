@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "types": "supabase gen types typescript --project-id ywzwzrzlittjiosskmcy --schema public > types/database.types.ts",
-    "test": "node --test --experimental-strip-types \"tests/*.test.mjs\""
+    "test": "node --test --experimental-strip-types \"tests/*.test.mjs\" \"tests/sql/*.test.mjs\""
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.9.0",
@@ -21,6 +21,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.3.15",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

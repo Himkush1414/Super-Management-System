@@ -3,7 +3,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { ReadError } from "@/lib/data/read";
 import { perf } from "@/lib/perf";
-import type { InvHistory, InvOverview, InvPage, InvRangeReport } from "@/lib/inventory/types";
+import type { InvHistory, InvOverview, InvPage2, InvRangeReport } from "@/lib/inventory/types";
 
 /**
  * Inventory reads. Always with the signed-in account's own session (never
@@ -27,18 +27,28 @@ export async function getInventoryOverview(month: string | null): Promise<InvOve
  * top 10 come back only for the admin tier (the database decides), so this
  * can run before the caller's role is known.
  */
-export async function getInventoryPage(month: string | null): Promise<InvPage> {
+export async function getInventoryPage(month: string | null): Promise<InvPage2> {
   const pf = perf("inventory.page");
   const supabase = await createClient();
-  const { data, error } = await pf.time("rpc.inv_page", supabase.rpc("inv_page", { p_month: month, p_analytics: true }));
+  // inv_page2 (0030) = inv_page + minimum stock, last receipt, low count, party names: one call
+  const { data, error } = await pf.time("rpc.inv_page2", supabase.rpc("inv_page2", { p_month: month, p_analytics: true }));
   pf.end({ ok: !error });
   if (error || !data) throw new ReadError("the inventory", error ?? "empty answer");
-  return data as InvPage;
+  return data as InvPage2;
+}
+
+/** Party search's data (all months): per product and party, quantity and last challan / bill / date. */
+export async function getPartyIndex(): Promise<{ fields: string[]; rows: unknown[][] }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("inv_party_index");
+  if (error || !data) throw new ReadError("the party list", error ?? "empty answer");
+  return data as { fields: string[]; rows: unknown[][] };
 }
 
 export async function getInventoryHistory(productId: string): Promise<InvHistory> {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("inv_product_history", { p_product_id: productId, p_limit: 30 });
+  // inv_product_history2 (0030) = inv_product_history + each entry's details
+  const { data, error } = await supabase.rpc("inv_product_history2", { p_product_id: productId, p_limit: 30 });
   if (error || !data) throw new ReadError("the product history", error ?? "empty answer");
   return data as InvHistory;
 }

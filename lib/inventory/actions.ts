@@ -18,7 +18,7 @@ import type { InvHistory, InvWriteResult } from "@/lib/inventory/types";
 
 export type ActionResult =
   /** id: the new ledger entry's id (receive / issue / reverse) or the new product's id */
-  | { ok: true; message?: string; balanceAfter?: string; id?: string | number }
+  | { ok: true; message?: string; balanceAfter?: string; id?: string | number; belowMin?: boolean; minStock?: string | null; changed?: number }
   | { ok: false; error: string; balance?: string };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -33,7 +33,10 @@ async function manager() {
 
 function asResult(r: InvWriteResult | null, ok: string): ActionResult {
   if (!r) return { ok: false, error: FAILED };
-  if (r.status === "ok") return { ok: true, message: ok, balanceAfter: r.balance_after, id: r.id };
+  if (r.status === "ok") {
+    const x = r as InvWriteResult & { below_min?: boolean; min_stock?: string | null; changed?: number | boolean };
+    return { ok: true, message: ok, balanceAfter: r.balance_after, id: r.id, belowMin: x.below_min, minStock: x.min_stock ?? null, changed: typeof x.changed === "number" ? x.changed : undefined };
+  }
   // the same request again (double tap, retried network): it was saved once
   if (r.status === "duplicate" && r.balance_after !== undefined) {
     return { ok: true, message: "Already saved.", balanceAfter: r.balance_after, id: r.id };
@@ -73,7 +76,20 @@ async function call(fn: string, args: Record<string, unknown>): Promise<InvWrite
 
 const done = () => revalidatePath("/dashboard/inventory");
 
-/** Receive or issue stock. `key` is made once per form, so a retry or a double tap records once. */
+/** The optional details of an entry (0030). Receive: party, challan, bill no, bill date. Issue: job no, rating, no. of jobs. */
+export type EntryDetails = {
+  party?: string;
+  challanNo?: string;
+  billNo?: string;
+  billDate?: string;
+  jobNo?: string;
+  rating?: string;
+  noOfJobs?: string;
+};
+
+const txt = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) || null : null);
+
+/** Receive or issue stock. `key` is made once per entry, so a retry or a double tap records once. */
 export async function recordEntry(input: {
   productId: string;
   kind: "receive" | "issue";
@@ -81,20 +97,33 @@ export async function recordEntry(input: {
   date: string;
   note: string;
   key: string;
+  details?: EntryDetails;
 }): Promise<ActionResult> {
   if (!UUID.test(input.productId) || !KEY.test(input.key)) return { ok: false, error: "Product not found." };
   if (input.kind !== "receive" && input.kind !== "issue") return { ok: false, error: "Choose Receive or Issue." };
   const q = checkQty(input.qty);
   if (!q.ok) return { ok: false, error: q.message };
   if (!DAY.test(input.date)) return { ok: false, error: "Choose a date." };
-  return ledgerWrite("inv_record_transaction", {
+  const d = input.details ?? {};
+  const receive = input.kind === "receive";
+  const billDate = receive && typeof d.billDate === "string" && d.billDate ? d.billDate : null;
+  if (billDate && !DAY.test(billDate)) return { ok: false, error: "Choose a real bill date." };
+  // only the details that belong to this kind are sent; the database checks again
+  return ledgerWrite("inv_record_entry", {
     p_product_id: input.productId,
     p_kind: input.kind,
     p_qty: qtyToText(q.qty),
     p_entry_date: input.date,
     p_note: input.note.trim().slice(0, 300) || null,
     p_idempotency_key: input.key,
-  }, input.kind === "receive" ? "Receipt saved." : "Issue saved.");
+    p_party: receive ? txt(d.party, 120) : null,
+    p_challan_no: receive ? txt(d.challanNo, 60) : null,
+    p_bill_no: receive ? txt(d.billNo, 60) : null,
+    p_bill_date: billDate,
+    p_job_no: receive ? null : txt(d.jobNo, 60),
+    p_rating: receive ? null : txt(d.rating, 60),
+    p_no_of_jobs: receive ? null : txt(d.noOfJobs, 20),
+  }, receive ? "Receipt saved." : "Issue saved.");
 }
 
 /** Reverse an entry of this month (a new opposite entry; nothing is edited or deleted). */
@@ -102,7 +131,8 @@ export async function reverseEntry(input: { entryId: number; note: string; key: 
   if (!Number.isSafeInteger(input.entryId) || input.entryId <= 0 || !KEY.test(input.key)) {
     return { ok: false, error: "Entry not found." };
   }
-  return ledgerWrite("inv_reverse_transaction", {
+  // inv_reverse_entry (0030): the reversal carries the original's details
+  return ledgerWrite("inv_reverse_entry", {
     p_transaction_id: input.entryId,
     p_note: input.note.trim().slice(0, 300) || null,
     p_idempotency_key: input.key,
@@ -115,6 +145,41 @@ function cleanCustom(custom: Record<string, string>): Record<string, string> {
     if (UUID.test(k) && typeof v === "string") out[k] = v.trim().slice(0, 200);
   }
   return out;
+}
+
+/** A minimum-stock text: "" = no minimum; else ≥ 0 with at most 3 decimals. */
+function minText(v: string | undefined): { ok: true; value: string | null } | { ok: false } {
+  if (v === undefined || !String(v).trim()) return { ok: true, value: null };
+  const q = parseQty(String(v));
+  if (q === null || q < BigInt(0)) return { ok: false };
+  return { ok: true, value: qtyToText(q) };
+}
+
+/** Set (or clear with "") one product's minimum stock. */
+export async function setMinStock(productId: string, minStock: string): Promise<ActionResult> {
+  if (!(await manager())) return { ok: false, error: "Not permitted." };
+  if (!UUID.test(productId)) return { ok: false, error: "Product not found." };
+  const min = minText(minStock);
+  if (!min.ok) return { ok: false, error: "0 or more, with at most 3 decimals." };
+  // no page re-render in the answer: the list keeps its own state, and the
+  // Inventory page picks the new minimum up (stores.ts) — a row save stays tiny
+  return asResult(await call("inv_set_min_stock", { p_product_id: productId, p_min_stock: min.value }), "Minimum saved.");
+}
+
+/** The same minimum for several products (the settings' "set for all filtered"). */
+export async function setMinStockBulk(productIds: string[], minStock: string): Promise<ActionResult> {
+  if (!(await manager())) return { ok: false, error: "Not permitted." };
+  if (!Array.isArray(productIds) || !productIds.length || productIds.length > 10000 || !productIds.every((id) => UUID.test(id))) {
+    return { ok: false, error: "No products chosen." };
+  }
+  const min = minText(minStock);
+  if (!min.ok) return { ok: false, error: "0 or more, with at most 3 decimals." };
+  const res = asResult(await call("inv_set_min_stock_bulk", { p_product_ids: productIds, p_min_stock: min.value }), "Minimums saved.");
+  if (res.ok) {
+    done();
+    revalidatePath("/dashboard/inventory-settings");
+  }
+  return res;
 }
 
 function rateText(rate: string): { ok: true; value: string | null } | { ok: false } {
@@ -131,6 +196,7 @@ export async function addProduct(input: {
   rate: string;
   openingQty: string;
   custom: Record<string, string>;
+  minStock?: string;
 }): Promise<ActionResult> {
   if (!(await manager())) return { ok: false, error: "Not permitted." };
   const rate = rateText(input.rate);
@@ -139,13 +205,16 @@ export async function addProduct(input: {
   if (opening === null || opening < BigInt(0)) {
     return { ok: false, error: "The opening balance must be 0 or more, with at most 3 decimals." };
   }
-  const r = await call("inv_add_product", {
+  const min = minText(input.minStock);
+  if (!min.ok) return { ok: false, error: "The minimum stock must be 0 or more, with at most 3 decimals." };
+  const r = await call("inv_add_product_v2", {
     p_serial_no: input.serialNo.trim(),
     p_description: input.description.trim(),
     p_specification: input.specification.trim(),
     p_rate: rate.value,
     p_opening_qty: qtyToText(opening),
     p_custom: cleanCustom(input.custom),
+    p_min_stock: min.value,
   });
   const res = asResult(r, "Product added.");
   if (res.ok) done();
@@ -158,17 +227,21 @@ export async function updateProduct(input: {
   specification: string;
   rate: string;
   custom: Record<string, string>;
+  minStock?: string;
 }): Promise<ActionResult> {
   if (!(await manager())) return { ok: false, error: "Not permitted." };
   if (!UUID.test(input.productId)) return { ok: false, error: "Product not found." };
   const rate = rateText(input.rate);
   if (!rate.ok) return { ok: false, error: "The rate must be a number with at most 2 decimals." };
-  const r = await call("inv_update_product", {
+  const min = minText(input.minStock);
+  if (!min.ok) return { ok: false, error: "The minimum stock must be 0 or more, with at most 3 decimals." };
+  const r = await call("inv_update_product_v2", {
     p_product_id: input.productId,
     p_description: input.description.trim(),
     p_specification: input.specification.trim(),
     p_rate: rate.value,
     p_custom: cleanCustom(input.custom),
+    p_min_stock: min.value,
   });
   const res = asResult(r, "Details saved.");
   if (res.ok) done();

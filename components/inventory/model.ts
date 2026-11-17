@@ -1,4 +1,4 @@
-import { parsePaise, parseQty, valueOf } from "@/lib/inventory/numbers";
+import { isLow, parsePaise, parseQty, valueOf } from "@/lib/inventory/numbers";
 import type { InvColumn, InvProductRow } from "@/lib/inventory/types";
 
 /** A product with its figures parsed once (bigint thousandths / paise). */
@@ -9,17 +9,30 @@ export interface Row extends InvProductRow {
   b: bigint;
   ratePaise: bigint | null;
   value: bigint;
+  /** minimum stock (thousandths), null = none */
+  min: bigint | null;
+  minText: string | null;
+  lastParty: string | null;
+  lastReceived: string | null;
 }
 
 const Z = BigInt(0);
 
-export function toRow(p: InvProductRow): Row {
+/** Low: a minimum is set and the balance is below it (live: follows saves). */
+export const rowLow = (r: Pick<Row, "is_active" | "b" | "min">) => r.is_active && isLow(r.b, r.min);
+
+export function toRow(p: InvProductRow, extra?: [string | null, string | null, string | null]): Row {
   const o = parseQty(p.opening) ?? Z;
   const r = parseQty(p.received) ?? Z;
   const i = parseQty(p.issued) ?? Z;
   const b = parseQty(p.balance) ?? Z;
   const ratePaise = p.rate == null ? null : parsePaise(p.rate);
-  return { ...p, o, r, i, b, ratePaise, value: valueOf(b, ratePaise) };
+  const minText = extra?.[0] ?? null;
+  return {
+    ...p, o, r, i, b, ratePaise, value: valueOf(b, ratePaise),
+    min: minText === null ? null : parseQty(minText), minText,
+    lastParty: extra?.[1] ?? null, lastReceived: extra?.[2] ?? null,
+  };
 }
 
 /** The text a custom column shows for a row (dates as DD/MM/YYYY). */

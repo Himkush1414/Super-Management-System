@@ -9,10 +9,11 @@ import { cn } from "@/lib/utils";
 import { Field, FieldLabel } from "./bits";
 import { Sheet } from "./Sheet";
 import { ToastProvider, useToast } from "./Toast";
+import { MinStockCard, type MinRow } from "./MinStockCard";
 
 const TYPE_LABEL: Record<ColumnType, string> = { text: "Text", number: "Number", date: "Date" };
 
-export function InventorySettings(props: { settings: InvSettings; columns: InvColumn[] }) {
+export function InventorySettings(props: { settings: InvSettings; columns: InvColumn[]; products: MinRow[] }) {
   return (
     <ToastProvider>
       <div className="mb-6">
@@ -25,6 +26,7 @@ export function InventorySettings(props: { settings: InvSettings; columns: InvCo
       <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)] lg:items-start">
         <PersonCard settings={props.settings} />
         <ColumnsCard columns={props.columns} />
+        <MinStockCard products={props.products} />
       </div>
     </ToastProvider>
   );

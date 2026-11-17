@@ -111,7 +111,7 @@ export function DayField({
         autoComplete="off"
         maxLength={10}
         aria-describedby={describedBy}
-        className="tnum h-11 w-full rounded-lg border border-border-strong bg-bg-subtle px-3 pr-11 text-[15px] text-text placeholder:text-text-tertiary focus-visible:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 md:text-sm"
+        className="tnum h-11 w-full rounded-lg border border-border-strong bg-bg-subtle px-3 pr-11 text-[16px] text-text placeholder:text-text-tertiary focus-visible:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 md:text-sm"
       />
       <button
         type="button"
@@ -142,7 +142,7 @@ export function Field({ className, ...props }: React.InputHTMLAttributes<HTMLInp
     <input
       {...props}
       className={cn(
-        "h-11 w-full rounded-lg border border-border-strong bg-bg-subtle px-3 text-[15px] text-text placeholder:text-text-tertiary md:h-10 md:text-sm",
+        "h-11 w-full rounded-lg border border-border-strong bg-bg-subtle px-3 text-[16px] text-text placeholder:text-text-tertiary md:h-10 md:text-sm",
         "focus-visible:border-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 disabled:opacity-50",
         className,
       )}

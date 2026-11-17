@@ -93,6 +93,7 @@ offline screens, taken on an Android emulator without signing in.
   PDF archive before a reset, and an append-only activity log.
 - DD/MM/YYYY dates and IST times everywhere; a dark/light switch in the
   dashboard.
+- **Inventory**: store stock on an append-only ledger, minimum-stock alerts, Party search and PDF / Word / Excel exports — see [docs/inventory/README.md](docs/inventory/README.md).
 
 **Android app**
 - The live website in a locked-down WebView: HTTPS only; only the

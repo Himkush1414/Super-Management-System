@@ -120,50 +120,72 @@ function Cells({ cols, row, head, zebra }: { cols: Col[]; row?: ExportRow; head?
   );
 }
 
+/** Rows per page: laid out in pages here, so react-pdf never has to split one huge table (slow with thousands of rows). */
+const ROWS_FIRST = 18;
+const ROWS_PAGE = 21;
+
+function chunks<T>(rows: T[]): T[][] {
+  if (rows.length <= ROWS_FIRST) return [rows];
+  const out: T[][] = [rows.slice(0, ROWS_FIRST)];
+  for (let i = ROWS_FIRST; i < rows.length; i += ROWS_PAGE) out.push(rows.slice(i, i + ROWS_PAGE));
+  return out;
+}
+
 export function InventoryReport({ model }: { model: ExportModel }) {
   const cols = columns(model);
   const subtitle = `${dmySlash(model.from)} to ${dmySlash(model.to)} · ${model.rangeLabel}`;
+  const pages = chunks(model.rows);
   return (
     <Document title={model.title} author={COMPANY.name} creator={COMPANY.name} producer={COMPANY.name}>
-      <Page size="A4" orientation="landscape" style={s.page} wrap>
-        <PdfHeader title="Product Specification" subtitle={subtitle} generatedAt={model.generatedAt} />
-        <View style={s.summary}>
-          <Text style={s.summaryItem}>
-            <Text style={s.label}>Products: </Text>
-            {model.rows.length.toLocaleString("en-IN")}
-          </Text>
-          <Text style={s.summaryItem}>
-            <Text style={s.label}>Received: </Text>
-            {formatQty(model.totals.received)}
-          </Text>
-          <Text style={s.summaryItem}>
-            <Text style={s.label}>Issued: </Text>
-            {formatQty(model.totals.issued)}
-          </Text>
-          {model.person && (
-            <Text style={s.summaryItem}>
-              <Text style={s.label}>Inventory: </Text>
-              {model.person}
-            </Text>
+      {pages.map((rows, p) => (
+        // each page holds its own rows; `wrap` stays on, so a page whose rows run long still continues cleanly
+        <Page key={p} size="A4" orientation="landscape" style={s.page} wrap>
+          <PdfHeader title="Product Specification" subtitle={subtitle} generatedAt={model.generatedAt} />
+          {p === 0 && (
+            <View style={s.summary}>
+              <Text style={s.summaryItem}>
+                <Text style={s.label}>Products: </Text>
+                {model.rows.length.toLocaleString("en-IN")}
+              </Text>
+              <Text style={s.summaryItem}>
+                <Text style={s.label}>Received: </Text>
+                {formatQty(model.totals.received)}
+              </Text>
+              <Text style={s.summaryItem}>
+                <Text style={s.label}>Issued: </Text>
+                {formatQty(model.totals.issued)}
+              </Text>
+              {model.person && (
+                <Text style={s.summaryItem}>
+                  <Text style={s.label}>Inventory: </Text>
+                  {model.person}
+                </Text>
+              )}
+            </View>
           )}
-        </View>
-        <Cells cols={cols} head />
-        {model.rows.length === 0 ? (
-          <Text style={s.empty}>No products in this range.</Text>
-        ) : (
-          model.rows.map((r, i) => <Cells key={r.serial + i} cols={cols} row={r} zebra={i % 2 === 1} />)
-        )}
-        <View style={s.totals} wrap={false}>
-          <Text>
-            <Text style={s.label}>Total closing value (active products): </Text>
-            <Rupees value={model.totals.value} />
-          </Text>
-        </View>
-        <View style={s.footer} fixed>
-          <Text>{COMPANY.name} · Product Specification</Text>
-          <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
-        </View>
-      </Page>
+          <Cells cols={cols} head />
+          {model.rows.length === 0 ? (
+            <Text style={s.empty}>No products in this range.</Text>
+          ) : (
+            rows.map((r, i) => {
+              const n = p === 0 ? i : ROWS_FIRST + (p - 1) * ROWS_PAGE + i;
+              return <Cells key={r.serial + n} cols={cols} row={r} zebra={n % 2 === 1} />;
+            })
+          )}
+          {p === pages.length - 1 && (
+            <View style={s.totals} wrap={false}>
+              <Text>
+                <Text style={s.label}>Total closing value (active products): </Text>
+                <Rupees value={model.totals.value} />
+              </Text>
+            </View>
+          )}
+          <View style={s.footer} fixed>
+            <Text>{COMPANY.name} · Product Specification</Text>
+            <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
+          </View>
+        </Page>
+      ))}
     </Document>
   );
 }

@@ -1,13 +1,15 @@
 "use client";
 
 import { memo, startTransition, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Search, X, PackageSearch, Archive } from "lucide-react";
+import { ChevronDown, Search, X, PackageSearch, Archive, TriangleAlert, Truck } from "lucide-react";
 import { buildIndex, search } from "@/lib/inventory/search";
-import { formatINR, formatQty } from "@/lib/inventory/numbers";
+import { formatINR, formatQty, parseQty, sum } from "@/lib/inventory/numbers";
+import { matchParty, partyKey, type PartyLine } from "@/lib/inventory/party";
 import type { InvColumn } from "@/lib/inventory/types";
-import { cn } from "@/lib/utils";
+import { cn, formatDay } from "@/lib/utils";
 import { Expand, Highlight } from "./bits";
-import { customText, type Row } from "./model";
+import { customText, rowLow, type Row } from "./model";
+import { PartyInput } from "./PartyInput";
 import { ProductPanel, type PanelProps } from "./ProductPanel";
 import { prefetchHistory } from "./stores";
 
@@ -18,6 +20,12 @@ type Props = {
   /** every active custom column (forms) */
   formCols: InvColumn[];
   toolbar?: React.ReactNode;
+  /** Party search: its lines (null until loaded) and a way to ask for them */
+  partyLines: PartyLine[] | null;
+  onPartyNeeded: () => void;
+  lowOnly: boolean;
+  onLowOnly: (v: boolean) => void;
+  lowCount: number;
 } & PanelShared;
 
 /** Rows rendered at first, and added each time the list end comes near. */
@@ -42,9 +50,15 @@ function useWidth<T extends HTMLElement>() {
   return [ref, w] as const;
 }
 
-export function ProductList({ rows, customCols, formCols, toolbar, canManage, isCurrent, today, onRecorded }: Props) {
+export function ProductList({
+  rows, customCols, formCols, toolbar, canManage, isCurrent, today, onRecorded, partyNames, partyLines, onPartyNeeded, lowOnly, onLowOnly, lowCount,
+}: Props) {
   const [query, setQuery] = useState("");
   const deferred = useDeferredValue(query);
+  const [party, setParty] = useState("");
+  const deferredParty = useDeferredValue(party);
+  const partyOn = partyKey(deferredParty) !== "";
+  const partyMatches = useMemo(() => (partyOn && partyLines ? matchParty(partyLines, deferredParty) : null), [partyOn, partyLines, deferredParty]);
   const [showArchived, setShowArchived] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [limit, setLimit] = useState(FIRST_ROWS);
@@ -52,16 +66,26 @@ export function ProductList({ rows, customCols, formCols, toolbar, canManage, is
 
   const archivedCount = useMemo(() => rows.filter((r) => !r.is_active).length, [rows]);
   const pool = useMemo(() => rows.filter((r) => r.is_active || showArchived), [rows, showArchived]);
+  // the search index is built on the first keystroke, not on every page open
+  const searching = deferred.trim() !== "";
   const index = useMemo(
-    () => buildIndex(pool, (r) => [r.serial_no, r.description, r.specification, ...formCols.map((c) => customText(r, c))]),
-    [pool, formCols],
+    () => (searching ? buildIndex(pool, (r) => [r.serial_no, r.description, r.specification, ...formCols.map((c) => customText(r, c))]) : null),
+    [pool, formCols, searching],
   );
-  const shown = useMemo(() => search(index, deferred).map((i) => pool[i]), [index, deferred, pool]);
-  const stale = query !== deferred;
+  // main search AND party AND low stock
+  const shown = useMemo(() => {
+    let out = index ? search(index, deferred).map((i) => pool[i]) : pool;
+    if (lowOnly) out = out.filter(rowLow);
+    if (partyOn) out = partyMatches ? out.filter((r) => partyMatches.has(r.id)) : [];
+    return out;
+  }, [index, deferred, pool, lowOnly, partyOn, partyMatches]);
+  const filtering = Boolean(deferred.trim()) || lowOnly || partyOn;
+  const stale = query !== deferred || party !== deferredParty;
   // a new search starts from the top of a short list again
-  const [lastQuery, setLastQuery] = useState(deferred);
-  if (lastQuery !== deferred) {
-    setLastQuery(deferred);
+  const filterKey = `${deferred}\u0001${deferredParty}\u0001${lowOnly}`;
+  const [lastQuery, setLastQuery] = useState(filterKey);
+  if (lastQuery !== filterKey) {
+    setLastQuery(filterKey);
     setLimit(FIRST_ROWS);
   }
   const visible = shown.length > limit ? shown.slice(0, limit) : shown;
@@ -110,7 +134,7 @@ export function ProductList({ rows, customCols, formCols, toolbar, canManage, is
 
   // stable props, so a toggle or a keystroke re-renders only the rows that changed
   const toggle = useCallback((id: string) => setOpenId((cur) => (cur === id ? null : id)), []);
-  const panel = useMemo<PanelShared>(() => ({ canManage, isCurrent, today, onRecorded }), [canManage, isCurrent, today, onRecorded]);
+  const panel = useMemo<PanelShared>(() => ({ canManage, isCurrent, today, onRecorded, partyNames }), [canManage, isCurrent, today, onRecorded, partyNames]);
 
   return (
     <section aria-label="Products" className="relative">
@@ -120,7 +144,8 @@ export function ProductList({ rows, customCols, formCols, toolbar, canManage, is
         className="sticky top-14 z-20 -mx-4 border-b border-border bg-bg/85 px-4 py-3 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"
       >
         <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center">
-          <div className="relative flex-1 lg:max-w-md">
+          <div className="flex flex-col gap-2 sm:flex-row lg:max-w-2xl lg:flex-1">
+          <div className="relative flex-1">
             <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-text-tertiary" />
             <input
               ref={searchRef}
@@ -150,19 +175,51 @@ export function ProductList({ rows, customCols, formCols, toolbar, canManage, is
               </button>
             )}
           </div>
-          <div className="flex items-center gap-2 lg:ml-auto">
-            <p className="tnum mr-auto text-[12.5px] text-text-tertiary lg:mr-1" aria-live="polite" aria-atomic="true" data-inv-count>
-              {deferred.trim()
+          {/* Party search: products received from a party (all months) */}
+          <div className="relative sm:w-[42%] sm:max-w-xs" onFocusCapture={onPartyNeeded} onPointerEnter={onPartyNeeded}>
+            <Truck size={15} className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-text-tertiary" />
+            <PartyInput
+              id="inv-party-search"
+              value={party}
+              onChange={setParty}
+              names={partyNames}
+              placeholder="Party"
+              label="Party"
+              clearable
+              inputClassName="rounded-xl border-border-strong bg-panel pl-10 md:h-11 md:text-sm"
+            />
+          </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2 lg:ml-auto lg:flex-nowrap">
+            <p className="tnum mr-auto whitespace-nowrap text-[12.5px] text-text-tertiary lg:mr-1" aria-live="polite" aria-atomic="true" data-inv-count>
+              {filtering
                 ? `${shown.length} of ${pool.length} product${pool.length === 1 ? "" : "s"}`
                 : `${pool.length} product${pool.length === 1 ? "" : "s"}`}
             </p>
+            {(lowCount > 0 || lowOnly) && (
+              <button
+                type="button"
+                aria-pressed={lowOnly}
+                aria-label={`Low stock (${lowCount})`}
+                onClick={() => onLowOnly(!lowOnly)}
+                className={cn(
+                  "nr-interactive inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-[13px] font-medium md:h-9",
+                  lowOnly
+                    ? "border-status-warning/50 bg-status-warning/12 text-status-warning"
+                    : "border-border text-text-secondary hover:border-status-warning/40 hover:text-text",
+                )}
+              >
+                <TriangleAlert size={14} />
+                <span className="sr-only sm:not-sr-only">Low</span> <span className="tnum">{lowCount}</span>
+              </button>
+            )}
             {archivedCount > 0 && (
               <button
                 type="button"
                 aria-pressed={showArchived}
                 onClick={() => setShowArchived((v) => !v)}
                 className={cn(
-                  "nr-interactive inline-flex h-11 items-center gap-1.5 rounded-lg border px-3 text-[13px] font-medium md:h-9",
+                  "nr-interactive inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-[13px] font-medium md:h-9",
                   showArchived
                     ? "border-accent/40 bg-accent/10 text-text"
                     : "border-border text-text-secondary hover:border-border-strong hover:text-text",
@@ -189,17 +246,34 @@ export function ProductList({ rows, customCols, formCols, toolbar, canManage, is
             </>
           ) : (
             <>
-              <p className="text-sm font-medium">Nothing matches “{deferred.trim()}”</p>
-              <p className="mt-1 max-w-sm text-[13px] text-text-secondary">
-                Try fewer words, or part of a serial number. The search looks at serial, description, specification
-                {formCols.length ? " and your custom columns" : ""}.
-              </p>
+              {partyOn && !partyLines ? (
+                <p className="text-sm font-medium">Loading the party list…</p>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">
+                    {partyOn
+                      ? `No products received from “${deferredParty.trim()}”${deferred.trim() || lowOnly ? " match the other filters" : ""}`
+                      : lowOnly && !deferred.trim()
+                        ? "Nothing is below its minimum"
+                        : `Nothing matches “${deferred.trim()}”`}
+                  </p>
+                  <p className="mt-1 max-w-sm text-[13px] text-text-secondary">
+                    {partyOn
+                      ? "Party search covers receipts recorded with a party name (all months). Entries from before parties were recorded don't carry one."
+                      : `Try fewer words, or part of a serial number. The search looks at serial, description, specification${formCols.length ? " and your custom columns" : ""}.`}
+                  </p>
+                </>
+              )}
               <button
                 type="button"
-                onClick={() => setQuery("")}
-                className="nr-interactive mt-4 inline-flex h-10 items-center rounded-lg border border-border-strong px-4 text-[13px] font-medium hover:bg-elevated"
+                onClick={() => {
+                  setQuery("");
+                  setParty("");
+                  onLowOnly(false);
+                }}
+                className="nr-interactive mt-4 inline-flex h-11 items-center rounded-lg border border-border-strong px-4 text-[13px] font-medium hover:bg-elevated md:h-10"
               >
-                Clear search
+                Clear all filters
               </button>
             </>
           )}
@@ -255,6 +329,7 @@ export function ProductList({ rows, customCols, formCols, toolbar, canManage, is
                   customCols={customCols}
                   formCols={formCols}
                   panel={panel}
+                  party={partyMatches?.get(r.id)}
                 />
               ))}
             </ul>
@@ -293,7 +368,9 @@ const ProductRow = memo(function ProductRow({
   customCols,
   formCols,
   panel,
+  party,
 }: {
+  party?: PartyLine[];
   row: Row;
   query: string;
   open: boolean;
@@ -306,6 +383,7 @@ const ProductRow = memo(function ProductRow({
   panel: PanelShared;
 }) {
   const zero = r.is_active && r.b === ZERO;
+  const low = rowLow(r);
   const panelId = `inv-panel-${r.id}`;
   const customs = customCols.map((c) => [c, customText(r, c)] as const);
   return (
@@ -337,6 +415,8 @@ const ProductRow = memo(function ProductRow({
             <Highlight text={r.description} query={query} />
           </span>
           {!r.is_active && <Chip tone="muted">Archived</Chip>}
+          {low && !zero && <Chip tone="warn">Low · min {formatQty(r.min)}</Chip>}
+          {zero && r.min !== null && <Chip tone="danger">Out of stock</Chip>}
         </span>
         <span className="col-span-4 mt-0.5 text-[13px] text-text-secondary empty:hidden md:col-span-1 md:mt-0 md:line-clamp-2 md:flex md:items-center md:px-3 md:py-3">
           {r.specification ? <Highlight text={r.specification} query={query} /> : null}
@@ -352,12 +432,14 @@ const ProductRow = memo(function ProductRow({
           <span
             className={cn(
               "tnum text-[17px] font-semibold leading-none md:rounded-md md:px-2 md:py-0.5 md:text-[13.5px]",
-              zero && "text-status-warning md:bg-status-warning/12 md:ring-1 md:ring-inset md:ring-status-warning/30",
+              (zero || low) && "text-status-warning md:bg-status-warning/12 md:ring-1 md:ring-inset md:ring-status-warning/30",
             )}
           >
             {formatQty(r.b)}
           </span>
-          <span className="text-[11px] uppercase tracking-[0.05em] text-text-tertiary md:hidden">{zero ? "Zero stock" : "Balance"}</span>
+          <span className={cn("text-[11px] uppercase tracking-[0.05em] md:hidden", zero ? "text-status-danger" : low ? "text-status-warning" : "text-text-tertiary")}>
+            {zero ? "Out of stock" : low ? "Below minimum" : "Balance"}
+          </span>
         </span>
         {customs.length > 0 && (
           <span className="col-span-4 mt-2.5 flex flex-wrap gap-1.5 md:contents">
@@ -375,6 +457,7 @@ const ProductRow = memo(function ProductRow({
             ))}
           </span>
         )}
+        {party && party.length > 0 && <PartyLineView lines={party} />}
         <span className="col-span-4 mt-2 flex items-center justify-end gap-1 text-[12px] font-medium text-text-tertiary md:col-span-1 md:mt-0 md:justify-center">
           <span className="md:hidden">{open ? "Close" : panel.canManage && panel.isCurrent && r.is_active ? "Receive · Issue · History" : "History"}</span>
           <ChevronDown size={16} className={cn("transition-transform duration-200 motion-reduce:transition-none", open && "rotate-180 md:text-text")} />
@@ -390,6 +473,26 @@ const ProductRow = memo(function ProductRow({
     </li>
   );
 });
+
+/** Under a row during Party search: what came from that party (all months), and its last challan / bill / date. */
+function PartyLineView({ lines }: { lines: PartyLine[] }) {
+  const qty = sum(lines.map((l) => parseQty(l.qty) ?? ZERO));
+  const last = [...lines].sort((a, b) => ((a.lastDate ?? "") < (b.lastDate ?? "") ? 1 : -1))[0];
+  const names = [...new Set(lines.map((l) => l.party))];
+  return (
+    <span className="col-span-4 mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-accent/25 bg-accent/[0.07] px-3 py-2 text-[12.5px] text-text-secondary md:order-last md:col-span-full md:mx-3 md:mb-2.5 md:mt-0">
+      <span className="inline-flex items-center gap-1.5 font-medium text-text">
+        <Truck size={13} className="text-accent" /> {names.length === 1 ? names[0] : `${names.length} parties`}
+      </span>
+      <span className="tnum">
+        Received <span className="font-semibold text-text">{formatQty(qty)}</span>
+      </span>
+      {last?.challanNo && <span className="tnum">Challan {last.challanNo}</span>}
+      {last?.billNo && <span className="tnum">Bill {last.billNo}{last.billDate ? ` · ${formatDay(last.billDate)}` : ""}</span>}
+      {last?.lastDate && <span className="tnum">Last {formatDay(last.lastDate)}</span>}
+    </span>
+  );
+}
 
 function Fig({ label, value, tone, muted, order }: { label: string; value: string; tone?: "in" | "out"; muted?: boolean; order: string }) {
   return (
@@ -409,12 +512,13 @@ function Fig({ label, value, tone, muted, order }: { label: string; value: strin
   );
 }
 
-function Chip({ children, tone }: { children: React.ReactNode; tone?: "warn" | "muted" }) {
+function Chip({ children, tone }: { children: React.ReactNode; tone?: "warn" | "muted" | "danger" }) {
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset",
         tone === "warn" && "bg-status-warning/12 text-status-warning ring-status-warning/30",
+        tone === "danger" && "bg-status-danger/12 text-status-danger ring-status-danger/30",
         tone === "muted" && "bg-overlay/[0.06] text-text-secondary ring-overlay/15",
         !tone && "bg-overlay/[0.05] text-text-secondary ring-overlay/10",
       )}

@@ -1,15 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { ArrowDownToLine, ArrowUpFromLine, ArrowRight, RotateCcw, Pencil, Archive, ArchiveRestore, History } from "lucide-react";
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
+import { ArrowDownToLine, ArrowUpFromLine, ArrowRight, RotateCcw, Pencil, Archive, ArchiveRestore, History, TriangleAlert, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { checkQty, formatQty, parseQty, qtyToText } from "@/lib/inventory/numbers";
+import { checkQty, formatQty, isLow, parseQty, qtyToText } from "@/lib/inventory/numbers";
 import { entryFingerprint, isEntryDateAllowed, monthOf, nextKey } from "@/lib/inventory/ledger";
 import { istToday } from "@/lib/inventory/ranges";
 import { recordEntry, reverseEntry, setProductActive, updateProduct } from "@/lib/inventory/actions";
-import type { InvColumn, InvHistory, InvHistoryEntry } from "@/lib/inventory/types";
+import type { InvColumn, InvEntryDetails, InvHistory, InvHistoryEntry } from "@/lib/inventory/types";
+import type { EntryDetails } from "@/lib/inventory/actions";
 import { cn, formatDateTime, formatDay } from "@/lib/utils";
 import { DayField, Field, FieldLabel, newKey, qty } from "./bits";
+import { PartyInput } from "./PartyInput";
 import { Sheet } from "./Sheet";
 import { useToast } from "./Toast";
 import { customText, monthLabel, type Row } from "./model";
@@ -24,7 +26,9 @@ export type PanelProps = {
   isCurrent: boolean;
   today: string;
   /** the server confirmed an entry (ledger id `seq`): show the new figures at once */
-  onRecorded: (e: { productId: string; kind: "receive" | "issue"; qty: string; balanceAfter?: string; reversal?: boolean; seq?: number; date: string }) => void;
+  onRecorded: (e: { productId: string; kind: "receive" | "issue"; qty: string; balanceAfter?: string; reversal?: boolean; seq?: number; date: string; party?: string | null; belowMin?: boolean }) => void;
+  /** known party names, for the Party field's suggestions */
+  partyNames: string[];
 };
 
 /** Today in India on this device, never before the server's today (a clock running behind). */
@@ -33,7 +37,7 @@ function deviceToday(serverToday: string): string {
   return t < serverToday ? serverToday : t;
 }
 
-export function ProductPanel({ row, customCols, formCols, canManage, isCurrent, today, onRecorded }: PanelProps) {
+export function ProductPanel({ row, customCols, formCols, canManage, isCurrent, today, onRecorded, partyNames }: PanelProps) {
   const [history, setHistory] = useState<InvHistory | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const writable = canManage && isCurrent && row.is_active;
@@ -68,7 +72,7 @@ export function ProductPanel({ row, customCols, formCols, canManage, isCurrent, 
     <div className="border-t border-border px-4 pb-5 pt-4 md:px-5">
       <div className={cn("grid gap-5", writable ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]" : "")}>
         {writable && (
-          <EntryForm row={row} today={today} onSaved={(e) => {
+          <EntryForm row={row} today={today} partyNames={partyNames} onSaved={(e) => {
             onRecorded({ productId: row.id, ...e });
             refreshHistory(true);
           }} />
@@ -81,8 +85,8 @@ export function ProductPanel({ row, customCols, formCols, canManage, isCurrent, 
             row={row}
             canReverse={writable}
             today={today}
-            onReversed={(e, after, seq) => {
-              onRecorded({ productId: row.id, kind: e.kind, qty: e.qty, balanceAfter: after, reversal: true, seq, date: deviceToday(today) });
+            onReversed={(e, after, seq, belowMin) => {
+              onRecorded({ productId: row.id, kind: e.kind, qty: e.qty, balanceAfter: after, reversal: true, seq, date: deviceToday(today), belowMin });
               refreshHistory(true);
             }}
           />
@@ -105,14 +109,35 @@ export function ProductPanel({ row, customCols, formCols, canManage, isCurrent, 
 
 // ── receive / issue ─────────────────────────────────────────────────────
 
+type Details = Required<EntryDetails>;
+const NO_DETAILS: Details = { party: "", challanNo: "", billNo: "", billDate: "", jobNo: "", rating: "", noOfJobs: "" };
+const RECEIVE_KEYS = ["party", "challanNo", "billNo", "billDate"] as const;
+const ISSUE_KEYS = ["jobNo", "rating", "noOfJobs"] as const;
+const DETAIL_LABEL: Record<keyof Details, string> = {
+  party: "Party", challanNo: "Challan No", billNo: "Bill No", billDate: "Bill Date", jobNo: "Job No", rating: "Rating", noOfJobs: "No. of Jobs",
+};
+
+/** The details that belong to `kind`, trimmed (others are never sent). */
+function detailsFor(kind: "receive" | "issue", d: Details): EntryDetails {
+  const keys = kind === "receive" ? RECEIVE_KEYS : ISSUE_KEYS;
+  const out: EntryDetails = {};
+  for (const k of keys) {
+    const v = d[k].replace(/\s+/g, " ").trim();
+    if (v) out[k] = v;
+  }
+  return out;
+}
+
 function EntryForm({
   row,
   today,
+  partyNames,
   onSaved,
 }: {
   row: Row;
   today: string;
-  onSaved: (e: { kind: "receive" | "issue"; qty: string; balanceAfter?: string; seq?: number; date: string }) => void;
+  partyNames: string[];
+  onSaved: (e: { kind: "receive" | "issue"; qty: string; balanceAfter?: string; seq?: number; date: string; party?: string | null; belowMin?: boolean }) => void;
 }) {
   const uid = useId();
   const toast = useToast();
@@ -120,6 +145,11 @@ function EntryForm({
   const [qtyText, setQtyText] = useState("");
   const [date, setDate] = useState(() => deviceToday(today));
   const [note, setNote] = useState("");
+  const [details, setDetails] = useState<Details>(NO_DETAILS);
+  const [more, setMore] = useState(false);
+  const setD = (k: keyof Details, v: string) => setDetails((d) => ({ ...d, [k]: v }));
+  const sent = detailsFor(kind, details);
+  const billFuture = kind === "receive" && Boolean(details.billDate) && details.billDate > deviceToday(today);
   const [touched, setTouched] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -137,11 +167,16 @@ function EntryForm({
   const overIssue = kind === "issue" && q.ok && q.qty > row.b;
   const qtyError = touched && qtyText.trim() !== "" && !q.ok ? q.message : overIssue ? `Only ${formatQty(row.b)} in stock.` : null;
   const dateError = touched && !dateOk ? "Choose a date in this month, not after today." : null;
-  const canReview = q.ok && dateOk && !overIssue;
+  const canReview = q.ok && dateOk && !overIssue && !billFuture;
+  // an issue that takes the product below its minimum: warned at confirm, never blocked
+  const goesLow = kind === "issue" && after !== null && isLow(after, row.min) && !isLow(row.b, row.min);
+  const staysLow = kind === "issue" && after !== null && isLow(row.b, row.min);
 
   function reset() {
     setQtyText("");
     setNote("");
+    setDetails(NO_DETAILS);
+    setMore(false);
     setDate(deviceToday(today));
     setTouched(false);
     attempt.current = null;
@@ -152,14 +187,14 @@ function EntryForm({
     if (!q.ok || savingRef.current) return;
     savingRef.current = true;
     const qtyNorm = qtyToText(q.qty);
-    attempt.current = nextKey(attempt.current, entryFingerprint(row.id, kind, qtyNorm, date, note), newKey);
+    attempt.current = nextKey(attempt.current, entryFingerprint(row.id, kind, qtyNorm, date, `${note}\u0001${JSON.stringify(sent)}`), newKey);
     setSaving(true);
     setServerError(null);
     try {
-      const res = await recordEntry({ productId: row.id, kind, qty: qtyText, date, note, key: attempt.current.key });
+      const res = await recordEntry({ productId: row.id, kind, qty: qtyText, date, note, key: attempt.current.key, details: sent });
       if (res.ok) {
         setConfirming(false);
-        onSaved({ kind, qty: qtyNorm, balanceAfter: res.balanceAfter, seq: typeof res.id === "number" ? res.id : Number(res.id), date });
+        onSaved({ kind, qty: qtyNorm, balanceAfter: res.balanceAfter, seq: typeof res.id === "number" ? res.id : Number(res.id), date, party: sent.party ?? null, belowMin: res.belowMin });
         toast("success", `${kind === "receive" ? "Received" : "Issued"} ${formatQty(q.qty)} · ${row.serial_no}. Balance ${qty(res.balanceAfter ?? null)}.`);
         reset();
       } else {
@@ -250,18 +285,81 @@ function EntryForm({
           )}
         </div>
       </div>
-      <div className="mt-3">
-        <FieldLabel htmlFor={`${uid}-n`} hint="Optional">
-          Note
-        </FieldLabel>
-        <Field
-          id={`${uid}-n`}
-          value={note}
-          maxLength={300}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder={kind === "receive" ? "Supplier, challan no…" : "Issued to, job / order…"}
-        />
+      {/* the details: the main one always in view, the rest one tap away (the form stays short on a phone) */}
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {kind === "receive" ? (
+          <div>
+            <FieldLabel htmlFor={`${uid}-party`} hint="Optional">
+              Party
+            </FieldLabel>
+            <PartyInput id={`${uid}-party`} value={details.party} onChange={(v) => setD("party", v)} names={partyNames} placeholder="Supplier name" />
+          </div>
+        ) : (
+          <div>
+            <FieldLabel htmlFor={`${uid}-job`} hint="Optional">
+              Job No
+            </FieldLabel>
+            <Field id={`${uid}-job`} value={details.jobNo} maxLength={60} onChange={(e) => setD("jobNo", e.target.value)} />
+          </div>
+        )}
+        <div>
+          <FieldLabel htmlFor={`${uid}-n`} hint="Optional">
+            Remark
+          </FieldLabel>
+          <Field id={`${uid}-n`} value={note} maxLength={300} onChange={(e) => setNote(e.target.value)} placeholder={kind === "receive" ? "Anything to note" : "Issued to, purpose…"} />
+        </div>
       </div>
+      <button
+        type="button"
+        aria-expanded={more}
+        onClick={() => setMore((v) => !v)}
+        className="nr-interactive mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-1 text-[13px] font-medium text-text-secondary hover:text-text md:min-h-9"
+      >
+        <ChevronDown size={15} className={cn("transition-transform duration-200 motion-reduce:transition-none", more && "rotate-180")} />
+        {kind === "receive" ? "Challan, bill no, bill date" : "Rating, no. of jobs"}
+        {(() => {
+          const n = (kind === "receive" ? (["challanNo", "billNo", "billDate"] as const) : (["rating", "noOfJobs"] as const)).filter((k) => details[k].trim()).length;
+          return n ? <span className="rounded-full bg-accent/15 px-1.5 text-[11px] text-accent">{n}</span> : null;
+        })()}
+      </button>
+      {more && (
+        <div className="mt-1 grid gap-3 md:grid-cols-2">
+          {kind === "receive" ? (
+            <>
+              <div>
+                <FieldLabel htmlFor={`${uid}-ch`}>Challan No</FieldLabel>
+                <Field id={`${uid}-ch`} value={details.challanNo} maxLength={60} onChange={(e) => setD("challanNo", e.target.value)} />
+              </div>
+              <div>
+                <FieldLabel htmlFor={`${uid}-bn`}>Bill No</FieldLabel>
+                <Field id={`${uid}-bn`} value={details.billNo} maxLength={60} onChange={(e) => setD("billNo", e.target.value)} />
+              </div>
+              <div>
+                <FieldLabel htmlFor={`${uid}-bd`} hint="Not in the future">
+                  Bill Date
+                </FieldLabel>
+                <DayField id={`${uid}-bd`} value={details.billDate} onChange={(v) => setD("billDate", v)} max={dayNow} describedBy={billFuture ? `${uid}-bde` : undefined} />
+                {billFuture && (
+                  <p id={`${uid}-bde`} className="mt-1.5 text-[12.5px] text-status-danger">
+                    The bill date can&apos;t be in the future.
+                  </p>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <FieldLabel htmlFor={`${uid}-rt`}>Rating</FieldLabel>
+                <Field id={`${uid}-rt`} value={details.rating} maxLength={60} onChange={(e) => setD("rating", e.target.value)} />
+              </div>
+              <div>
+                <FieldLabel htmlFor={`${uid}-nj`}>No. of Jobs</FieldLabel>
+                <Field id={`${uid}-nj`} value={details.noOfJobs} maxLength={20} inputMode="numeric" onChange={(e) => setD("noOfJobs", e.target.value)} />
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {after !== null && !overIssue && (
         <p className="tnum mt-3 flex flex-wrap items-center gap-1.5 text-[13px] text-text-secondary">
@@ -307,13 +405,27 @@ function EntryForm({
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
               <dt className="text-text-tertiary">Date</dt>
               <dd className="tnum">{formatDay(date)}</dd>
+              {(Object.keys(sent) as (keyof Details)[]).map((k) => (
+                <Fragment key={k}>
+                  <dt className="text-text-tertiary">{DETAIL_LABEL[k]}</dt>
+                  <dd className="break-words">{k === "billDate" ? formatDay(sent[k] ?? "") : sent[k]}</dd>
+                </Fragment>
+              ))}
               {note.trim() && (
                 <>
-                  <dt className="text-text-tertiary">Note</dt>
+                  <dt className="text-text-tertiary">Remark</dt>
                   <dd className="break-words">{note.trim()}</dd>
                 </>
               )}
             </dl>
+            {(goesLow || staysLow) && (
+              <p role="status" className="flex items-start gap-2 rounded-lg border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-[13px] text-status-warning">
+                <TriangleAlert size={15} className="mt-0.5 shrink-0" />
+                <span>
+                  {goesLow ? "This takes it below its minimum" : "It is already below its minimum"} ({formatQty(row.min)}): after this, {formatQty(after)} left. Order advised. You can still save.
+                </span>
+              </p>
+            )}
             {serverError && (
               <p role="alert" className="rounded-lg border border-status-danger/40 bg-status-danger/10 px-3 py-2 text-[13px] text-status-danger">
                 {serverError}
@@ -351,7 +463,7 @@ function HistoryList({
   row: Row;
   canReverse: boolean;
   today: string;
-  onReversed: (e: InvHistoryEntry, balanceAfter: string | undefined, seq: number | undefined) => void;
+  onReversed: (e: InvHistoryEntry, balanceAfter: string | undefined, seq: number | undefined, belowMin?: boolean) => void;
 }) {
   const [reversing, setReversing] = useState<InvHistoryEntry | null>(null);
   const byId = new Map((history?.entries ?? []).map((e) => [e.id, e]));
@@ -417,6 +529,7 @@ function HistoryList({
                     {e.source === "import" ? " · Imported" : e.by ? ` · ${e.by}` : ""}
                     {orig ? ` · ${orig.kind === "receive" ? "receipt" : "issue"} of ${qty(orig.qty)}` : ""}
                   </p>
+                  <EntryDetailsLine d={history.details?.[String(e.id)]} />
                   {e.note && <p className="mt-0.5 break-words text-[12.5px] text-text-secondary">{e.note}</p>}
                 </div>
                 {canReverse && e.reversible && (
@@ -467,13 +580,29 @@ function HistoryList({
       )}
 
       {reversing && (
-        <ReverseSheet entry={reversing} row={row} today={today} onClose={() => setReversing(null)} onDone={(after, seq) => {
-          onReversed(reversing, after, seq);
+        <ReverseSheet entry={reversing} row={row} today={today} onClose={() => setReversing(null)} onDone={(after, seq, belowMin) => {
+          onReversed(reversing, after, seq, belowMin);
           setReversing(null);
         }} />
       )}
     </div>
   );
+}
+
+/** An entry's details in the history: "Party · Challan C1 · Bill B1 · Bill date 16/11/2026" / "Job J1 · Rating R · Jobs 2". */
+function EntryDetailsLine({ d }: { d?: InvEntryDetails }) {
+  if (!d) return null;
+  const bits = [
+    d.party,
+    d.challan_no && `Challan ${d.challan_no}`,
+    d.bill_no && `Bill ${d.bill_no}`,
+    d.bill_date && `Bill date ${formatDay(d.bill_date)}`,
+    d.job_no && `Job ${d.job_no}`,
+    d.rating && `Rating ${d.rating}`,
+    d.no_of_jobs && `Jobs ${d.no_of_jobs}`,
+  ].filter(Boolean) as string[];
+  if (!bits.length) return null;
+  return <p className="tnum mt-0.5 break-words text-[12px] text-text-secondary">{bits.join(" · ")}</p>;
 }
 
 function ReverseSheet({
@@ -486,7 +615,7 @@ function ReverseSheet({
   row: Row;
   today: string;
   onClose: () => void;
-  onDone: (balanceAfter: string | undefined, seq: number | undefined) => void;
+  onDone: (balanceAfter: string | undefined, seq: number | undefined, belowMin?: boolean) => void;
 }) {
   const uid = useId();
   const toast = useToast();
@@ -508,7 +637,7 @@ function ReverseSheet({
       const res = await reverseEntry({ entryId: entry.id, note, key });
       if (res.ok) {
         toast("success", `Entry #${entry.id} reversed. Balance ${qty(res.balanceAfter ?? null)}.`);
-        onDone(res.balanceAfter, typeof res.id === "number" ? res.id : Number(res.id));
+        onDone(res.balanceAfter, typeof res.id === "number" ? res.id : Number(res.id), res.belowMin);
       } else setError(res.error);
     } catch {
       setError("No answer from the server. Check the connection, then try again: it won't be reversed twice.");
@@ -594,6 +723,7 @@ function EditSheet({ row, formCols, onClose }: { row: Row; formCols: InvColumn[]
   const [specification, setSpecification] = useState(row.specification);
   const [rate, setRate] = useState(row.rate ?? "");
   const [custom, setCustom] = useState<Record<string, string>>(() => ({ ...row.custom }));
+  const [min, setMin] = useState(row.minText ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const savingRef = useRef(false);
@@ -606,7 +736,7 @@ function EditSheet({ row, formCols, onClose }: { row: Row; formCols: InvColumn[]
     setError(null);
     try {
       // the action re-renders the page in the same response (no second request)
-      const res = await updateProduct({ productId: row.id, description, specification, rate, custom });
+      const res = await updateProduct({ productId: row.id, description, specification, rate, custom, minStock: min });
       if (res.ok) {
         toast("success", `${row.serial_no}: details saved.`);
         onClose();
@@ -636,6 +766,12 @@ function EditSheet({ row, formCols, onClose }: { row: Row; formCols: InvColumn[]
               Rate
             </FieldLabel>
             <Field id={`${uid}-r`} inputMode="decimal" className="tnum" value={rate} onChange={(e) => setRate(e.target.value)} />
+          </div>
+          <div>
+            <FieldLabel htmlFor={`${uid}-m`} hint="Alert below this · empty = none">
+              Minimum stock
+            </FieldLabel>
+            <Field id={`${uid}-m`} inputMode="decimal" className="tnum" value={min} onChange={(e) => setMin(e.target.value)} />
           </div>
         </div>
         <CustomInputs cols={formCols} values={custom} onChange={setCustom} idPrefix={uid} />

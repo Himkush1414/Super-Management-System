@@ -32,6 +32,7 @@ export function AddProductSheet({
   const [specification, setSpecification] = useState("");
   const [rate, setRate] = useState("");
   const [opening, setOpening] = useState("");
+  const [minStock, setMinStock] = useState("");
   const [custom, setCustom] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +49,7 @@ export function AddProductSheet({
   const rateError = rate.trim() && (parsePaise(rate) === null || parsePaise(rate)! < BigInt(0)) ? "A number with at most 2 decimals." : null;
   const openingError =
     opening.trim() && (parseQty(opening) === null || parseQty(opening)! < BigInt(0)) ? "0 or more, at most 3 decimals." : null;
+  const minError = minStock.trim() && (parseQty(minStock) === null || parseQty(minStock)! < BigInt(0)) ? "0 or more, at most 3 decimals." : null;
 
   function reset() {
     setSerial("");
@@ -55,6 +57,7 @@ export function AddProductSheet({
     setSpecification("");
     setRate("");
     setOpening("");
+    setMinStock("");
     setCustom({});
     setError(null);
     setTried(false);
@@ -63,13 +66,13 @@ export function AddProductSheet({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setTried(true);
-    if (savingRef.current || dup || !serial.trim() || !description.trim() || rateError || openingError) return;
+    if (savingRef.current || dup || !serial.trim() || !description.trim() || rateError || openingError || minError) return;
     savingRef.current = true;
     setSaving(true);
     setError(null);
     try {
       // the action re-renders the page in the same response (no second request)
-      const res = await addProduct({ serialNo: serial, description, specification, rate, openingQty: opening, custom });
+      const res = await addProduct({ serialNo: serial, description, specification, rate, openingQty: opening, custom, minStock });
       if (res.ok) {
         toast("success", `${serial.trim()} added.`);
         reset();
@@ -159,6 +162,21 @@ export function AddProductSheet({
               aria-describedby={openingError ? `${uid}-oe` : undefined}
             />
             {err(`${uid}-oe`, openingError)}
+          </div>
+          <div className="sm:col-span-2">
+            <FieldLabel htmlFor={`${uid}-m`} hint="Optional · alert when the balance falls below it">
+              Minimum stock
+            </FieldLabel>
+            <Field
+              id={`${uid}-m`}
+              inputMode="decimal"
+              className="tnum"
+              value={minStock}
+              onChange={(e) => setMinStock(e.target.value)}
+              aria-invalid={Boolean(minError)}
+              aria-describedby={minError ? `${uid}-me` : undefined}
+            />
+            {err(`${uid}-me`, minError)}
           </div>
         </div>
         <CustomInputs cols={formCols} values={custom} onChange={setCustom} idPrefix={uid} />

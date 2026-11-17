@@ -1,7 +1,7 @@
 // The inventory backup (scripts/inventory/backup.mjs): its restore SQL is
 // additive, safe to run twice, and brings back exactly the same ledger,
 // balances and settings in a fresh database. Fake data only.
-//   npm i --no-save @electric-sql/pglite@0.3.15 && node --test tests/sql/*.test.mjs
+//   npm test   (or only these: node --test tests/sql/*.test.mjs)
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";

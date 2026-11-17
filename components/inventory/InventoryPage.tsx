@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Download, Phone, UserRound, CalendarRange, TriangleAlert, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { formatQty, parseQty, valueOf } from "@/lib/inventory/numbers";
-import { activeCustomColumns, pageProducts, visibleCustomColumns, type InvPage2 } from "@/lib/inventory/types";
+import { activeCustomColumns, pageExtras, pageProducts, visibleCustomColumns, type InvPage2 } from "@/lib/inventory/types";
 import { addPartyName, partyLines, type PartyLine } from "@/lib/inventory/party";
 import { monthOf } from "@/lib/inventory/ledger";
 import { ProductList } from "./ProductList";
@@ -80,7 +80,10 @@ function InventoryInner({ data, canManage, showAnalytics }: Props) {
   // figures confirmed by a save that this page data doesn't include yet
   const savedVersion = useSavedVersion();
   useEffect(() => pruneSaved(data.ledger_seq), [data.ledger_seq]);
-  const base = useMemo(() => pageProducts(data).map((p) => toRow(p, data.extra?.[p.id])), [data]);
+  const base = useMemo(() => {
+    const ex = pageExtras(data);
+    return pageProducts(data).map((p) => toRow(p, ex.get(p.id)));
+  }, [data]);
   // minimums saved in settings that this page data may not show yet; then read again behind
   useEffect(() => {
     pruneMins(new Map(base.map((r) => [r.id, r.minText])));

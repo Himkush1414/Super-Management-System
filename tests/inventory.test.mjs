@@ -208,7 +208,7 @@ test("export ranges (IST days) and the file name", () => {
 });
 
 // ── speed & quality pass ─────────────────────────────────────────────────
-import { pageProducts } from "../lib/inventory/types.ts";
+import { pageProducts, pageExtras } from "../lib/inventory/types.ts";
 import { summarize } from "../lib/inventory/numbers.ts";
 import { entryFingerprint, nextKey } from "../lib/inventory/ledger.ts";
 import { istToday } from "../lib/inventory/ranges.ts";
@@ -315,4 +315,12 @@ test("party search stays fast on 3,500 products", () => {
   }
   const per = (performance.now() - t0) / 9;
   assert.ok(per < 100, `${per} ms per keystroke`);
+});
+
+test("inv_page2 rows: the three extra fields are read by name", () => {
+  const fields = ["id", "serial_no", "description", "specification", "rate", "custom", "is_active", "opening", "received", "issued", "balance", "min_stock", "last_party", "last_received"];
+  const ex = pageExtras({ fields, rows: [["p1", "A", "x", "", null, {}, true, "1", "0", "0", "1", "2.5", "Dummy Co", "2026-11-16"], ["p2", "B", "y", "", null, {}, true, "0", "0", "0", "0", null, null, null]] });
+  assert.deepEqual(ex.get("p1"), ["2.5", "Dummy Co", "2026-11-16"]);
+  assert.deepEqual(ex.get("p2"), [null, null, null]);
+  assert.equal(pageExtras({ fields: fields.slice(0, 11), rows: [] }).size, 0); // inv_page (no extras)
 });

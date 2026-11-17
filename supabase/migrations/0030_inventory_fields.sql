@@ -377,39 +377,135 @@ end $$;
 
 -- ── 6. reads (SECURITY INVOKER: RLS applies) ───────────────────────────────
 
--- inv_page (0029) plus, per product: minimum stock, the last receipt's party
--- and date; plus the low-stock count and the known party names.
+-- The main page in ONE pass: everything inv_page (0029) returns, with three
+-- more fields on every row (minimum stock; for products with a minimum, the
+-- last standing receipt's party and date), plus the low-stock count and the
+-- known party names. Same rules
+-- and figures as inv_page / inv_overview. SECURITY INVOKER (RLS applies);
+-- it closes ended months first, like inv_page.
 create or replace function public.inv_page2(p_month date default null, p_analytics boolean default false)
 returns jsonb
 language plpgsql volatile security invoker set search_path = public as $$
 declare
-  v_page  jsonb;
-  v_extra jsonb;
+  v_today date := public.inv_today();
   v_cur   date := date_trunc('month', public.inv_today())::date;
+  v_month date := date_trunc('month', coalesce(p_month, public.inv_today()))::date;
+  v_past  boolean;
+  v_stats boolean;
+  v_rows  jsonb;
+  v_low   int;
 begin
-  v_page := public.inv_page(p_month, p_analytics); -- checks the role, closes ended months
-  -- extras by product id
-  select coalesce(jsonb_object_agg(p.id::text, jsonb_build_array(trim_scale(p.min_stock)::text, lr.party, lr.entry_date)), '{}'::jsonb)
-    into v_extra
-    from public.inv_products p
-    left join lateral (
-      select t.party, t.entry_date from public.inv_transactions t
-       where t.product_id = p.id and t.kind = 'receive' and t.reverses_id is null
-         and not exists (select 1 from public.inv_transactions r where r.reverses_id = t.id)
-       order by t.id desc limit 1) lr on true
-   where (v_page ->> 'is_current')::boolean
-      or exists (select 1 from public.inv_month_snapshots s where s.product_id = p.id and s.month = (v_page ->> 'month')::date);
-  return v_page || jsonb_build_object(
-    'extra_fields', jsonb_build_array('min_stock', 'last_party', 'last_received'),
-    'extra', v_extra,
-    'low_count', (select count(*) from public.inv_products p
-                   where p.is_active and p.min_stock is not null
-                     and p.opening_qty + coalesce((select sum(t.delta) from public.inv_transactions t where t.product_id = p.id), 0) < p.min_stock),
+  if not public.inv_can_view() then
+    raise exception 'not permitted' using errcode = '42501';
+  end if;
+  v_stats := coalesce(p_analytics, false) and public.current_role_name()::text in ('head_admin', 'admin');
+  perform public.inv_rollover();
+
+  v_past := v_month < v_cur and exists (select 1 from public.inv_closed_months where month = v_month);
+  if not v_past then v_month := v_cur; end if;
+
+  if v_past then
+    select coalesce(jsonb_agg(jsonb_build_array(
+             p.id, p.serial_no, p.description, p.specification, trim_scale(p.rate)::text, p.custom, p.is_active,
+             trim_scale(s.opening)::text, trim_scale(s.received)::text, trim_scale(s.issued)::text, trim_scale(s.closing)::text,
+             trim_scale(p.min_stock)::text, lr.party, lr.entry_date)
+           order by p.serial_no), '[]'::jsonb)
+      into v_rows
+      from public.inv_month_snapshots s
+      join public.inv_products p on p.id = s.product_id
+      left join lateral (
+        select t.party, t.entry_date from public.inv_transactions t
+         where p.min_stock is not null -- only the Low Stock list uses it
+           and t.product_id = p.id and t.kind = 'receive' and t.reverses_id is null
+           and not exists (select 1 from public.inv_transactions r where r.reverses_id = t.id)
+         order by t.id desc limit 1) lr on true
+     where s.month = v_month;
+    -- the alert always follows the live balance, whatever month is viewed
+    select count(*) into v_low from public.inv_products p
+     where p.is_active and p.min_stock is not null
+       and p.opening_qty + coalesce((select sum(t.delta) from public.inv_transactions t where t.product_id = p.id), 0) < p.min_stock;
+  else
+    with f as (
+      select p.id, p.serial_no, p.description, p.specification, p.rate, p.custom, p.is_active, p.min_stock,
+             p.opening_qty + x.before as opening, x.received, x.issued,
+             p.opening_qty + x.before + x.received - x.issued as balance,
+             lr.party as last_party, lr.entry_date as last_received
+        from public.inv_products p
+        left join lateral (
+          select coalesce(sum(t.delta) filter (where t.entry_date < v_cur), 0) as before,
+                 coalesce(sum(t.delta) filter (where t.entry_date >= v_cur and t.kind = 'receive'), 0) as received,
+                 coalesce(-(sum(t.delta) filter (where t.entry_date >= v_cur and t.kind = 'issue')), 0) as issued
+            from public.inv_transactions t
+           where t.product_id = p.id) x on true
+        left join lateral (
+          select t.party, t.entry_date from public.inv_transactions t
+           where p.min_stock is not null -- only the Low Stock list uses it: no lookup otherwise
+             and t.product_id = p.id and t.kind = 'receive' and t.reverses_id is null
+             and not exists (select 1 from public.inv_transactions r where r.reverses_id = t.id)
+           order by t.id desc limit 1) lr on true
+    )
+    select coalesce(jsonb_agg(jsonb_build_array(
+             f.id, f.serial_no, f.description, f.specification, trim_scale(f.rate)::text, f.custom, f.is_active,
+             trim_scale(f.opening)::text, trim_scale(f.received)::text, trim_scale(f.issued)::text, trim_scale(f.balance)::text,
+             trim_scale(f.min_stock)::text, f.last_party, f.last_received)
+           order by f.serial_no), '[]'::jsonb),
+           count(*) filter (where f.is_active and f.min_stock is not null and f.balance < f.min_stock)
+      into v_rows, v_low
+      from f;
+  end if;
+
+  return jsonb_build_object(
+    'today', v_today,
+    'current_month', v_cur,
+    'month', v_month,
+    'is_current', not v_past,
+    'ledger_seq', (select coalesce(max(id), 0) from public.inv_transactions),
+    'columns', (select coalesce(jsonb_agg(jsonb_build_object(
+                  'id', c.id, 'key', c.key, 'label', c.label, 'data_type', c.data_type,
+                  'position', c.position, 'is_default', c.is_default, 'visible', c.visible,
+                  'archived', c.archived_at is not null)
+                order by c.is_default desc, c.position), '[]'::jsonb)
+                from public.inv_columns c),
+    'settings', (select jsonb_build_object('person_name', s.person_name, 'phone', s.phone)
+                   from public.inv_settings s where s.id),
+    'months', (select coalesce(jsonb_agg(m.month order by m.month desc), '[]'::jsonb)
+                 from public.inv_closed_months m),
+    'fields', jsonb_build_array('id', 'serial_no', 'description', 'specification', 'rate', 'custom', 'is_active',
+                                'opening', 'received', 'issued', 'balance', 'min_stock', 'last_party', 'last_received'),
+    'rows', v_rows,
+    'low_count', v_low,
     'parties', (select coalesce(jsonb_agg(z.party order by z.party), '[]'::jsonb) from (
                   select distinct on (t.party_key) t.party
                     from public.inv_transactions t
                    where t.party_key is not null
-                   order by t.party_key, t.id desc) z)
+                   order by t.party_key, t.id desc) z),
+    'trend', case when v_stats then (
+               select coalesce(jsonb_agg(jsonb_build_object(
+                        'month', z.m, 'received', trim_scale(z.received)::text, 'issued', trim_scale(z.issued)::text)
+                      order by z.m), '[]'::jsonb)
+                 from (select g.m::date as m,
+                              coalesce(sum(t.delta) filter (where t.kind = 'receive'), 0) as received,
+                              coalesce(-(sum(t.delta) filter (where t.kind = 'issue')), 0) as issued
+                         from generate_series((v_month - interval '5 months')::date, v_month, interval '1 month') g(m)
+                         left join public.inv_transactions t
+                           on t.entry_date >= g.m::date and t.entry_date < (g.m + interval '1 month')::date
+                        group by g.m) z
+             ) end,
+    'top_issued', case when v_stats then (
+               select coalesce(jsonb_agg(jsonb_build_object(
+                        'id', q.id, 'serial_no', q.serial_no, 'description', q.description,
+                        'specification', q.specification, 'issued', trim_scale(q.issued)::text)
+                      order by q.issued desc, q.serial_no), '[]'::jsonb)
+                 from (select p.id, p.serial_no, p.description, p.specification, -sum(t.delta) as issued
+                         from public.inv_transactions t
+                         join public.inv_products p on p.id = t.product_id
+                        where t.kind = 'issue' and t.entry_date >= v_month
+                          and t.entry_date < (v_month + interval '1 month')::date
+                        group by p.id
+                       having -sum(t.delta) > 0
+                        order by issued desc, p.serial_no
+                        limit 10) q
+             ) end
   );
 end $$;
 

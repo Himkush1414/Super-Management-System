@@ -132,12 +132,22 @@ export function pageProducts(page: Pick<InvPage, "fields" | "rows">): InvProduct
   }));
 }
 
-/** inv_page2 (0030): inv_page + per product [min_stock, last_party, last_received] by id, low count, party names. */
+/** inv_page2 (0030): inv_page's data with three more fields per row (min_stock, last_party, last_received), the low count and party names. */
 export interface InvPage2 extends InvPage {
-  extra_fields: string[];
-  extra: Record<string, [string | null, string | null, string | null]>;
   low_count: number;
   parties: string[];
+}
+
+/** The three 0030 fields of each row, by product id (pure; tested). */
+export function pageExtras(page: Pick<InvPage, "fields" | "rows">): Map<string, [string | null, string | null, string | null]> {
+  const id = page.fields.indexOf("id");
+  const m = page.fields.indexOf("min_stock");
+  const p = page.fields.indexOf("last_party");
+  const d = page.fields.indexOf("last_received");
+  const out = new Map<string, [string | null, string | null, string | null]>();
+  if (m < 0) return out;
+  for (const r of page.rows) out.set(r[id] as string, [(r[m] as string | null) ?? null, p < 0 ? null : ((r[p] as string | null) ?? null), d < 0 ? null : ((r[d] as string | null) ?? null)]);
+  return out;
 }
 
 /** An entry's details (0030): only the ones that were filled in. */

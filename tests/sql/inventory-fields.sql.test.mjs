@@ -142,10 +142,14 @@ test("low stock: below counts, equal doesn't, no minimum never, decimals exact",
   await product(db, ids, "L-003", "0", null);                // no minimum: never
   const d = await product(db, ids, "L-004", "2.5", "2.5");   // equal
   const page = () => as(db, ids.inventory, (tx) => rpc(tx, "inv_page2", { p_month: null, p_analytics: false }));
+  const ext = (pg, id) => {
+    const r = pg.rows.find((x) => x[0] === id);
+    return ["min_stock", "last_party", "last_received"].map((f) => r[pg.fields.indexOf(f)]);
+  };
   let pg = await page();
   assert.equal(pg.low_count, 1);
-  assert.deepEqual(pg.extra_fields, ["min_stock", "last_party", "last_received"]);
-  assert.equal(pg.extra[a][0], "5");
+  assert.deepEqual(pg.fields.slice(-3), ["min_stock", "last_party", "last_received"]);
+  assert.equal(ext(pg, a)[0], "5");
   // an issue of 0.001 takes L-004 to 2.499 < 2.5: low, and the answer says so
   const r = await entry(db, ids, d, "issue", "0.001", { p_job_no: "J" });
   assert.equal(r.below_min, true);
@@ -156,8 +160,8 @@ test("low stock: below counts, equal doesn't, no minimum never, decimals exact",
   await entry(db, ids, a, "receive", "1", { p_party: "Dummy Party" });
   pg = await page();
   assert.equal(pg.low_count, 1);
-  assert.equal(pg.extra[a][1], "Dummy Party");
-  assert.equal(pg.extra[a][2], "2026-11-17");
+  assert.equal(ext(pg, a)[1], "Dummy Party");
+  assert.equal(ext(pg, a)[2], "2026-11-17");
   // set / clear / bulk
   assert.equal((await inv(db, ids, "inv_set_min_stock", { p_product_id: b, p_min_stock: "-1" })).status, "invalid");
   assert.equal((await inv(db, ids, "inv_set_min_stock", { p_product_id: b, p_min_stock: "1.2345" })).status, "invalid");
@@ -171,6 +175,24 @@ test("low stock: below counts, equal doesn't, no minimum never, decimals exact",
   assert.ok((await row(db, `select count(*)::int c from public.inv_product_log where action = 'update' and after ? 'min_stock'`)).c >= 5);
   // a product's opening balance and serial still never change
   await assert.rejects(db.exec(`update public.inv_products set opening_qty = 1 where id = '${a}'`), /never change/);
+});
+
+test("inv_page2 = inv_page for every figure (current and closed month), all roles", async () => {
+  const { db, ids } = await setup("2026-10-05");
+  const a = await product(db, ids, "E-001", "12.5", "20");
+  await entry(db, ids, a, "receive", "7.125", { p_party: "Dummy Co" }, randomUUID(), "2026-10-05");
+  await setToday(db, "2026-11-17");
+  await entry(db, ids, a, "issue", "0.125");
+  for (const month of [null, "2026-10-01"]) {
+    for (const role of ["inventory", "admin", "head_admin"]) {
+      const p1 = await as(db, ids[role], (tx) => rpc(tx, "inv_page", { p_month: month, p_analytics: true }));
+      const p2 = await as(db, ids[role], (tx) => rpc(tx, "inv_page2", { p_month: month, p_analytics: true }));
+      assert.deepEqual(p2.rows.map((r) => r.slice(0, 11)), p1.rows, `${role} ${month}`);
+      assert.deepEqual(p2.fields.slice(0, 11), p1.fields);
+      for (const k of ["month", "is_current", "ledger_seq", "trend", "top_issued", "columns", "months"]) assert.deepEqual(p2[k], p1[k], k);
+      assert.equal(p2.low_count, 1); // 12.5 + 7.125 − 0.125 = 19.5 < 20, live in both views
+    }
+  }
 });
 
 test("party index: all months, net of reversals, case and spaces ignored", async () => {

@@ -2,7 +2,8 @@ import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import { PdfHeader, COMPANY } from "@/lib/pdf/Chrome";
 import { C } from "@/lib/pdf/theme";
 import { Rupees } from "@/lib/pdf/Rupees";
-import { formatQty } from "@/lib/inventory/numbers";
+import { RUPEE_FONT_FAMILY } from "@/lib/pdf/rupee-font";
+import { formatQty, paiseToText } from "@/lib/inventory/numbers";
 import { dmySlash } from "@/lib/inventory/ranges";
 import type { ExportRow, ExportModel } from "@/lib/inventory/export-model";
 
@@ -61,6 +62,14 @@ const s = StyleSheet.create({
   empty: { marginTop: 20, textAlign: "center", fontSize: 9 },
 });
 
+/** An amount without the ₹ sign (the column header carries it): one text run per cell, en-IN grouping. */
+function money(p: bigint | null): string {
+  if (p === null) return "—";
+  const [int, frac] = paiseToText(p).split(".");
+  const g = int.length <= 3 ? int : `${int.slice(0, -3).replace(/\B(?=(\d{2})+(?!\d))/g, ",")},${int.slice(-3)}`;
+  return `${g}.${frac}`;
+}
+
 type Col = { key: string; label: string; width: number; align?: "right"; cell: (r: ExportRow) => React.ReactNode };
 
 function columns(model: ExportModel): Col[] {
@@ -70,17 +79,30 @@ function columns(model: ExportModel): Col[] {
     { key: "serial", label: "Serial No", width: 50, cell: (r) => r.serial },
     { key: "desc", label: "Material Description", width: 0, cell: (r) => (r.archived ? `${r.description} (archived)` : r.description) },
     { key: "spec", label: "Specification", width: 104, cell: (r) => r.specification || "—" },
-    { key: "rate", label: "Rate", width: 56, align: "right", cell: (r) => <Rupees value={r.rate} /> },
+    { key: "rate", label: "Rate (₹)", width: 56, align: "right", cell: (r) => money(r.rate) },
     { key: "open", label: "Opening", width: 56, align: "right", cell: (r) => formatQty(r.opening) },
     { key: "recv", label: "Received", width: 56, align: "right", cell: (r) => formatQty(r.received) },
     { key: "iss", label: "Issued", width: 56, align: "right", cell: (r) => formatQty(r.issued) },
     { key: "close", label: "Closing", width: 58, align: "right", cell: (r) => formatQty(r.closing) },
-    { key: "value", label: "Closing value", width: 72, align: "right", cell: (r) => <Rupees value={r.value} /> },
+    { key: "value", label: "Closing value (₹)", width: 72, align: "right", cell: (r) => money(r.value) },
   ];
   const cols = [...fixed, ...custom.map((c, i): Col => ({ key: `c${i}`, label: c.label, width: customW, cell: (r) => r.custom[i] || "" }))];
   const used = cols.reduce((a, c) => a + c.width, 0);
   cols[1].width = Math.max(90, INNER - used);
   return cols;
+}
+
+/** "Rate (₹)": the ₹ in the bundled rupee font (Helvetica has no ₹), the rest in Helvetica. */
+function headLabel(label: string) {
+  const i = label.indexOf("₹");
+  if (i < 0) return label;
+  return (
+    <>
+      {label.slice(0, i)}
+      <Text style={{ fontFamily: RUPEE_FONT_FAMILY }}>₹</Text>
+      {label.slice(i + 1)}
+    </>
+  );
 }
 
 function Cells({ cols, row, head, zebra }: { cols: Col[]; row?: ExportRow; head?: boolean; zebra?: boolean }) {
@@ -91,7 +113,7 @@ function Cells({ cols, row, head, zebra }: { cols: Col[]; row?: ExportRow; head?
           key={c.key}
           style={[s.cell, { width: c.width }, i === 0 ? s.first : {}, head ? s.head : {}, zebra ? s.zebra : {}, c.align === "right" ? s.right : {}]}
         >
-          {head ? c.label : c.cell(row!)}
+          {head ? headLabel(c.label) : c.cell(row!)}
         </Text>
       ))}
     </View>
@@ -133,7 +155,7 @@ export function InventoryReport({ model }: { model: ExportModel }) {
         )}
         <View style={s.totals} wrap={false}>
           <Text>
-            <Text style={s.label}>Total closing value: </Text>
+            <Text style={s.label}>Total closing value (active products): </Text>
             <Rupees value={model.totals.value} />
           </Text>
         </View>

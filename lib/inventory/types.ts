@@ -65,6 +65,8 @@ export interface InvHistoryEntry {
 
 export interface InvHistory {
   entries: InvHistoryEntry[];
+  /** entry id -> its details (0030; entries without details are absent) */
+  details?: Record<string, InvEntryDetails>;
   months: { month: string; opening: string; received: string; issued: string; closing: string }[];
   changes: { action: string; created_at: string }[];
 }
@@ -128,4 +130,23 @@ export function pageProducts(page: Pick<InvPage, "fields" | "rows">): InvProduct
     issued: r[i.issued] as string,
     balance: r[i.balance] as string,
   }));
+}
+
+/** inv_page2 (0030): inv_page + per product [min_stock, last_party, last_received] by id, low count, party names. */
+export interface InvPage2 extends InvPage {
+  extra_fields: string[];
+  extra: Record<string, [string | null, string | null, string | null]>;
+  low_count: number;
+  parties: string[];
+}
+
+/** An entry's details (0030): only the ones that were filled in. */
+export interface InvEntryDetails {
+  party?: string;
+  challan_no?: string;
+  bill_no?: string;
+  bill_date?: string;
+  job_no?: string;
+  rating?: string;
+  no_of_jobs?: string;
 }

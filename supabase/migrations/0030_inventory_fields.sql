@@ -441,6 +441,20 @@ begin
   );
 end $$;
 
+-- Active products with their minimum stock (the settings' list). A function,
+-- not a table read: the REST API caps a table read at 1,000 rows.
+create or replace function public.inv_min_stock_list()
+returns jsonb
+language plpgsql stable security invoker set search_path = public as $$
+begin
+  if not public.inv_can_view() then
+    raise exception 'not permitted' using errcode = '42501';
+  end if;
+  return (select coalesce(jsonb_agg(jsonb_build_array(p.id, p.serial_no, p.description, p.specification, trim_scale(p.min_stock)::text)
+                                    order by p.serial_no), '[]'::jsonb)
+            from public.inv_products p where p.is_active);
+end $$;
+
 -- inv_product_history plus each entry's details.
 create or replace function public.inv_product_history2(p_product_id uuid, p_limit int default 25)
 returns jsonb
@@ -470,7 +484,7 @@ begin
     'inv_set_min_stock(uuid, numeric)', 'inv_set_min_stock_bulk(uuid[], numeric)',
     'inv_add_product_v2(text, text, text, numeric, numeric, jsonb, numeric)',
     'inv_update_product_v2(uuid, text, text, numeric, jsonb, numeric)',
-    'inv_page2(date, boolean)', 'inv_party_index()', 'inv_product_history2(uuid, int)',
+    'inv_page2(date, boolean)', 'inv_party_index()', 'inv_product_history2(uuid, int)', 'inv_min_stock_list()',
     'inv_party_key(text)', 'inv_clean_text(text)'] loop
     execute format('revoke all on function public.%s from public, anon', f);
     execute format('grant execute on function public.%s to authenticated, service_role', f);

@@ -208,6 +208,7 @@ test("role matrix for everything new", async () => {
       (tx) => rpc(tx, "inv_page2", { p_month: null, p_analytics: true }),
       (tx) => rpc(tx, "inv_party_index"),
       (tx) => rpc(tx, "inv_product_history2", { p_product_id: p, p_limit: 5 }),
+      (tx) => rpc(tx, "inv_min_stock_list"),
     ];
     for (const r of reads) {
       if (view) assert.ok(await as(db, ids[role], r));

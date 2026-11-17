@@ -258,3 +258,61 @@ test("today in IST, whatever the device's zone (a tab left open past midnight mo
   assert.equal(istToday(new Date("2026-11-17T18:30:00Z")), "2026-11-18"); // 00:00 IST next day
   assert.equal(istToday(new Date("2026-11-30T19:00:00Z")), "2026-12-01"); // month turns in India first
 });
+
+// ── details, minimum stock, Party search ─────────────────────────────────
+import { isLow, shortfall } from "../lib/inventory/numbers.ts";
+import { partyKey, partyLines, matchParty, suggestParties, addPartyName } from "../lib/inventory/party.ts";
+
+test("low stock boundaries: below, equal, no minimum, decimals, zero", () => {
+  assert.equal(isLow(q("4"), q("5")), true);
+  assert.equal(isLow(q("5"), q("5")), false); // equal is not low
+  assert.equal(isLow(q("0"), null), false); // no minimum, never
+  assert.equal(isLow(q("2.499"), q("2.5")), true); // decimals exact
+  assert.equal(isLow(q("2.5"), q("2.500")), false);
+  assert.equal(isLow(q("0"), q("1")), true); // zero with a minimum: low (shown as Out of stock)
+  assert.equal(formatQty(shortfall(q("2.499"), q("2.5"))), "0.001");
+  assert.equal(shortfall(q("9"), q("2")), BigInt(0));
+  assert.equal(shortfall(q("1"), null), BigInt(0));
+});
+
+test("party names: case and extra spaces don't matter (same rule as the database)", () => {
+  assert.equal(partyKey("  Shree   Dummy  Traders "), "shree dummy traders");
+  assert.equal(partyKey("SHREE DUMMY TRADERS"), partyKey("shree dummy traders"));
+  assert.equal(partyKey(null), "");
+  assert.deepEqual(addPartyName(["Alpha Dummy", "beta dummy"], "  BETA   Dummy "), ["Alpha Dummy", "BETA Dummy"]);
+  assert.deepEqual(suggestParties(["Dummy Traders", "Other Dummy Co", "Traders Dummy"], "  dummy "), ["Dummy Traders", "Other Dummy Co", "Traders Dummy"]);
+  assert.deepEqual(suggestParties(["Dummy Traders", "Other Dummy Co", "Traders Dummy"], "TRADERS"), ["Traders Dummy", "Dummy Traders"]);
+  assert.deepEqual(suggestParties(["Dummy Traders"], "zzz"), []);
+});
+
+test("party search: only products received from the party, all lines grouped", () => {
+  const ix = {
+    fields: ["product_id", "party_key", "party", "qty", "challan_no", "bill_no", "bill_date", "last_date"],
+    rows: [
+      ["p1", "dummy traders", "Dummy Traders", "14", "C2", "B2", "2026-11-16", "2026-11-17"],
+      ["p2", "other dummy co", "Other Dummy Co", "2", null, null, null, "2026-11-17"],
+      ["p3", "dummy traders", "Dummy Traders", "1.5", "C9", null, null, "2026-10-02"],
+    ],
+  };
+  const lines = partyLines(ix);
+  const m = matchParty(lines, "  DUMMY   traders");
+  assert.deepEqual([...m.keys()].sort(), ["p1", "p3"]);
+  assert.equal(m.get("p1")[0].challanNo, "C2");
+  assert.equal(matchParty(lines, "").size, 0); // no party typed: no party filter
+  assert.equal(matchParty(lines, "nobody").size, 0);
+  assert.deepEqual([...matchParty(lines, "dummy").keys()].sort(), ["p1", "p2", "p3"]);
+});
+
+test("party search stays fast on 3,500 products", () => {
+  const rows = [];
+  for (let i = 0; i < 3500; i++) for (let j = 0; j < 3; j++) rows.push([`p${i}`, `dummy party ${(i * 7 + j) % 400}`, `Dummy Party ${(i * 7 + j) % 400}`, "1", null, null, null, "2026-11-01"]);
+  const lines = partyLines({ fields: ["product_id", "party_key", "party", "qty", "challan_no", "bill_no", "bill_date", "last_date"], rows });
+  const names = [...new Set(rows.map((r) => r[2]))];
+  const t0 = performance.now();
+  for (const typed of ["d", "du", "dum", "dumm", "dummy", "dummy p", "dummy party 1", "dummy party 12", "dummy party 123"]) {
+    matchParty(lines, typed);
+    suggestParties(names, typed);
+  }
+  const per = (performance.now() - t0) / 9;
+  assert.ok(per < 100, `${per} ms per keystroke`);
+});

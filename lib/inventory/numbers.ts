@@ -140,3 +140,13 @@ export function summarize(rows: Array<{ is_active: boolean; r: Milli; i: Milli; 
     issuedValue: sum(rows.map((x) => valueOf(x.i, x.ratePaise))),
   };
 }
+
+/** Low stock: a minimum is set and the balance is BELOW it (equal is not low; no minimum, never). */
+export function isLow(balance: Milli, min: Milli | null): boolean {
+  return min !== null && balance < min;
+}
+
+/** How much is missing to reach the minimum (0 when not low). */
+export function shortfall(balance: Milli, min: Milli | null): Milli {
+  return min !== null && balance < min ? min - balance : ZERO;
+}

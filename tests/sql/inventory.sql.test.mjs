@@ -379,3 +379,57 @@ test("import: upsert on serial, idempotent, atomic", async () => {
   await assert.rejects(imp(bad), /does not match/);
   assert.equal((await db.query(`select count(*)::int c from public.inv_products`)).rows[0].c, 2);
 });
+
+// ── 0029: the compact page payload must carry exactly inv_overview's figures ──
+const pageRows = (p) => p.rows.map((r) => Object.fromEntries(p.fields.map((f, i) => [f, r[i]])));
+const num = (s) => (s === null ? null : Number(s));
+
+test("inv_page = inv_overview: same products, same figures (current and closed month)", async () => {
+  const { db, ids } = await setup();
+  await setToday(db, "2026-10-05");
+  const a = await addProduct(db, ids, "D-070", "12.5", "3.50");
+  const b = await addProduct(db, ids, "D-071", "0", null);
+  await record(db, ids, a, "receive", "7.125", "2026-10-05");
+  const iss = await record(db, ids, a, "issue", "2", "2026-10-05");
+  await as(db, ids.inventory, (tx) => rpc(tx, "inv_reverse_transaction", { p_transaction_id: iss.id, p_note: null, p_idempotency_key: randomUUID() }));
+  await record(db, ids, b, "receive", "1", "2026-10-05");
+  await setToday(db, "2026-11-17");
+  await record(db, ids, a, "issue", "0.125", "2026-11-17");
+
+  for (const month of [null, "2026-10-01"]) {
+    for (const role of ["inventory", "admin", "head_admin"]) {
+      const ov = await overview(db, ids[role], month);
+      const pg = await as(db, ids[role], (tx) => rpc(tx, "inv_page", { p_month: month, p_analytics: role !== "inventory" }));
+      assert.equal(pg.month, ov.month);
+      assert.equal(pg.is_current, ov.is_current);
+      const rows = pageRows(pg);
+      assert.equal(rows.length, ov.products.length);
+      for (const p of ov.products) {
+        const r = rows.find((x) => x.id === p.id);
+        for (const f of ["opening", "received", "issued", "balance", "rate"]) assert.equal(num(r[f]), num(p[f]), `${role} ${month} ${p.serial_no} ${f}`);
+        assert.equal(r.serial_no, p.serial_no);
+        assert.deepEqual(r.custom, p.custom);
+      }
+      if (role === "inventory") {
+        assert.equal(pg.trend, null);
+        assert.equal(pg.top_issued, null);
+      } else {
+        assert.deepEqual(pg.trend.map((t) => [t.month.slice(0, 10), num(t.received), num(t.issued)]), ov.trend.map((t) => [t.month.slice(0, 10), num(t.received), num(t.issued)]));
+        assert.deepEqual(pg.top_issued.map((t) => [t.id, num(t.issued)]), ov.top_issued.map((t) => [t.id, num(t.issued)]));
+      }
+      assert.ok(pg.ledger_seq >= 1);
+    }
+  }
+  // numbers carry no trailing zeros (smaller payload), still exact
+  const cur = pageRows(await as(db, ids.inventory, (tx) => rpc(tx, "inv_page", { p_month: null, p_analytics: false })));
+  assert.equal(cur.find((r) => r.serial_no === "D-070").balance, "19.5"); // 12.5 + 7.125 − 2 + 2 (reversed) − 0.125
+  assert.equal(cur.find((r) => r.serial_no === "D-070").rate, "3.5");
+});
+
+test("inv_page: marketing, production, dispatcher and anon are refused", async () => {
+  const { db, ids } = await setup();
+  for (const role of ["marketing", "production", "dispatcher"]) {
+    await denied(as(db, ids[role], (tx) => rpc(tx, "inv_page", { p_month: null, p_analytics: true })));
+  }
+  await denied(asUser(db, null, (tx) => rpc(tx, "inv_page", { p_month: null, p_analytics: false }), { role: "anon" }));
+});

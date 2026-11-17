@@ -3,6 +3,8 @@ import {
   Settings,
   PlusCircle,
   DatabaseZap,
+  Boxes,
+  SlidersHorizontal,
   ScrollText,
   type LucideIcon,
 } from "lucide-react";
@@ -17,7 +19,12 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard/orders", label: "Orders", icon: Package },
+  {
+    href: "/dashboard/orders",
+    label: "Orders",
+    icon: Package,
+    roles: ["head_admin", "admin", "marketing", "production"],
+  },
   {
     href: "/dashboard/orders/new",
     label: "Punch Order",
@@ -41,5 +48,17 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Settings",
     icon: Settings,
     perm: "profile.edit",
+  },
+  {
+    href: "/dashboard/inventory",
+    label: "Inventory",
+    icon: Boxes,
+    perm: "inventory.view",
+  },
+  {
+    href: "/dashboard/inventory-settings",
+    label: "Inventory settings",
+    icon: SlidersHorizontal,
+    perm: "inventory.manage",
   },
 ];

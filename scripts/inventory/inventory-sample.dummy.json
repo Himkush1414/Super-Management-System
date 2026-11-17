@@ -1,0 +1,37 @@
+{
+  "_comment": "FAKE sample data showing the import format. Not real products, serials, rates or quantities. Import it into a local or test database only: INVENTORY_DOCX_PATH=scripts/inventory/inventory-sample.dummy.json node scripts/inventory/import-docx.mjs",
+  "columns": [{ "label": "UOM", "data_type": "text" }],
+  "products": [
+    {
+      "serial_no": "DEMO-001",
+      "description": "Sample item A (dummy)",
+      "specification": "Size 1 (dummy)",
+      "rate": "10.00",
+      "opening_qty": "100",
+      "custom": { "UOM": "Nos." },
+      "movements": [
+        { "kind": "receive", "qty": "25", "slot": 1 },
+        { "kind": "issue", "qty": "40", "slot": 1 },
+        { "kind": "issue", "qty": "5.5", "slot": 2 }
+      ]
+    },
+    {
+      "serial_no": "DEMO-002",
+      "description": "Sample item B (dummy)",
+      "specification": "Size 2 (dummy)",
+      "rate": "2.50",
+      "opening_qty": "12.125",
+      "custom": { "UOM": "Kg" },
+      "movements": []
+    },
+    {
+      "serial_no": "DEMO-003",
+      "description": "Sample item C (dummy)",
+      "specification": "",
+      "rate": null,
+      "opening_qty": "0",
+      "custom": { "UOM": "Mtr." },
+      "movements": [{ "kind": "receive", "qty": "3", "slot": 1 }]
+    }
+  ]
+}

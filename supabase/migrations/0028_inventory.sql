@@ -1025,12 +1025,17 @@ end $$;
 -- Figures for any date range (the exports): Opening = balance before
 -- p_from, Received / Issued = sums inside [p_from, p_to], Closing = balance
 -- at the end of p_to. Active products, plus archived ones that moved.
+-- p_from null = from the first month any product has stock ("All").
 create or replace function public.inv_range_report(p_from date, p_to date)
 returns jsonb
 language plpgsql stable security invoker set search_path = public as $$
 begin
   if not public.inv_can_view() then
     raise exception 'not permitted' using errcode = '42501';
+  end if;
+  if p_from is null then
+    p_from := least(coalesce((select min(opening_month) from public.inv_products),
+                             date_trunc('month', public.inv_today())::date), p_to);
   end if;
   if p_from is null or p_to is null or p_from > p_to then
     raise exception 'invalid range' using errcode = '22023';

@@ -28,7 +28,8 @@ export async function getInventoryHistory(productId: string): Promise<InvHistory
   return data as InvHistory;
 }
 
-export async function getInventoryRange(from: string, to: string): Promise<InvRangeReport> {
+/** `from` null = from the first month any product has stock ("All"). */
+export async function getInventoryRange(from: string | null, to: string): Promise<InvRangeReport> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("inv_range_report", { p_from: from, p_to: to });
   if (error || !data) throw new ReadError("the inventory report", error ?? "empty answer");

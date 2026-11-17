@@ -33,12 +33,15 @@
   /* text */
   --text: #ededed;
   --text-secondary: #a1a1a1;
-  --text-tertiary: #6f6f6f;
+  --text-tertiary: #858585; /* 4.5:1+ on every dark surface (WCAG AA) */
 
   /* accent (used sparingly — primary actions + focus) */
   --accent: #3b82f6;
   --accent-hover: #2f6fd6;
   --accent-fg: #ffffff;
+  /* filled buttons and badges: white text on it reads at 5:1 (the lighter
+     --accent stays for blue text, rings and dots, where it reads better) */
+  --accent-solid: #2563eb;
 
   /* status */
   --status-success: #4ade80;
@@ -79,6 +82,9 @@
   --accent: #1d4ed8;
   --accent-hover: #1e40af;
   --accent-fg: #ffffff;
+  /* filled buttons and badges: white text on it reads at 5:1 (the lighter
+     --accent stays for blue text, rings and dots, where it reads better) */
+  --accent-solid: #1d4ed8;
 
   /* darker shades so status text (badges included) stays readable on white */
   --status-success: #166534;
@@ -121,6 +127,7 @@
   --color-text-tertiary: var(--text-tertiary);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
+  --color-accent-solid: var(--accent-solid);
   --color-accent-fg: var(--accent-fg);
   --color-status-success: var(--status-success);
   --color-status-warning: var(--status-warning);

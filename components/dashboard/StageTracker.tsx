@@ -41,7 +41,7 @@ export function StageTracker({
                 className={cn(
                   "flex size-7 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold tnum",
                   done && "border-status-success/40 bg-status-success/15 text-status-success",
-                  current && "border-accent bg-accent text-accent-fg",
+                  current && "border-accent bg-accent-solid text-accent-fg",
                   !done && !current && "border-border-strong text-text-tertiary",
                 )}
               >

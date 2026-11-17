@@ -24,7 +24,7 @@ export function StillLoading() {
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="nr-interactive nr-press inline-flex h-9 shrink-0 items-center rounded-lg bg-accent px-4 text-sm font-medium text-accent-fg hover:bg-accent-hover"
+        className="nr-interactive nr-press inline-flex h-9 shrink-0 items-center rounded-lg bg-accent-solid px-4 text-sm font-medium text-accent-fg hover:bg-accent-hover"
       >
         Reload
       </button>

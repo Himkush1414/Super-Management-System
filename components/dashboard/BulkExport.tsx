@@ -130,7 +130,7 @@ export function BulkExport({
               href={href}
               download
               onClick={() => setOpen(false)}
-              className="nr-interactive nr-press inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent px-4 text-sm font-medium text-accent-fg hover:bg-accent-hover"
+              className="nr-interactive nr-press inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent-solid px-4 text-sm font-medium text-accent-fg hover:bg-accent-hover"
             >
               <FileDown size={15} /> Download PDF
             </a>

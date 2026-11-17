@@ -29,7 +29,7 @@ export function LoadError({ retry, error }: { retry: () => void; error: unknown 
           // this same screen comes back, so let the button work again
           setTimeout(() => setTrying(false), 3000);
         }}
-        className="nr-interactive nr-press mt-4 inline-flex h-9 items-center rounded-lg bg-accent px-4 text-sm font-medium text-accent-fg hover:bg-accent-hover disabled:opacity-60"
+        className="nr-interactive nr-press mt-4 inline-flex h-9 items-center rounded-lg bg-accent-solid px-4 text-sm font-medium text-accent-fg hover:bg-accent-hover disabled:opacity-60"
       >
         {trying ? "Trying…" : "Try again"}
       </button>

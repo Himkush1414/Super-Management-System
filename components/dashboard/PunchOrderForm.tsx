@@ -307,7 +307,7 @@ export function PunchOrderForm({
                     aria-hidden
                     className={cn(
                       "flex size-4 shrink-0 items-center justify-center rounded border",
-                      on ? "border-accent bg-accent text-accent-fg" : "border-border-strong",
+                      on ? "border-accent bg-accent-solid text-accent-fg" : "border-border-strong",
                     )}
                   >
                     {on && <Check size={11} strokeWidth={3} />}

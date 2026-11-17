@@ -24,16 +24,16 @@ export function SummaryCards({ rows, month }: { rows: Row[]; month: string }) {
   const m = monthShort(month);
   // phones: Products | Zero stock, Stock value (wide), Received | Issued.
   // 768+: Stock value (wide) | Products | Zero stock, then Received | Issued.
-  // 1280+: one row of five, in reading order.
+  // 1280+: one row, in reading order (Stock value wide enough for crores).
   const cards = [
     { label: "Products", value: s.products.toLocaleString("en-IN"), sub: "active", icon: Boxes, cls: "md:order-2 xl:order-1" },
     { label: "Zero stock", value: s.zero.toLocaleString("en-IN"), sub: s.zero === 1 ? "product" : "products", icon: CircleSlash, tone: s.zero ? ("warn" as const) : undefined, cls: "md:order-3 xl:order-5" },
-    { label: "Stock value", value: formatINR(s.value), sub: "balance × rate", icon: IndianRupee, cls: "col-span-2 md:order-1 xl:order-2 xl:col-span-1" },
+    { label: "Stock value", value: formatINR(s.value), sub: "balance × rate", icon: IndianRupee, cls: "col-span-2 md:order-1 xl:order-2" },
     { label: `Received · ${m}`, value: formatQty(s.received), sub: `${formatINR(s.receivedValue)} value`, icon: ArrowDownToLine, tone: "in" as const, cls: "md:order-4 md:col-span-2 xl:order-3 xl:col-span-1" },
     { label: `Issued · ${m}`, value: formatQty(s.issued), sub: `${formatINR(s.issuedValue)} value`, icon: ArrowUpFromLine, tone: "out" as const, cls: "md:order-5 md:col-span-2 xl:order-4 xl:col-span-1" },
   ];
   return (
-    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-4 xl:grid-cols-5" aria-label={`Summary for ${monthLabel(month)}`} role="group">
+    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 md:grid-cols-4 xl:grid-cols-6" aria-label={`Summary for ${monthLabel(month)}`} role="group">
       {cards.map((c) => (
         <div key={c.label} className={cn("relative overflow-hidden rounded-xl border border-border bg-panel/60 px-4 py-3.5", c.cls)}>
           <div className="flex items-center justify-between gap-2">

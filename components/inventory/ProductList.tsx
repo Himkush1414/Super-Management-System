@@ -66,13 +66,15 @@ export function ProductList({
 
   const archivedCount = useMemo(() => rows.filter((r) => !r.is_active).length, [rows]);
   const pool = useMemo(() => rows.filter((r) => r.is_active || showArchived), [rows, showArchived]);
+  // the search index is built on the first keystroke, not on every page open
+  const searching = deferred.trim() !== "";
   const index = useMemo(
-    () => buildIndex(pool, (r) => [r.serial_no, r.description, r.specification, ...formCols.map((c) => customText(r, c))]),
-    [pool, formCols],
+    () => (searching ? buildIndex(pool, (r) => [r.serial_no, r.description, r.specification, ...formCols.map((c) => customText(r, c))]) : null),
+    [pool, formCols, searching],
   );
   // main search AND party AND low stock
   const shown = useMemo(() => {
-    let out = search(index, deferred).map((i) => pool[i]);
+    let out = index ? search(index, deferred).map((i) => pool[i]) : pool;
     if (lowOnly) out = out.filter(rowLow);
     if (partyOn) out = partyMatches ? out.filter((r) => partyMatches.has(r.id)) : [];
     return out;

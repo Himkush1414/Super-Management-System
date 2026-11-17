@@ -14,7 +14,7 @@ import { rememberMin } from "./stores";
 
 export type MinRow = { id: string; serial_no: string; description: string; specification: string; min_stock: string | null };
 
-const PAGE = 60;
+const PAGE = 30;
 const valid = (t: string) => !t.trim() || (parseQty(t) !== null && parseQty(t)! >= BigInt(0));
 const norm = (t: string | null) => (t === null || t === "" ? "" : String(Number(t)) === t ? t : t.replace(/\.?0+$/, ""));
 

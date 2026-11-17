@@ -156,7 +156,7 @@ export function InventoryPage({
                 <Download size={15} /> <span className="hidden sm:inline">Export</span>
               </Button>
               {canManage && data.is_current && (
-                <Button type="button" className="h-11 whitespace-nowrap px-3.5 sm:px-4 md:h-9" onClick={() => setAdding(true)} aria-haspopup="dialog">
+                <Button type="button" className="h-11 whitespace-nowrap px-3.5 sm:px-4 md:h-9" onClick={() => setAdding(true)} aria-haspopup="dialog" aria-label="Add product">
                   <Plus size={15} /> Add<span className="hidden sm:inline"> product</span>
                 </Button>
               )}

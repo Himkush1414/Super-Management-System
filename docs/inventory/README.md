@@ -299,28 +299,32 @@ Party search's data is computed in SQL (`inv_party_index`) and loaded in the bac
 
 ## Speed
 
-Measured on a local production build with fake data and 40 ms of added database latency, on a phone profile (4× slower CPU, 4G), on 2026-11-17 (PR #59). The live store has under 350 products.
+Measured on a local production build with fake data and 40 ms of added database latency, on a phone profile (4× slower CPU, 4G). **Before** = master on 2026-11-18 before these three features; **after** = with the month-start balance, the Archive tab and the import (2026-11-18). The live store has under 350 products.
 
-| | Target | 350 products | 3,500 products |
+| | Target | 350: before → after | 3,500: before → after |
 |---|---|---:|---:|
-| Skeleton on navigation | ≤ 300 ms | 35 ms | 35 ms |
-| Data visible (opened from the menu) | ≤ 1000 ms | 369 ms | 401 ms |
-| Tab switch back to Inventory | ≤ 100 ms | 63 ms | 87 ms |
-| Search per keystroke (median) | ≤ 100 ms | 50 ms | 34 ms |
-| Party search per keystroke (median / slowest) | ≤ 100 ms | 34 / 54 ms | 34 / 51 ms |
-| Row expand starts | ≤ 50 ms | 21 ms | 22 ms |
-| Save round trip | ≤ 400 ms | 158 ms | 156 ms |
-| Export, one month: PDF / Word / Excel | ≤ 2000 ms | 751 / 77 / 74 ms | **6958** / 221 / 199 ms |
-| Export, All: PDF / Word / Excel | ≤ 4000 ms | 731 / 76 / 73 ms | **6638** / 217 / 203 ms |
+| Skeleton on navigation | ≤ 300 ms | 37 → 51 ms | 35 → 36 ms |
+| Data visible (opened from the menu) | ≤ 1000 ms | 373 → 383 ms | 390 → 380 ms |
+| Tab switch back to Inventory | ≤ 100 ms | 63 → 59 ms | 79 → 91 ms |
+| Tab switch to the Archive (content or skeleton) | ≤ 100 ms | new: 10 ms | — |
+| Search per keystroke (median) | ≤ 100 ms | 50 → 48 ms | 51 → 36 ms |
+| Party search per keystroke (median / slowest) | ≤ 100 ms | 50 / 52 → 34 / 61 ms | 33 / 63 → 34 / 63 ms |
+| Row expand starts | ≤ 50 ms | 23 → 22 ms | 20 → 20 ms |
+| Save round trip (receive) | ≤ 400 ms | 156 → 156 ms | 161 → 151 ms |
+| **Balance save per row** (month-start count, median) | ≤ 400 ms | new: 81 ms | new: 81 ms |
+| **Import preview** (PDF / Word / Excel / CSV, whole file) | ≤ 3000 ms (350 rows) | new: 941 / 204 / 184 / 134 ms | new, 3,500 rows: 2915 / 614 / 398 / 210 ms |
+| **Import apply** | ≤ 3000 ms | new: 190 ms | new, 3,500 rows: 799 ms |
+| Export, one month: PDF / Word / Excel | ≤ 2000 ms | 727 / 79 / 72 → 750 / 77 / 70 ms | **7174** / 217 / 201 → **7168** / 226 / 205 ms |
+| Export, All: PDF / Word / Excel | ≤ 4000 ms | 726 / 74 / 70 → 700 / 75 / 74 ms | **6713** / 223 / 196 → **6758** / 227 / 212 ms |
 
-Every target is met at 350 products. At 3,500 products a PDF of every product takes about 7 s (it is 167 A4 pages); Word and Excel stay well under 1 s.
+Every target is met at 350 products, before and after. At 3,500 products a PDF of every product still takes about 7 s (it is 167 A4 pages, unchanged by this work); Word and Excel stay well under 1 s. The main page carries two more fields per row (adjustment, pending): about 1.7% more HTML at 350 products.
 
 **How the speed targets are met:**
 - The main page is **one** SQL call that returns compact rows, with the session check running in parallel.
 - Each product is rendered once (a card on phones, a table row on wider screens), 40 at a time.
 - History and Party search load from GET routes and are cached for the tab.
-- A save returns only its new figures.
-- Charts and sheets load lazily and are warmed in the background while the browser is idle.
+- A save returns only its new figures; a balance save is one small request per row.
+- Charts and sheets load lazily and are warmed in the background while the browser is idle; pdf.js loads only on the import page.
 
 ## Data model
 

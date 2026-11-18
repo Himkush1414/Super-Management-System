@@ -48,7 +48,12 @@ export function invalidateHistory(id: string) {
 
 // ── saved figures: shown until the server's data includes the entry ──────
 
-export type Saved = { received: bigint; issued: bigint; balance: bigint; seq: number };
+/**
+ * Figures the database just confirmed for a product. `seq` = the ledger id
+ * of the entry that produced them, `cseq` = the stock count id (0031): the
+ * two have their own sequences, and either or both can be set.
+ */
+export type Saved = { received: bigint; issued: bigint; balance: bigint; seq?: number; adjustment?: bigint; pending?: boolean; cseq?: number };
 const saved = new Map<string, Saved>();
 const listeners = new Set<() => void>();
 let version = 0;
@@ -60,32 +65,36 @@ function emit() {
 
 /**
  * Record figures the database just confirmed for a product, tagged with the
- * ledger id of the entry that produced them. They're shown instead of the
- * page data's figures until the page data includes that entry
- * (data.ledger_seq ≥ seq), so a cached page opened again later never shows
- * the stock from before the save.
+ * ledger id of the entry (and/or the stock count id) that produced them.
+ * They're shown instead of the page data's figures until the page data
+ * includes that entry (data.ledger_seq ≥ seq, data.count_seq ≥ cseq), so a
+ * cached page opened again later never shows the stock from before the save.
  */
 export function rememberSaved(productId: string, s: Saved) {
   const cur = saved.get(productId);
-  if (cur && cur.seq >= s.seq) return; // an older answer arriving late never wins
-  saved.set(productId, s);
+  // an older answer arriving late never wins
+  if (cur && s.seq !== undefined && cur.seq !== undefined && cur.seq >= s.seq && (s.cseq === undefined || (cur.cseq ?? 0) >= s.cseq)) return;
+  if (cur && s.seq === undefined && s.cseq !== undefined && cur.cseq !== undefined && cur.cseq >= s.cseq) return;
+  saved.set(productId, { ...s, seq: s.seq ?? cur?.seq, cseq: s.cseq ?? cur?.cseq });
   emit();
 }
 
+const newer = (s: Saved, ledgerSeq: number, countSeq: number) => (s.seq ?? 0) > ledgerSeq || (s.cseq ?? 0) > countSeq;
+
 /** The saved figures newer than the page data, by product. */
-export function savedNewerThan(ledgerSeq: number): Map<string, Saved> {
+export function savedNewerThan(ledgerSeq: number, countSeq = Number.MAX_SAFE_INTEGER): Map<string, Saved> {
   const out = new Map<string, Saved>();
   for (const [id, s] of saved) {
-    if (s.seq > ledgerSeq) out.set(id, s);
+    if (newer(s, ledgerSeq, countSeq)) out.set(id, s);
   }
   return out;
 }
 
 /** Forget figures the page data already includes (keeps the map small). */
-export function pruneSaved(ledgerSeq: number) {
+export function pruneSaved(ledgerSeq: number, countSeq = Number.MAX_SAFE_INTEGER) {
   let changed = false;
   for (const [id, s] of saved) {
-    if (s.seq <= ledgerSeq) {
+    if (!newer(s, ledgerSeq, countSeq)) {
       saved.delete(id);
       changed = true;
     }

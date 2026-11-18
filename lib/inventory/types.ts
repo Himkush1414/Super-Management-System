@@ -27,6 +27,10 @@ export interface InvProductRow {
   received: string;
   issued: string;
   balance: string;
+  /** 0031: the stock count adjustment inside the range / month ("0" when none) */
+  adjustment?: string;
+  /** 0031: balance not counted yet this month (the figures are not confirmed) */
+  pending?: boolean;
 }
 
 export interface InvSettings {
@@ -63,17 +67,36 @@ export interface InvHistoryEntry {
   by: string | null;
 }
 
+/** A stock count (0031): the balance the store person counted. adjustment = counted − balance before. */
+export interface InvStockCount {
+  id: number;
+  month: string;
+  entry_date: string;
+  counted: string;
+  balance_before: string;
+  adjustment: string;
+  source: "app" | "import";
+  note: string | null;
+  created_at: string;
+  by: string | null;
+}
+
 export interface InvHistory {
   entries: InvHistoryEntry[];
   /** entry id -> its details (0030; entries without details are absent) */
   details?: Record<string, InvEntryDetails>;
-  months: { month: string; opening: string; received: string; issued: string; closing: string }[];
+  /** 0031: newest first */
+  counts?: InvStockCount[];
+  /** closed months; 0031 adds the adjustment and whether the balance was counted */
+  months: { month: string; opening: string; adjustment?: string; received: string; issued: string; closing: string; confirmed?: boolean }[];
   changes: { action: string; created_at: string }[];
 }
 
 export interface InvRangeReport {
   from: string;
   to: string;
+  /** 0031 */
+  current_month?: string;
   columns: InvColumn[];
   settings: InvSettings | null;
   products: InvProductRow[];
@@ -81,7 +104,7 @@ export interface InvRangeReport {
 
 /** Result of every write RPC. */
 export interface InvWriteResult {
-  status: "ok" | "duplicate" | "insufficient" | "invalid" | "not_found" | "archived";
+  status: "ok" | "duplicate" | "insufficient" | "invalid" | "not_found" | "archived" | "pending";
   id?: string | number;
   message?: string;
   balance?: string;
@@ -159,4 +182,34 @@ export interface InvEntryDetails {
   job_no?: string;
   rating?: string;
   no_of_jobs?: string;
+}
+
+/**
+ * inv_page3 (0031): inv_page2 with two more fields per row (adjustment,
+ * pending), the counts beside the totals, and the stock-count sequence.
+ */
+export interface InvPage3 extends InvPage2 {
+  /** first month month-start counting applies ("infinity" = not set) */
+  counts_from: string;
+  count_seq: number;
+  active_count: number;
+  pending_count: number;
+}
+
+/** The two 0031 fields of each row, by product id (pure; tested). Absent fields read as "0" / false. */
+export function pageMonthFields(page: Pick<InvPage, "fields" | "rows">): Map<string, { adjustment: string; pending: boolean }> {
+  const id = page.fields.indexOf("id");
+  const a = page.fields.indexOf("adjustment");
+  const p = page.fields.indexOf("pending");
+  const out = new Map<string, { adjustment: string; pending: boolean }>();
+  if (a < 0 && p < 0) return out;
+  for (const r of page.rows) {
+    out.set(r[id] as string, { adjustment: a < 0 ? "0" : ((r[a] as string | null) ?? "0"), pending: p < 0 ? false : r[p] === true });
+  }
+  return out;
+}
+
+/** Month-start counting applies in `month` (counts_from "infinity" = never). */
+export function countingApplies(countsFrom: string | null | undefined, month: string): boolean {
+  return Boolean(countsFrom) && /^\d{4}-\d{2}-\d{2}$/.test(countsFrom!) && month >= countsFrom!;
 }

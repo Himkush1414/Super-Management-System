@@ -1,7 +1,7 @@
 # Inventory scripts
 
-Local tools for the Inventory module (migrations `0027`–`0030`): import,
-account and backup. They contain no data, no account values and no keys.
+Local tools for the Inventory module (migrations `0027`–`0031`): import,
+account, backup and the rollover dry run. They contain no data, no account values and no keys.
 Everything they need comes from `.env.local` (gitignored) or from the shell,
 and they never print a secret. None of them deletes anything.
 
@@ -61,6 +61,18 @@ Read-only (a `begin read only` transaction, or GET requests only). It writes
 JSON, an additive `.restore.sql` and checksums to a folder outside the
 repository, and prints only row counts. Restore steps:
 [docs/inventory/BACKUP.md](../../docs/inventory/BACKUP.md).
+
+## Month rollover: dry run
+
+```sh
+SUPABASE_ACCESS_TOKEN=<token> SUPABASE_PROJECT_REF=<ref> node scripts/inventory/rollover-dry-run.mjs --as-of 2026-12-01
+```
+
+Read-only (one SELECT in a `begin read only` transaction). It prints **counts
+only**: which months the rollover would close and into which table, how many
+snapshot rows each would get, and how many products would start the month
+pending (balance to be counted, migration 0031). It works before and after
+0031. Without `--as-of` it looks at the 1st of next month (IST).
 
 ## Tests
 

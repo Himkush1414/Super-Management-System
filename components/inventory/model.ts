@@ -14,14 +14,22 @@ export interface Row extends InvProductRow {
   minText: string | null;
   lastParty: string | null;
   lastReceived: string | null;
+  /** 0031: the month's stock count adjustment (thousandths) */
+  a: bigint;
+  /** 0031: balance not counted yet this month */
+  pending: boolean;
 }
 
 const Z = BigInt(0);
 
-/** Low: a minimum is set and the balance is below it (live: follows saves). */
-export const rowLow = (r: Pick<Row, "is_active" | "b" | "min">) => r.is_active && isLow(r.b, r.min);
+/** Low: a minimum is set and the balance is below it (live: follows saves). Never while the balance is pending. */
+export const rowLow = (r: Pick<Row, "is_active" | "b" | "min"> & { pending?: boolean }) => r.is_active && !r.pending && isLow(r.b, r.min);
 
-export function toRow(p: InvProductRow, extra?: [string | null, string | null, string | null]): Row {
+export function toRow(
+  p: InvProductRow,
+  extra?: [string | null, string | null, string | null],
+  month?: { adjustment: string; pending: boolean },
+): Row {
   const o = parseQty(p.opening) ?? Z;
   const r = parseQty(p.received) ?? Z;
   const i = parseQty(p.issued) ?? Z;
@@ -32,6 +40,8 @@ export function toRow(p: InvProductRow, extra?: [string | null, string | null, s
     ...p, o, r, i, b, ratePaise, value: valueOf(b, ratePaise),
     min: minText === null ? null : parseQty(minText), minText,
     lastParty: extra?.[1] ?? null, lastReceived: extra?.[2] ?? null,
+    a: parseQty(month?.adjustment ?? p.adjustment ?? "0") ?? Z,
+    pending: month?.pending ?? p.pending ?? false,
   };
 }
 

@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Download, Phone, UserRound, CalendarRange, TriangleAlert, ChevronRight } from "lucide-react";
+import { Plus, Download, Phone, UserRound, CalendarRange, TriangleAlert, ChevronRight, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { formatQty, parseQty, valueOf } from "@/lib/inventory/numbers";
-import { activeCustomColumns, pageExtras, pageProducts, visibleCustomColumns, type InvPage2 } from "@/lib/inventory/types";
+import { activeCustomColumns, countingApplies, pageExtras, pageMonthFields, pageProducts, visibleCustomColumns, type InvPage3 } from "@/lib/inventory/types";
 import { addPartyName, partyLines, type PartyLine } from "@/lib/inventory/party";
 import { monthOf } from "@/lib/inventory/ledger";
 import { ProductList } from "./ProductList";
@@ -32,7 +32,7 @@ const Charts = dynamic(() => loadCharts().then((m) => m.Charts), {
 });
 
 type Props = {
-  data: InvPage2;
+  data: InvPage3;
   canManage: boolean;
   /** admin tier: trend, top 10, month selector */
   showAnalytics: boolean;
@@ -50,6 +50,7 @@ function InventoryInner({ data, canManage, showAnalytics }: Props) {
   const router = useRouter();
   const toast = useToast();
   const [lowOnly, setLowOnly] = useState(false);
+  const [pendingOnly, setPendingOnly] = useState(false);
   const [lowOpen, setLowOpen] = useState(false);
   // Party search's data (null until loaded, in the background)
   const [lines, setLines] = useState<PartyLine[] | null>(null);
@@ -79,10 +80,12 @@ function InventoryInner({ data, canManage, showAnalytics }: Props) {
 
   // figures confirmed by a save that this page data doesn't include yet
   const savedVersion = useSavedVersion();
-  useEffect(() => pruneSaved(data.ledger_seq), [data.ledger_seq]);
+  const countSeq = data.count_seq ?? 0;
+  useEffect(() => pruneSaved(data.ledger_seq, countSeq), [data.ledger_seq, countSeq]);
   const base = useMemo(() => {
     const ex = pageExtras(data);
-    return pageProducts(data).map((p) => toRow(p, ex.get(p.id)));
+    const mf = pageMonthFields(data);
+    return pageProducts(data).map((p) => toRow(p, ex.get(p.id), mf.get(p.id)));
   }, [data]);
   // minimums saved in settings that this page data may not show yet; then read again behind
   useEffect(() => {
@@ -91,32 +94,42 @@ function InventoryInner({ data, canManage, showAnalytics }: Props) {
   }, [base, router]);
   const rows: Row[] = useMemo(() => {
     void savedVersion;
-    const newer = savedNewerThan(data.ledger_seq);
+    const newer = savedNewerThan(data.ledger_seq, countSeq);
     const mins = savedMinimums();
     if (!newer.size && !mins.size) return base;
     return base.map((r) => {
       const s = newer.get(r.id);
       const m = mins.has(r.id) ? mins.get(r.id)! : undefined;
       if (!s && m === undefined) return r;
-      const x = s ? { ...r, r: s.received, i: s.issued, b: s.balance, value: valueOf(s.balance, r.ratePaise) } : { ...r };
+      const x = s
+        ? { ...r, r: s.received, i: s.issued, b: s.balance, value: valueOf(s.balance, r.ratePaise), a: s.adjustment ?? r.a, pending: s.pending ?? r.pending }
+        : { ...r };
       if (m !== undefined) {
         x.minText = m;
         x.min = m === null ? null : parseQty(m);
       }
       return x;
     });
-  }, [base, data.ledger_seq, savedVersion]);
+  }, [base, data.ledger_seq, countSeq, savedVersion]);
   const lowRows = useMemo(() => rows.filter(rowLow), [rows]);
+  // month-start balance (0031): live, so the progress moves with each save
+  const counting = data.is_current && countingApplies(data.counts_from, data.current_month);
+  const active = useMemo(() => rows.filter((r) => r.is_active).length, [rows]);
+  const pendingCount = useMemo(() => (data.is_current ? rows.filter((r) => r.pending).length : 0), [rows, data.is_current]);
 
   // known party names (autocomplete) and Party search's data
-  const [namesState, setNamesState] = useState<{ data: InvPage2; names: string[] }>({ data, names: data.parties ?? [] });
+  const [namesState, setNamesState] = useState<{ data: InvPage3; names: string[] }>({ data, names: data.parties ?? [] });
   const names = useMemo(() => (namesState.data === data ? namesState.names : data.parties ?? []), [namesState, data]);
 
   const customCols = useMemo(() => visibleCustomColumns(data.columns), [data.columns]);
   const formCols = useMemo(() => activeCustomColumns(data.columns), [data.columns]);
 
   const onRecorded = useCallback(
-    (e: { productId: string; kind: "receive" | "issue"; qty: string; balanceAfter?: string; reversal?: boolean; seq?: number; date: string; party?: string | null; belowMin?: boolean }) => {
+    (e: {
+      productId: string; kind: "receive" | "issue"; qty: string; balanceAfter?: string; reversal?: boolean; seq?: number; date: string; party?: string | null; belowMin?: boolean;
+      /** the month-start balance counted in the same save (0031) */
+      count?: { id: number; adjustment: string };
+    }) => {
       const row = rows.find((x) => x.id === e.productId);
       if (e.party && e.party.trim()) setNamesState({ data, names: addPartyName(names, e.party) });
       if (e.kind === "receive" && (e.party || e.reversal)) {
@@ -139,9 +152,28 @@ function InventoryInner({ data, canManage, showAnalytics }: Props) {
         issued: e.kind === "issue" ? row.i + sign * q : row.i,
         balance: after,
         seq: e.seq,
+        ...(e.count ? { adjustment: row.a + (parseQty(e.count.adjustment) ?? BigInt(0)), pending: false, cseq: e.count.id } : {}),
       });
     },
     [rows, data, names, router, toast],
+  );
+
+  // a stock count on its own (0031): the balance becomes the counted figure
+  const onCounted = useCallback(
+    (e: { productId: string; countId: number; balanceAfter: string; adjustment: string; belowMin?: boolean }) => {
+      const row = rows.find((x) => x.id === e.productId);
+      const after = parseQty(e.balanceAfter);
+      if (!row || after === null || !e.countId) {
+        router.refresh();
+        return;
+      }
+      if (e.belowMin) toast("error", `${row.serial_no} is below its minimum: ${formatQty(after)} of ${formatQty(row.min)}. Order advised.`);
+      rememberSaved(e.productId, {
+        received: row.r, issued: row.i, balance: after,
+        adjustment: row.a + (parseQty(e.adjustment) ?? BigInt(0)), pending: false, cseq: e.countId,
+      });
+    },
+    [rows, router, toast],
   );
 
   const person = data.settings?.person_name?.trim();
@@ -228,6 +260,35 @@ function InventoryInner({ data, canManage, showAnalytics }: Props) {
         </button>
       )}
 
+      {pendingCount > 0 && (
+        <div className="mb-3 flex flex-col gap-3 rounded-xl border border-accent/35 bg-accent/[0.07] px-4 py-3 sm:flex-row sm:items-center" role="status" data-inv-pending-banner>
+          <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+            <ClipboardList size={17} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-semibold text-text">
+              {pendingCount} {pendingCount === 1 ? "product needs" : "products need"} balance
+            </span>
+            <span className="tnum block text-[12.5px] text-text-secondary">
+              {(active - pendingCount).toLocaleString("en-IN")} of {active.toLocaleString("en-IN")} confirmed for {monthLabel(data.current_month)}.{" "}
+              {canManage ? "Count each one and enter what is on the shelf." : "The store is counting this month's balances (read only)."}
+            </span>
+          </span>
+          <span className="flex flex-wrap gap-2">
+            {canManage && (
+              <Button type="button" className="h-11 md:h-9" onClick={() => setPendingOnly(true)} aria-pressed={pendingOnly}>
+                Enter balances
+              </Button>
+            )}
+            {!canManage && !pendingOnly && (
+              <Button type="button" variant="secondary" className="h-11 md:h-9" onClick={() => setPendingOnly(true)}>
+                Show pending
+              </Button>
+            )}
+          </span>
+        </div>
+      )}
+
       <SummaryCards rows={rows} month={data.month} lowCount={lowRows.length} />
 
       {showAnalytics && data.trend && data.top_issued && <Charts trend={data.trend} top={data.top_issued} month={data.month} />}
@@ -247,6 +308,12 @@ function InventoryInner({ data, canManage, showAnalytics }: Props) {
           lowOnly={lowOnly}
           onLowOnly={setLowOnly}
           lowCount={lowRows.length}
+          pendingOnly={pendingOnly}
+          onPendingOnly={setPendingOnly}
+          pendingCount={pendingCount}
+          activeCount={active}
+          counting={counting}
+          onCounted={onCounted}
           toolbar={
             <>
               <Button

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireSession } from "@/lib/auth/session";
 import { getInventoryRange } from "@/lib/inventory/data";
-import { buildExportModel, textTable } from "@/lib/inventory/export-model";
+import { buildExportModel, docxWidths, signedQty, textTable } from "@/lib/inventory/export-model";
 import { exportFileName, resolveRange, type RangeKind } from "@/lib/inventory/ranges";
 import { istDay } from "@/lib/periods";
 import { formatStamp } from "@/lib/utils";
@@ -13,8 +13,10 @@ const KINDS: RangeKind[] = ["week", "month", "prev_month", "all", "custom"];
  * The inventory export, made on the server (works on Vercel):
  *   /dashboard/inventory/export?format=pdf|docx|xlsx&range=week|month|prev_month|all|custom[&from=YYYY-MM-DD&to=YYYY-MM-DD]
  * Inventory and admin tier only. Opening = balance before the first day,
- * Received / Issued = sums inside the range, Closing = balance on the last
- * day (IST). File: "NR Industries Product Specification DD-MM-YYYY to DD-MM-YYYY".
+ * Adjustment (stock counts, 0031) / Received / Issued = sums inside the
+ * range, Closing = balance on the last day (IST): Opening + Adjustment +
+ * Received − Issued = Closing. A product whose balance is pending this
+ * month shows "Pending". File: "NR Industries Product Specification DD-MM-YYYY to DD-MM-YYYY".
  */
 const FORMATS = ["pdf", "docx", "xlsx"] as const;
 type Format = (typeof FORMATS)[number];
@@ -76,12 +78,14 @@ export async function GET(req: NextRequest) {
         `Products: ${model.rows.length.toLocaleString("en-IN")}`,
         `Received: ${formatQty(model.totals.received)}`,
         `Issued: ${formatQty(model.totals.issued)}`,
+        ...(model.showAdjustment ? [`Adjustment: ${signedQty(model.totals.adjustment)}`] : []),
+        ...(model.counts.pending ? [`Confirmed: ${model.counts.confirmed.toLocaleString("en-IN")} of ${model.counts.active.toLocaleString("en-IN")} (Pending not in the value)`] : []),
         ...(model.person ? [`Inventory: ${model.person}`] : []),
       ],
       head: t.head,
       right: t.right,
       rows: t.rows,
-      widths: [7, 22, 14, 8, 8, 8, 8, 8, 10, ...model.customColumns.map(() => 7)],
+      widths: docxWidths(model),
       totalLine: `Total closing value (active products): ${formatINR(model.totals.value)}`,
     });
   }

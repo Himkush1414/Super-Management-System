@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, startTransition, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Search, X, PackageSearch, Archive, TriangleAlert, Truck } from "lucide-react";
+import { ChevronDown, Search, X, PackageSearch, Archive, TriangleAlert, Truck, ClipboardList } from "lucide-react";
 import { buildIndex, search } from "@/lib/inventory/search";
 import { formatINR, formatQty, parseQty, sum } from "@/lib/inventory/numbers";
 import { matchParty, partyKey, type PartyLine } from "@/lib/inventory/party";
@@ -10,6 +10,7 @@ import { cn, formatDay } from "@/lib/utils";
 import { Expand, Highlight } from "./bits";
 import { customText, rowLow, type Row } from "./model";
 import { PartyInput } from "./PartyInput";
+import { CountList, type CountedEvent } from "./CountList";
 import { ProductPanel, type PanelProps } from "./ProductPanel";
 import { prefetchHistory } from "./stores";
 
@@ -26,6 +27,12 @@ type Props = {
   lowOnly: boolean;
   onLowOnly: (v: boolean) => void;
   lowCount: number;
+  /** month-start balance (0031): the Pending filter, its count, the active count */
+  pendingOnly: boolean;
+  onPendingOnly: (v: boolean) => void;
+  pendingCount: number;
+  activeCount: number;
+  onCounted: (e: CountedEvent) => void;
 } & PanelShared;
 
 /** Rows rendered at first, and added each time the list end comes near. */
@@ -52,7 +59,15 @@ function useWidth<T extends HTMLElement>() {
 
 export function ProductList({
   rows, customCols, formCols, toolbar, canManage, isCurrent, today, onRecorded, partyNames, partyLines, onPartyNeeded, lowOnly, onLowOnly, lowCount,
+  pendingOnly, onPendingOnly, pendingCount, activeCount, counting, onCounted,
 }: Props) {
+  // the fast balance screen (inventory account, current month): the products
+  // pending when it opened stay listed after they're saved, so focus never jumps
+  const countMode = pendingOnly && canManage && isCurrent && counting;
+  const crowded = pendingCount > 0 || pendingOnly;
+  const [countSet, setCountSet] = useState<Set<string> | null>(null);
+  if (countMode && !countSet) setCountSet(new Set(rows.filter((r) => r.pending).map((r) => r.id)));
+  if (!countMode && countSet) setCountSet(null);
   const [query, setQuery] = useState("");
   const deferred = useDeferredValue(query);
   const [party, setParty] = useState("");
@@ -76,13 +91,14 @@ export function ProductList({
   const shown = useMemo(() => {
     let out = index ? search(index, deferred).map((i) => pool[i]) : pool;
     if (lowOnly) out = out.filter(rowLow);
+    if (pendingOnly) out = out.filter((r) => (countSet ? countSet.has(r.id) : r.pending));
     if (partyOn) out = partyMatches ? out.filter((r) => partyMatches.has(r.id)) : [];
     return out;
-  }, [index, deferred, pool, lowOnly, partyOn, partyMatches]);
-  const filtering = Boolean(deferred.trim()) || lowOnly || partyOn;
+  }, [index, deferred, pool, lowOnly, pendingOnly, countSet, partyOn, partyMatches]);
+  const filtering = Boolean(deferred.trim()) || lowOnly || pendingOnly || partyOn;
   const stale = query !== deferred || party !== deferredParty;
   // a new search starts from the top of a short list again
-  const filterKey = `${deferred}\u0001${deferredParty}\u0001${lowOnly}`;
+  const filterKey = `${deferred}\u0001${deferredParty}\u0001${lowOnly}\u0001${pendingOnly}`;
   const [lastQuery, setLastQuery] = useState(filterKey);
   if (lastQuery !== filterKey) {
     setLastQuery(filterKey);
@@ -134,7 +150,11 @@ export function ProductList({
 
   // stable props, so a toggle or a keystroke re-renders only the rows that changed
   const toggle = useCallback((id: string) => setOpenId((cur) => (cur === id ? null : id)), []);
-  const panel = useMemo<PanelShared>(() => ({ canManage, isCurrent, today, onRecorded, partyNames }), [canManage, isCurrent, today, onRecorded, partyNames]);
+  const panel = useMemo<PanelShared>(
+    () => ({ canManage, isCurrent, today, onRecorded, partyNames, counting, onCounted }),
+    [canManage, isCurrent, today, onRecorded, partyNames, counting, onCounted],
+  );
+  const more = useCallback(() => startTransition(() => setLimit((l) => l + MORE_ROWS)), []);
 
   return (
     <section aria-label="Products" className="relative">
@@ -143,8 +163,9 @@ export function ProductList({
         ref={toolbarRef}
         className="sticky top-14 z-20 -mx-4 border-b border-border bg-bg/85 px-4 py-3 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"
       >
-        <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center">
-          <div className="flex flex-col gap-2 sm:flex-row lg:max-w-2xl lg:flex-1">
+        {/* one row from 1024 px; with the Pending chip as well, from 1280 px (the search keeps its width) */}
+        <div className={cn("flex flex-col gap-2.5", crowded ? "xl:flex-row xl:items-center" : "lg:flex-row lg:items-center")}>
+          <div className={cn("flex flex-col gap-2 sm:flex-row", crowded ? "xl:max-w-2xl xl:flex-1" : "lg:max-w-2xl lg:flex-1")}>
           <div className="relative flex-1">
             <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-text-tertiary" />
             <input
@@ -190,12 +211,28 @@ export function ProductList({
             />
           </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 lg:ml-auto lg:flex-nowrap">
-            <p className="tnum mr-auto whitespace-nowrap text-[12.5px] text-text-tertiary lg:mr-1" aria-live="polite" aria-atomic="true" data-inv-count>
+          <div className={cn("flex flex-wrap items-center justify-end gap-2", crowded ? "xl:ml-auto xl:flex-nowrap" : "lg:ml-auto lg:flex-nowrap")}>
+            <p className={cn("tnum mr-auto whitespace-nowrap text-[12.5px] text-text-tertiary", crowded ? "xl:mr-1" : "lg:mr-1")} aria-live="polite" aria-atomic="true" data-inv-count>
               {filtering
                 ? `${shown.length} of ${pool.length} product${pool.length === 1 ? "" : "s"}`
                 : `${pool.length} product${pool.length === 1 ? "" : "s"}`}
             </p>
+            {(pendingCount > 0 || pendingOnly) && (
+              <button
+                type="button"
+                aria-pressed={pendingOnly}
+                aria-label={`Pending (${pendingCount})`}
+                onClick={() => onPendingOnly(!pendingOnly)}
+                data-inv-pending-chip
+                className={cn(
+                  "nr-interactive inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-[13px] font-medium md:h-9",
+                  pendingOnly ? "border-accent/50 bg-accent/12 text-text" : "border-border text-text-secondary hover:border-accent/40 hover:text-text",
+                )}
+              >
+                <ClipboardList size={14} />
+                <span className="sr-only sm:not-sr-only">Pending</span> <span className="tnum">{pendingCount}</span>
+              </button>
+            )}
             {(lowCount > 0 || lowOnly) && (
               <button
                 type="button"
@@ -253,6 +290,8 @@ export function ProductList({
                   <p className="text-sm font-medium">
                     {partyOn
                       ? `No products received from “${deferredParty.trim()}”${deferred.trim() || lowOnly ? " match the other filters" : ""}`
+                      : pendingOnly && !deferred.trim()
+                        ? "Every balance is confirmed for this month"
                       : lowOnly && !deferred.trim()
                         ? "Nothing is below its minimum"
                         : `Nothing matches “${deferred.trim()}”`}
@@ -270,6 +309,7 @@ export function ProductList({
                   setQuery("");
                   setParty("");
                   onLowOnly(false);
+                  onPendingOnly(false);
                 }}
                 className="nr-interactive mt-4 inline-flex h-11 items-center rounded-lg border border-border-strong px-4 text-[13px] font-medium hover:bg-elevated md:h-10"
               >
@@ -277,6 +317,36 @@ export function ProductList({
               </button>
             </>
           )}
+        </div>
+      ) : countMode ? (
+        <div className={cn("mt-4 transition-opacity", stale && "opacity-70")} data-stale={stale || undefined}>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-bg-subtle/70 px-4 py-2.5 text-[13px]">
+            <span className="tnum font-medium text-text" aria-live="polite" data-inv-count-progress>
+              {(activeCount - pendingCount).toLocaleString("en-IN")} of {activeCount.toLocaleString("en-IN")} confirmed
+            </span>
+            <span className="text-text-tertiary">Type the counted balance, press Enter: it saves and moves to the next.</span>
+            <button
+              type="button"
+              onClick={() => onPendingOnly(false)}
+              className="nr-interactive inline-flex h-11 items-center rounded-lg border border-border-strong px-3 font-medium hover:bg-elevated md:h-9"
+            >
+              Done
+            </button>
+          </div>
+          <div className="md:rounded-xl md:border md:border-border">
+            <CountList rows={visible} query={deferred} onCounted={onCounted} onNeedMore={more} />
+            {shown.length > limit && (
+              <div ref={sentinel} className="flex justify-center py-4">
+                <button
+                  type="button"
+                  onClick={more}
+                  className="nr-interactive inline-flex h-11 items-center rounded-lg border border-border px-4 text-[13px] font-medium text-text-secondary hover:border-border-strong hover:text-text"
+                >
+                  Show more ({shown.length - limit} left)
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className={cn("mt-4 transition-opacity", stale && "opacity-70")} data-stale={stale || undefined}>
@@ -382,7 +452,7 @@ const ProductRow = memo(function ProductRow({
   formCols: InvColumn[];
   panel: PanelShared;
 }) {
-  const zero = r.is_active && r.b === ZERO;
+  const zero = r.is_active && !r.pending && r.b === ZERO;
   const low = rowLow(r);
   const panelId = `inv-panel-${r.id}`;
   const customs = customCols.map((c) => [c, customText(r, c)] as const);
@@ -429,16 +499,23 @@ const ProductRow = memo(function ProductRow({
           <Fig label="Issue" value={formatQty(r.i)} tone={r.i > ZERO ? "out" : undefined} order="order-3 md:order-none" />
         </span>
         <span className="col-start-4 row-span-2 row-start-1 flex flex-col items-end gap-1.5 md:col-auto md:row-auto md:flex-row md:items-center md:justify-end md:px-3 md:py-3">
-          <span
-            className={cn(
-              "tnum text-[17px] font-semibold leading-none md:rounded-md md:px-2 md:py-0.5 md:text-[13.5px]",
-              (zero || low) && "text-status-warning md:bg-status-warning/12 md:ring-1 md:ring-inset md:ring-status-warning/30",
-            )}
-          >
-            {formatQty(r.b)}
-          </span>
-          <span className={cn("text-[11px] uppercase tracking-[0.05em] md:hidden", zero ? "text-status-danger" : low ? "text-status-warning" : "text-text-tertiary")}>
-            {zero ? "Out of stock" : low ? "Below minimum" : "Balance"}
+          {r.pending ? (
+            // never an unconfirmed balance as if it were real
+            <span className="rounded-md bg-accent/12 px-2 py-1 text-[12.5px] font-semibold leading-none text-accent ring-1 ring-inset ring-accent/30 md:py-0.5" data-inv-pending>
+              Pending
+            </span>
+          ) : (
+            <span
+              className={cn(
+                "tnum text-[17px] font-semibold leading-none md:rounded-md md:px-2 md:py-0.5 md:text-[13.5px]",
+                (zero || low) && "text-status-warning md:bg-status-warning/12 md:ring-1 md:ring-inset md:ring-status-warning/30",
+              )}
+            >
+              {formatQty(r.b)}
+            </span>
+          )}
+          <span className={cn("text-[11px] uppercase tracking-[0.05em] md:hidden", r.pending ? "text-text-tertiary" : zero ? "text-status-danger" : low ? "text-status-warning" : "text-text-tertiary")}>
+            {r.pending ? "Balance" : zero ? "Out of stock" : low ? "Below minimum" : "Balance"}
           </span>
         </span>
         {customs.length > 0 && (

@@ -136,7 +136,7 @@ const CountRow = memo(function CountRow({
       className={cn(
         "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-panel/60 p-3",
         // text columns may shrink (truncate): the row never scrolls sideways next to the sidebar
-        "md:grid-cols-[minmax(5rem,0.7fr)_minmax(0,2fr)_4.5rem_minmax(5.5rem,8rem)_auto] md:rounded-none md:border-0 md:bg-transparent md:px-3 md:py-2",
+        "md:grid-cols-[minmax(5rem,0.7fr)_minmax(0,2fr)_4.5rem_minmax(5.5rem,8rem)_auto_5.25rem] md:rounded-none md:border-0 md:bg-transparent md:px-3 md:py-2",
         confirmed && "bg-status-success/[0.04]",
       )}
       data-inv-count-row={row.serial_no}
@@ -155,8 +155,23 @@ const CountRow = memo(function CountRow({
         <span className="text-[11px] uppercase tracking-[0.05em] text-text-tertiary md:hidden">Opening </span>
         {formatQty(opening)}
       </span>
-      <span className="col-span-2 flex items-center gap-2 md:col-span-2 md:contents">
-        <span className="relative min-w-0 flex-1 md:flex-none">
+      {/* phone: beside the opening; from 768 px: the last column */}
+      <span className="justify-self-end text-[12px] md:order-last md:justify-self-start" aria-live="polite">
+        {done ? (
+          <span className="inline-flex items-center gap-1 font-medium text-status-success">
+            <Check size={14} />
+            <span className="tnum">{done.adjustment === BigInt(0) ? "Saved" : `${done.adjustment > BigInt(0) ? "+" : ""}${formatQty(done.adjustment)}`}</span>
+          </span>
+        ) : !row.pending ? (
+          <span className="inline-flex items-center gap-1 text-status-success">
+            <Check size={14} /> Confirmed
+          </span>
+        ) : (
+          <span className="text-text-tertiary">Pending</span>
+        )}
+      </span>
+      <span className="col-span-2 flex items-center gap-2 md:contents">
+        <span className="relative min-w-0 flex-1">
           <input
             ref={(el) => register(row.id, el)}
             id={inputId}
@@ -187,36 +202,20 @@ const CountRow = memo(function CountRow({
             {saving ? <Loader2 size={14} className="animate-spin motion-reduce:animate-none" /> : <CornerDownLeft size={14} />}
           </span>
         </span>
-        <span className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void save(qtyToText(opening))}
-            disabled={saving}
-            aria-label="Same as opening"
-            className="nr-interactive inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border-strong px-3 text-[13px] font-medium text-text-secondary hover:border-accent/40 hover:text-text disabled:opacity-50 md:h-9 md:px-2.5"
-          >
-            <Equal size={14} />
-            <span className="max-lg:md:hidden">Same as opening</span>
-            <span className="hidden max-lg:md:inline">Opening</span>
-          </button>
-          <span className="w-[5.25rem] text-[12px]" aria-live="polite">
-            {done ? (
-              <span className="inline-flex items-center gap-1 font-medium text-status-success">
-                <Check size={14} />
-                <span className="tnum">{done.adjustment === BigInt(0) ? "Saved" : `${done.adjustment > BigInt(0) ? "+" : ""}${formatQty(done.adjustment)}`}</span>
-              </span>
-            ) : !row.pending ? (
-              <span className="inline-flex items-center gap-1 text-status-success">
-                <Check size={14} /> Confirmed
-              </span>
-            ) : (
-              <span className="text-text-tertiary">Pending</span>
-            )}
-          </span>
-        </span>
+        <button
+          type="button"
+          onClick={() => void save(qtyToText(opening))}
+          disabled={saving}
+          aria-label="Same as opening"
+          className="nr-interactive inline-flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border-strong px-3 text-[13px] font-medium text-text-secondary hover:border-accent/40 hover:text-text disabled:opacity-50 md:h-9 md:px-2.5"
+        >
+          <Equal size={14} />
+          <span className="max-lg:md:hidden">Same as opening</span>
+          <span className="hidden max-lg:md:inline">Opening</span>
+        </button>
       </span>
       {error && (
-        <p id={`${inputId}-e`} role="alert" className="col-span-2 text-[12.5px] text-status-danger md:col-span-5">
+        <p id={`${inputId}-e`} role="alert" className="col-span-2 text-[12.5px] text-status-danger md:order-last md:col-span-6">
           {error}
         </p>
       )}

@@ -35,6 +35,9 @@ export const TABLES = [
   { name: "inv_product_log", order: "id", identity: "id" },
   // 0031 (month-start balance): read when the table exists, so a backup also works before it
   { name: "inv_count_settings", order: "id", optional: true },
+  // 0033 (Import from document): one row per import, counts only; restored before the
+  // stock counts, which point at it (import_run_id)
+  { name: "inv_import_runs", order: "id", identity: "id", optional: true },
   { name: "inv_stock_counts", order: "id", identity: "id", generated: ["adjustment"], optional: true },
   { name: "inv_month_snapshots2", order: "product_id,month", optional: true },
   { name: "inv_closed_months2", order: "month", optional: true },

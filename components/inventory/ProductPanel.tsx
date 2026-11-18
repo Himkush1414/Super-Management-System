@@ -1,13 +1,13 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useId, useRef, useState } from "react";
-import { ArrowDownToLine, ArrowUpFromLine, ArrowRight, RotateCcw, Pencil, Archive, ArchiveRestore, History, TriangleAlert, ChevronDown } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, ArrowRight, RotateCcw, Pencil, Archive, ArchiveRestore, History, TriangleAlert, ChevronDown, ClipboardCheck, Equal } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { checkQty, formatQty, isLow, parseQty, qtyToText } from "@/lib/inventory/numbers";
 import { entryFingerprint, isEntryDateAllowed, monthOf, nextKey } from "@/lib/inventory/ledger";
 import { istToday } from "@/lib/inventory/ranges";
-import { recordEntry, reverseEntry, setProductActive, updateProduct } from "@/lib/inventory/actions";
-import type { InvColumn, InvEntryDetails, InvHistory, InvHistoryEntry } from "@/lib/inventory/types";
+import { recordEntry, recordStockCount, reverseEntry, setProductActive, updateProduct } from "@/lib/inventory/actions";
+import type { InvColumn, InvEntryDetails, InvHistory, InvHistoryEntry, InvStockCount } from "@/lib/inventory/types";
 import type { EntryDetails } from "@/lib/inventory/actions";
 import { cn, formatDateTime, formatDay } from "@/lib/utils";
 import { DayField, Field, FieldLabel, newKey, qty } from "./bits";
@@ -16,6 +16,7 @@ import { Sheet } from "./Sheet";
 import { useToast } from "./Toast";
 import { customText, monthLabel, type Row } from "./model";
 import { invalidateHistory, loadHistory } from "./stores";
+import type { CountedEvent } from "./CountList";
 
 export type PanelProps = {
   row: Row;
@@ -26,9 +27,16 @@ export type PanelProps = {
   isCurrent: boolean;
   today: string;
   /** the server confirmed an entry (ledger id `seq`): show the new figures at once */
-  onRecorded: (e: { productId: string; kind: "receive" | "issue"; qty: string; balanceAfter?: string; reversal?: boolean; seq?: number; date: string; party?: string | null; belowMin?: boolean }) => void;
+  onRecorded: (e: {
+    productId: string; kind: "receive" | "issue"; qty: string; balanceAfter?: string; reversal?: boolean; seq?: number; date: string; party?: string | null; belowMin?: boolean;
+    count?: { id: number; adjustment: string };
+  }) => void;
   /** known party names, for the Party field's suggestions */
   partyNames: string[];
+  /** month-start counting applies this month (0031) */
+  counting: boolean;
+  /** a stock count was saved on its own */
+  onCounted: (e: CountedEvent) => void;
 };
 
 /** Today in India on this device, never before the server's today (a clock running behind). */
@@ -37,7 +45,7 @@ function deviceToday(serverToday: string): string {
   return t < serverToday ? serverToday : t;
 }
 
-export function ProductPanel({ row, customCols, formCols, canManage, isCurrent, today, onRecorded, partyNames }: PanelProps) {
+export function ProductPanel({ row, customCols, formCols, canManage, isCurrent, today, onRecorded, partyNames, counting, onCounted }: PanelProps) {
   const [history, setHistory] = useState<InvHistory | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const writable = canManage && isCurrent && row.is_active;
@@ -100,7 +108,17 @@ export function ProductPanel({ row, customCols, formCols, canManage, isCurrent, 
               {c.label}: <span className="text-text-secondary">{customText(row, c)}</span>
             </span>
           ))}
-          {canManage && isCurrent && <ProductActions row={row} formCols={formCols} />}
+          {canManage && isCurrent && (
+            <ProductActions
+              row={row}
+              formCols={formCols}
+              counting={counting}
+              onCounted={(e) => {
+                onCounted(e);
+                refreshHistory(true);
+              }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -137,11 +155,23 @@ function EntryForm({
   row: Row;
   today: string;
   partyNames: string[];
-  onSaved: (e: { kind: "receive" | "issue"; qty: string; balanceAfter?: string; seq?: number; date: string; party?: string | null; belowMin?: boolean }) => void;
+  onSaved: (e: {
+    kind: "receive" | "issue"; qty: string; balanceAfter?: string; seq?: number; date: string; party?: string | null; belowMin?: boolean;
+    count?: { id: number; adjustment: string };
+  }) => void;
 }) {
   const uid = useId();
   const toast = useToast();
   const [kind, setKind] = useState<"receive" | "issue">("receive");
+  // month-start balance (0031): a pending product is counted first, in the same save.
+  // `askCount` also turns on when the server says it's pending (another device's view, a new month)
+  const [askCount, setAskCount] = useState(false);
+  const needCount = row.pending || askCount;
+  const [countText, setCountText] = useState("");
+  const countKey = useRef<{ key: string; fp: string } | null>(null);
+  const counted = needCount ? parseQty(countText.trim()) : null;
+  const countOk = !needCount || (countText.trim() !== "" && counted !== null && counted >= BigInt(0));
+  const base = needCount ? (countOk && counted !== null ? counted : null) : row.b;
   const [qtyText, setQtyText] = useState("");
   const [date, setDate] = useState(() => deviceToday(today));
   const [note, setNote] = useState("");
@@ -162,15 +192,17 @@ function EntryForm({
   const dayNow = deviceToday(today);
 
   const q = checkQty(qtyText);
-  const after = q.ok ? (kind === "receive" ? row.b + q.qty : row.b - q.qty) : null;
+  const after = q.ok && base !== null ? (kind === "receive" ? base + q.qty : base - q.qty) : null;
   const dateOk = isEntryDateAllowed(date, dayNow);
-  const overIssue = kind === "issue" && q.ok && q.qty > row.b;
-  const qtyError = touched && qtyText.trim() !== "" && !q.ok ? q.message : overIssue ? `Only ${formatQty(row.b)} in stock.` : null;
+  const overIssue = kind === "issue" && q.ok && base !== null && q.qty > base;
+  const qtyError = touched && qtyText.trim() !== "" && !q.ok ? q.message : overIssue ? `Only ${formatQty(base)} in stock.` : null;
   const dateError = touched && !dateOk ? "Choose a date in this month, not after today." : null;
-  const canReview = q.ok && dateOk && !overIssue && !billFuture;
+  const countError = touched && needCount && !countOk ? "Enter the balance you counted (0 or more, at most 3 decimals)." : null;
+  const adjustment = needCount && counted !== null ? counted - row.b : null;
+  const canReview = q.ok && dateOk && !overIssue && !billFuture && countOk && base !== null;
   // an issue that takes the product below its minimum: warned at confirm, never blocked
-  const goesLow = kind === "issue" && after !== null && isLow(after, row.min) && !isLow(row.b, row.min);
-  const staysLow = kind === "issue" && after !== null && isLow(row.b, row.min);
+  const goesLow = kind === "issue" && after !== null && base !== null && isLow(after, row.min) && !isLow(base, row.min);
+  const staysLow = kind === "issue" && after !== null && base !== null && isLow(base, row.min);
 
   function reset() {
     setQtyText("");
@@ -180,6 +212,9 @@ function EntryForm({
     setDate(deviceToday(today));
     setTouched(false);
     attempt.current = null;
+    setCountText("");
+    countKey.current = null;
+    setAskCount(false);
   }
 
   async function confirm() {
@@ -187,16 +222,30 @@ function EntryForm({
     if (!q.ok || savingRef.current) return;
     savingRef.current = true;
     const qtyNorm = qtyToText(q.qty);
-    attempt.current = nextKey(attempt.current, entryFingerprint(row.id, kind, qtyNorm, date, `${note}\u0001${JSON.stringify(sent)}`), newKey);
+    const countNorm = needCount && counted !== null ? qtyToText(counted) : null;
+    attempt.current = nextKey(attempt.current, entryFingerprint(row.id, kind, qtyNorm, date, `${note}\u0001${JSON.stringify(sent)}\u0001${countNorm ?? ""}`), newKey);
+    if (countNorm !== null) countKey.current = nextKey(countKey.current, `${row.id}\u0001${countNorm}\u0001${attempt.current.key}`, newKey);
     setSaving(true);
     setServerError(null);
     try {
-      const res = await recordEntry({ productId: row.id, kind, qty: qtyText, date, note, key: attempt.current.key, details: sent });
+      const res = await recordEntry({
+        productId: row.id, kind, qty: qtyText, date, note, key: attempt.current.key, details: sent,
+        ...(countNorm !== null && countKey.current ? { count: { counted: countNorm, key: countKey.current.key } } : {}),
+      });
       if (res.ok) {
         setConfirming(false);
-        onSaved({ kind, qty: qtyNorm, balanceAfter: res.balanceAfter, seq: typeof res.id === "number" ? res.id : Number(res.id), date, party: sent.party ?? null, belowMin: res.belowMin });
-        toast("success", `${kind === "receive" ? "Received" : "Issued"} ${formatQty(q.qty)} · ${row.serial_no}. Balance ${qty(res.balanceAfter ?? null)}.`);
+        onSaved({
+          kind, qty: qtyNorm, balanceAfter: res.balanceAfter, seq: typeof res.id === "number" ? res.id : Number(res.id), date, party: sent.party ?? null, belowMin: res.belowMin,
+          ...(res.countId ? { count: { id: res.countId, adjustment: res.adjustment ?? "0" } } : {}),
+        });
+        toast("success", `${countNorm !== null ? `Balance ${formatQty(counted)} saved. ` : ""}${kind === "receive" ? "Received" : "Issued"} ${formatQty(q.qty)} · ${row.serial_no}. Balance ${qty(res.balanceAfter ?? null)}.`);
         reset();
+      } else if (res.pending) {
+        // the server knows it's pending: ask for the count in this same form
+        setAskCount(true);
+        setConfirming(false);
+        setServerError(null);
+        toast("error", `${row.serial_no}: enter this month's balance first.`);
       } else {
         setServerError(res.error);
       }
@@ -245,9 +294,44 @@ function EntryForm({
         ))}
       </div>
 
+      {needCount && (
+        <div className="mt-4 rounded-lg border border-accent/35 bg-accent/[0.06] p-3" data-inv-count-first>
+          <FieldLabel htmlFor={`${uid}-c`} hint={`Opening ${formatQty(row.o)}`}>
+            This month&apos;s balance (counted)
+          </FieldLabel>
+          <div className="flex gap-2">
+            <Field
+              id={`${uid}-c`}
+              inputMode="decimal"
+              autoComplete="off"
+              placeholder="Counted"
+              value={countText}
+              onChange={(e) => setCountText(e.target.value)}
+              onBlur={() => setTouched(true)}
+              aria-invalid={Boolean(countError)}
+              aria-describedby={countError ? `${uid}-ce` : `${uid}-ch`}
+              className="tnum text-[17px] font-semibold md:text-[15px]"
+            />
+            <Button type="button" variant="secondary" className="h-11 shrink-0 whitespace-nowrap md:h-10" onClick={() => setCountText(qtyToText(row.o))}>
+              <Equal size={14} /> Same as opening
+            </Button>
+          </div>
+          {countError ? (
+            <p id={`${uid}-ce`} className="mt-1.5 text-[12.5px] text-status-danger">{countError}</p>
+          ) : (
+            <p id={`${uid}-ch`} className="tnum mt-1.5 text-[12.5px] text-text-secondary">
+              {adjustment === null
+                ? "Count what is on the shelf first: it is saved with this entry."
+                : adjustment === BigInt(0)
+                  ? "Same as the opening: no adjustment."
+                  : `Adjustment ${adjustment > BigInt(0) ? "+" : ""}${formatQty(adjustment)} (recorded as a stock count).`}
+            </p>
+          )}
+        </div>
+      )}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div>
-          <FieldLabel htmlFor={`${uid}-q`} hint={`In stock: ${formatQty(row.b)}`}>
+          <FieldLabel htmlFor={`${uid}-q`} hint={needCount ? (base === null ? "Count first" : `In stock: ${formatQty(base)}`) : `In stock: ${formatQty(row.b)}`}>
             Quantity
           </FieldLabel>
           <Field
@@ -361,9 +445,9 @@ function EntryForm({
         </div>
       )}
 
-      {after !== null && !overIssue && (
+      {after !== null && !overIssue && base !== null && (
         <p className="tnum mt-3 flex flex-wrap items-center gap-1.5 text-[13px] text-text-secondary">
-          Balance <span className="font-medium text-text">{formatQty(row.b)}</span>
+          Balance <span className="font-medium text-text">{formatQty(base)}</span>
           <ArrowRight size={13} className="text-text-tertiary" />
           <span className={cn("font-semibold", kind === "receive" ? "text-status-success" : "text-status-info")}>{formatQty(after)}</span>
           <span className="text-text-tertiary">after you confirm</span>
@@ -386,12 +470,18 @@ function EntryForm({
           </>
         }
       >
-        {q.ok && after !== null && (
+        {q.ok && after !== null && base !== null && (
           <div className="space-y-4">
+            {needCount && adjustment !== null && (
+              <p className="tnum rounded-lg border border-accent/35 bg-accent/[0.06] px-3 py-2 text-[13px] text-text-secondary">
+                Month-start balance <span className="font-semibold text-text">{formatQty(base)}</span> (opening {formatQty(row.o)}
+                {adjustment === BigInt(0) ? ", no adjustment" : `, adjustment ${adjustment > BigInt(0) ? "+" : ""}${formatQty(adjustment)}`}): saved first, in the same step.
+              </p>
+            )}
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-xl border border-border bg-bg-subtle px-4 py-4 text-center">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.06em] text-text-tertiary">Balance now</p>
-                <p className="tnum mt-1 text-[22px] font-semibold leading-none">{formatQty(row.b)}</p>
+                <p className="text-[11px] uppercase tracking-[0.06em] text-text-tertiary">{needCount ? "Counted" : "Balance now"}</p>
+                <p className="tnum mt-1 text-[22px] font-semibold leading-none">{formatQty(base)}</p>
               </div>
               <div className={cn("tnum rounded-full px-2.5 py-1 text-[13px] font-semibold", kind === "receive" ? "bg-status-success/12 text-status-success" : "bg-status-info/12 text-status-info")}>
                 {kind === "receive" ? "+" : "−"}
@@ -492,13 +582,15 @@ function HistoryList({
             <li key={i} className="h-12 animate-pulse rounded-lg bg-overlay/[0.04] motion-reduce:animate-none" />
           ))}
         </ul>
-      ) : history.entries.length === 0 ? (
+      ) : history.entries.length === 0 && !(history.counts?.length) ? (
         <p className="rounded-lg border border-dashed border-border-strong px-3 py-4 text-center text-[13px] text-text-secondary">
           No entries yet. Opening balance {qty(row.opening)}.
         </p>
       ) : (
         <ol className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-          {history.entries.map((e) => {
+          {merged(history).map((item) => {
+            if (item.count) return <CountItem key={`c${item.count.id}`} c={item.count} />;
+            const e = item.entry!;
             const plus = Number(e.delta) > 0;
             const reversed = e.reversed_by !== null;
             const orig = e.reverses_id ? byId.get(e.reverses_id) : undefined;
@@ -558,6 +650,7 @@ function HistoryList({
                 <tr>
                   <th className="px-3 py-2 font-medium">Month</th>
                   <th className="px-3 py-2 text-right font-medium">Opening</th>
+                  {history.months.some((m) => m.adjustment && Number(m.adjustment) !== 0) && <th className="px-3 py-2 text-right font-medium">Adjustment</th>}
                   <th className="px-3 py-2 text-right font-medium">Received</th>
                   <th className="px-3 py-2 text-right font-medium">Issued</th>
                   <th className="px-3 py-2 text-right font-medium">Closing</th>
@@ -566,8 +659,12 @@ function HistoryList({
               <tbody className="tnum">
                 {history.months.map((m) => (
                   <tr key={m.month} className="border-t border-border">
-                    <td className="px-3 py-2">{monthLabel(m.month)}</td>
+                    <td className="px-3 py-2">
+                      {monthLabel(m.month)}
+                      {m.confirmed === false && <span className="ml-1.5 text-[11px] text-text-tertiary">(not counted)</span>}
+                    </td>
                     <td className="px-3 py-2 text-right">{qty(m.opening)}</td>
+                    {history.months.some((x) => x.adjustment && Number(x.adjustment) !== 0) && <td className="px-3 py-2 text-right">{signed(m.adjustment ?? "0")}</td>}
                     <td className="px-3 py-2 text-right">{qty(m.received)}</td>
                     <td className="px-3 py-2 text-right">{qty(m.issued)}</td>
                     <td className="px-3 py-2 text-right font-medium">{qty(m.closing)}</td>
@@ -586,6 +683,49 @@ function HistoryList({
         }} />
       )}
     </div>
+  );
+}
+
+/** "+3" / "−2.5" / "0" */
+function signed(text: string): string {
+  const v = parseQty(text) ?? BigInt(0);
+  return `${v > BigInt(0) ? "+" : ""}${formatQty(v)}`;
+}
+
+/** Ledger entries and stock counts, newest first (by when they were saved). */
+function merged(h: InvHistory): { entry?: InvHistoryEntry; count?: InvStockCount; at: string }[] {
+  const out: { entry?: InvHistoryEntry; count?: InvStockCount; at: string }[] = [
+    ...h.entries.map((entry) => ({ entry, at: entry.created_at })),
+    ...(h.counts ?? []).map((count) => ({ count, at: count.created_at })),
+  ];
+  return out.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+}
+
+/** A stock count in the history: "Stock count · counted 10 (−2)". */
+function CountItem({ c }: { c: InvStockCount }) {
+  const adj = parseQty(c.adjustment) ?? BigInt(0);
+  return (
+    <li className="flex items-start gap-3 px-3 py-2.5" data-inv-history-count>
+      <span aria-hidden className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-accent/12 text-accent">
+        <ClipboardCheck size={13} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
+          <span className="font-medium">Stock count</span>
+          <span className="tnum">counted <span className="font-semibold">{qty(c.counted)}</span></span>
+          <span className={cn("tnum font-semibold", adj === BigInt(0) ? "text-text-tertiary" : adj > BigInt(0) ? "text-status-success" : "text-status-info")}>
+            {adj === BigInt(0) ? "no adjustment" : signed(c.adjustment)}
+          </span>
+        </p>
+        <p className="mt-0.5 text-[12px] text-text-tertiary">
+          <span className="tnum">{formatDay(c.entry_date)}</span>
+          {c.entry_date === c.month ? " · month-start balance" : ""}
+          {c.source === "import" ? " · from a document" : c.by ? ` · ${c.by}` : ""}
+          <span className="tnum"> · before {qty(c.balance_before)}</span>
+        </p>
+        {c.note && <p className="mt-0.5 break-words text-[12.5px] text-text-secondary">{c.note}</p>}
+      </div>
+    </li>
   );
 }
 
@@ -696,11 +836,18 @@ function ReverseSheet({
 
 // ── edit details / archive ──────────────────────────────────────────────
 
-function ProductActions({ row, formCols }: { row: Row; formCols: InvColumn[] }) {
+function ProductActions({ row, formCols, counting, onCounted }: { row: Row; formCols: InvColumn[]; counting: boolean; onCounted: (e: CountedEvent) => void }) {
   const [editing, setEditing] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [countingOpen, setCountingOpen] = useState(false);
   return (
     <div className="ml-auto flex flex-wrap gap-2">
+      {row.is_active && counting && (
+        <Button type="button" variant="secondary" className="h-11 md:h-9" onClick={() => setCountingOpen(true)} data-inv-count-button>
+          <ClipboardCheck size={14} /> {row.pending ? "Enter balance" : "Count stock"}
+        </Button>
+      )}
+      {countingOpen && <CountSheet row={row} onClose={() => setCountingOpen(false)} onCounted={onCounted} />}
       {row.is_active && (
         <Button type="button" variant="secondary" className="h-11 md:h-9" onClick={() => setEditing(true)}>
           <Pencil size={14} /> Edit details
@@ -713,6 +860,118 @@ function ProductActions({ row, formCols }: { row: Row; formCols: InvColumn[] }) 
       {editing && <EditSheet row={row} formCols={formCols} onClose={() => setEditing(false)} />}
       {archiving && <ArchiveSheet row={row} onClose={() => setArchiving(false)} />}
     </div>
+  );
+}
+
+/**
+ * Enter a counted balance for one product (0031): a "Stock count" entry
+ * with adjustment = counted − the balance now. A product already confirmed
+ * this month can be counted again: that adds a new adjustment, nothing is
+ * overwritten.
+ */
+function CountSheet({ row, onClose, onCounted }: { row: Row; onClose: () => void; onCounted: (e: CountedEvent) => void }) {
+  const uid = useId();
+  const toast = useToast();
+  const [text, setText] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const attempt = useRef<{ key: string; fp: string } | null>(null);
+  const busy = useRef(false);
+  const v = text.trim() ? parseQty(text.trim()) : null;
+  const ok = v !== null && v >= BigInt(0);
+  const before = row.pending ? row.o : row.b;
+  const adj = ok ? v - before : null;
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ok || busy.current) {
+      if (!ok) setError("Enter the balance you counted: 0 or more, at most 3 decimals.");
+      return;
+    }
+    busy.current = true;
+    setSaving(true);
+    setError(null);
+    const norm = qtyToText(v);
+    attempt.current = nextKey(attempt.current, `${row.id}\u0001${norm}\u0001${note.trim()}`, newKey);
+    try {
+      const res = await recordStockCount({ productId: row.id, counted: norm, key: attempt.current.key, note });
+      if (res.ok) {
+        if (res.countId) onCounted({ productId: row.id, countId: res.countId, balanceAfter: res.balanceAfter ?? norm, adjustment: res.adjustment ?? qtyToText(v - before), belowMin: res.belowMin });
+        toast("success", `${row.serial_no}: balance ${formatQty(v)} saved.`);
+        onClose();
+      } else setError(res.error);
+    } catch {
+      setError("No answer from the server. Check the connection, then save again: it won't be saved twice.");
+    } finally {
+      busy.current = false;
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Sheet
+      open
+      onClose={onClose}
+      busy={saving}
+      title={row.pending ? `Balance for ${row.serial_no}` : `Count ${row.serial_no} again`}
+      description={row.pending ? "Count what is on the shelf at the start of the month." : "The counted balance replaces nothing: a new adjustment is added to the history."}
+    >
+      <form onSubmit={save} className="space-y-4" noValidate>
+        <dl className="tnum grid grid-cols-2 gap-3 rounded-xl border border-border bg-bg-subtle px-4 py-3 text-[13px]">
+          <div>
+            <dt className="text-[11px] uppercase tracking-[0.06em] text-text-tertiary">Opening</dt>
+            <dd className="mt-1 text-[18px] font-semibold">{formatQty(row.o)}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] uppercase tracking-[0.06em] text-text-tertiary">{row.pending ? "Balance" : "Balance now"}</dt>
+            <dd className="mt-1 text-[18px] font-semibold">{row.pending ? "Pending" : formatQty(row.b)}</dd>
+          </div>
+        </dl>
+        <div>
+          <FieldLabel htmlFor={`${uid}-v`}>Counted balance</FieldLabel>
+          <div className="flex gap-2">
+            <Field
+              id={`${uid}-v`}
+              inputMode="decimal"
+              autoComplete="off"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              data-autofocus
+              aria-describedby={`${uid}-h`}
+              className="tnum text-[17px] font-semibold md:text-[15px]"
+            />
+            {row.pending && (
+              <Button type="button" variant="secondary" className="h-11 shrink-0 whitespace-nowrap md:h-10" onClick={() => setText(qtyToText(row.o))}>
+                <Equal size={14} /> Same as opening
+              </Button>
+            )}
+          </div>
+          <p id={`${uid}-h`} className="tnum mt-1.5 text-[12.5px] text-text-secondary">
+            {adj === null ? "\u00a0" : adj === BigInt(0) ? "No adjustment." : `Adjustment ${adj > BigInt(0) ? "+" : ""}${formatQty(adj)}.`}
+          </p>
+        </div>
+        <div>
+          <FieldLabel htmlFor={`${uid}-n`} hint="Optional">
+            Remark
+          </FieldLabel>
+          <Field id={`${uid}-n`} value={note} maxLength={300} onChange={(e) => setNote(e.target.value)} placeholder="Counted with the supervisor…" />
+        </div>
+        {error && (
+          <p role="alert" className="rounded-lg border border-status-danger/40 bg-status-danger/10 px-3 py-2 text-[13px] text-status-danger">
+            {error}
+          </p>
+        )}
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="secondary" size="lg" className="h-11" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" size="lg" className="h-11" loading={saving}>
+            {saving ? "Saving…" : "Save balance"}
+          </Button>
+        </div>
+      </form>
+    </Sheet>
   );
 }
 

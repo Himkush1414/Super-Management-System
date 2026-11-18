@@ -401,3 +401,58 @@ test("rollover dry run (read-only SQL): its counts match what the rollover then 
   await assert.rejects(db.query(`insert into public.inv_closed_months2 (month, products) values ('2030-01-01', 0)`), /read-only/);
   await db.exec("rollback");
 });
+
+test("backup + restore (0031): stock counts and the 0031 snapshots come back exactly; the over-issue guard doesn't block a restore", async () => {
+  const { TABLES, restoreSql } = await import("../../scripts/inventory/backup.mjs");
+  const { db, ids } = await setup();
+  await setToday(db, "2026-11-17");
+  const p = await addProduct(db, ids, "ZZ-950", "0");
+  await setToday(db, "2026-12-01");
+  // counted 10 (+10), issue all 10, receive 5, recount 0: restored in id order, the issue comes before the counts
+  await entry(db, ids, p, "issue", "10", "2026-12-01", { p_count: "10", p_count_key: randomUUID() });
+  await entry(db, ids, p, "receive", "5", "2026-12-01");
+  assert.equal((await count(db, ids, p, "0")).adjustment, "-5");
+  await setToday(db, "2027-01-03");
+  await page3(db, ids.inventory); // closes December into the 0031 tables
+  const take = async (d) => {
+    const out = { format: 1, taken_at: "2027-01-03T04:30:00.000Z", taken_ist: "x", project_ref: "test", tables: {} };
+    for (const t of TABLES) {
+      const r = await d.query(`select coalesce(jsonb_agg(to_jsonb(x) order by ${t.order}), '[]'::jsonb) as rows from public.${t.name} x`);
+      out.tables[t.name] = { count: r.rows[0].rows.length, rows: r.rows[0].rows };
+    }
+    return out;
+  };
+  const backup = await take(db);
+  assert.equal(backup.tables.inv_stock_counts.count, 2);
+  assert.equal(backup.tables.inv_month_snapshots2.count, 1);
+  const sql = restoreSql(backup);
+  const b = await setup({ countsFrom: "2027-02-01" }); // a fresh database that would start counting later
+  b.ids = ids;
+  for (const [role, id] of Object.entries(ids)) {
+    await b.db.query(`insert into auth.users (id, email, raw_user_meta_data) values ($1, $2, $3) on conflict do nothing`,
+      [id, `r-${role}@example.invalid`, JSON.stringify({ username: `r_${role}`, full_name: `R ${role}`, role })]);
+    await b.db.query(`update public.profiles set role = $2::user_role where id = $1`, [id, role]);
+  }
+  await setToday(b.db, "2027-01-03");
+  await b.db.exec(sql);
+  await b.db.exec(sql); // twice: adds nothing
+  const after = await take(b.db);
+  for (const t of ["inv_count_settings", "inv_stock_counts", "inv_month_snapshots2", "inv_closed_months2", "inv_transactions", "inv_products"]) {
+    assert.deepEqual(after.tables[t].rows, backup.tables[t].rows, `${t} restored exactly`);
+  }
+  assert.equal((await b.db.query(`select current_setting('inv.restoring', true) as v`)).rows[0].v ?? "", "", "the restore flag ends with its transaction");
+  const pa = await page3(db, ids.admin), pb = await page3(b.db, ids.admin);
+  assert.deepEqual(pb.rows, pa.rows);
+  assert.deepEqual(pb.months, pa.months);
+  // and the guard is back on after the restore (balance 0: any issue is refused, whoever writes it)
+  await assert.rejects(b.db.query(`insert into public.inv_transactions (product_id, kind, qty, entry_date, idempotency_key)
+                                   values ($1, 'issue', 1, '2027-01-03', $2)`, [p, randomUUID()]), /below zero/);
+});
+
+test("supabase/scripts/0031_verify.sql: every check is ok right after the migration", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { db } = await setup({ countsFrom: null });
+  const rows = (await db.query(readFileSync(join(REPO, "supabase/scripts/0031_verify.sql"), "utf8").replace(/^--.*$/gm, ""))).rows;
+  assert.ok(rows.length >= 12);
+  for (const r of rows) assert.equal(r.ok, true, r.check);
+});

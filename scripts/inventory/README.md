@@ -36,6 +36,10 @@ node scripts/inventory/import-docx.mjs --apply  # import (refused while any bloc
   nothing: existing products only get their text, rate and UOM refreshed,
   and their opening balance and ledger are never touched.
 - **PDFs:** reading a PDF needs `python3` with PyMuPDF (`pip install pymupdf`).
+- **Shared rules:** the zip / Word reader, the heading patterns and the number
+  reader live in `lib/inventory/sheet-read.ts` and `sheet-map.ts`, shared with the
+  app's *Import from document*. Loading them needs Node 23.6+ (or
+  `node --experimental-strip-types` on Node 22).
 
 ## Create the inventory account
 

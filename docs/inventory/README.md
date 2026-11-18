@@ -26,6 +26,7 @@ Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with
 - [Month-start balance](#month-start-balance)
 - [Receive and issue](#receive-and-issue)
 - [Archive](#archive)
+- [Import from document](#import-from-document)
 - [Minimum stock alert](#minimum-stock-alert)
 - [Party search](#party-search)
 - [Exports](#exports)
@@ -48,6 +49,7 @@ Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with
 | **Minimum stock** | An optional minimum per product; an alert box and a Low Stock list when the balance drops below it. |
 | **Party search** | A second search field: the products received from a party (all months), with the quantity and the last challan, bill and date. |
 | **Exports** | PDF, Word and Excel for this week, this month, the previous month, all time or any dates. |
+| **Import from document** | Balances and new products from a text PDF, Word, Excel or CSV file: read on the device (never uploaded or stored), a preview first, then one atomic apply. |
 | **Archive tab** | Archived products with search, archived date and last balance: restore one or many; permanently delete only a product added by mistake (no history at all), after typing its serial. |
 | **Settings** | The inventory person, custom columns (add, rename, reorder, show / hide, archive) and minimum stock in bulk. |
 | **Admin view** | head_admin and admin see everything read-only, plus a 6-month trend, the month's top 10 issued and a month selector. |
@@ -70,6 +72,7 @@ Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with
 | Enter month-start balances (stock counts) | ✅ | sees the Pending state and count, read-only | — |
 | Add, edit, archive products; minimums | ✅ | — | — |
 | Archive tab: restore; delete a product with no history | ✅ | sees the Archive, read-only | — |
+| Import from document | ✅ | — | — |
 | Inventory settings | ✅ | — | — |
 | Alert box, Low Stock list, Party search, history | ✅ | ✅ | — |
 | Trend, top 10, month selector | — | ✅ | — |
@@ -182,6 +185,50 @@ The two existing delete guards (`inv_products_no_delete`, `inv_product_log_appen
   </tr>
 </table>
 
+## Import from document
+
+| | |
+|---|---|
+| **Where** | *Inventory settings → Import from document*, and the **Import from document** button in the Pending banner. Inventory account only (`/dashboard/inventory-import`). |
+| **Formats** | Text-based **PDF**, **Word (.docx)**, **Excel (.xlsx)**, **CSV**. The kind is read from the file's bytes, not its name. Scans and photos are recognised and refused: *"not supported, use manual entry"*. No OCR, no AI, no outside service. |
+| **Privacy** | The file is read **in the browser's memory** and never uploaded, written to disk, kept in browser storage or logged. Only the resulting rows are sent when you confirm, plus one run record (time, user, counts). No file name or content is stored anywhere. |
+| **Columns** | Serial, Description, Specification, Rate, Balance / Qty, found by heading (Closing beats Opening; "Closing value" is money, not stock) or inferred from the values; every one can be changed with a dropdown. |
+| **Matching** | By serial, compared trimmed, without spaces, any case (`zz- 002` = `ZZ-002`). Without a serial: by description only when exactly one product has it. Anything else is listed as *needs review* and not applied. |
+| **Numbers** | Indian grouping (1,23,456.50), ₹ / Rs, spreadsheet leftovers (1E-13 → 0, 12.300000000001 → 12.3). Negative, blank or unreadable balances are problems, never guesses. Formulas are never calculated: only the value the spreadsheet saved is read. |
+| **Preview** | **Matched** (current vs file balance), **New products**, **Not in file**, **Need review** (duplicates, blanks, negatives, archived products). Nothing is written yet. |
+| **Apply** | After a confirm sheet with the counts: matched → a **Stock count** (like typing it by hand); new → added with the file's balance (confirmed); empty rate / specification filled only if blank (toggle, on by default); products not in the file → *Keep as they are* (default) or archive the ones you tick (restorable). |
+| **Atomic** | `inv_import_apply`: one transaction, idempotent on a batch key (a double tap applies once), everything checked again against the data as it is at that moment (if anything changed: nothing is written, read the file again). 10 imports per 10 minutes per account. |
+| **Limits** | 4 MB file, 5,000 rows, 20 s read time; zip parts capped (count, size, compression ratio, and a hard cap while inflating), macro-enabled and old binary Office files refused, no XML DOCTYPE / entities. |
+| **Before December** | Balances become stock counts from 1 December 2026 (month-start counting); until then an import only adds new products and fills blanks. |
+
+```mermaid
+sequenceDiagram
+  participant P as Phone / browser
+  participant A as Server action
+  participant DB as Postgres
+  P->>P: pick a file (in memory only)
+  P->>P: read: PDF (pdf.js worker) · Word / Excel (unzip, capped) · CSV
+  P->>P: columns → records → preview (matched · new · not in file · review)
+  Note over P: nothing is written yet
+  P->>A: applyImport(rows only, batch key)
+  A->>DB: inv_import_apply()
+  DB->>DB: role · rate limit · same batch? → same answer
+  DB->>DB: re-check every row against the data now (stale → nothing written)
+  DB->>DB: stock counts · new products · fill blanks · archive · run record
+  DB-->>P: counts
+```
+
+**Why in the browser:** Vercel accepts request bodies up to about 4.5 MB, so a 4 MB file would barely fit, and sending it would mean the server holds the document. Reading it on the device keeps the document off the server entirely and sends only a few kilobytes of rows; the database still checks every row again.
+
+The earlier import script (`scripts/inventory/import-docx.mjs`) now reads through the same library (`lib/inventory/sheet-read.ts`, `sheet-map.ts`); its dry run prints exactly what it printed before.
+
+<table>
+  <tr>
+    <td align="center" width="30%"><img src="screens/phone-import.png" alt="Phone: import preview with new products, products not in the file and rows that need review (fake data)" width="200"><br><sub>Phone: the preview</sub></td>
+    <td align="center" width="70%"><img src="screens/desktop-import.png" alt="Desktop: the import page with the column mapping and the preview tiles (fake data)" width="560"><br><sub>Desktop: columns and preview</sub></td>
+  </tr>
+</table>
+
 ## Receive and issue
 
 | Receive | Issue |
@@ -285,6 +332,7 @@ erDiagram
   inv_products ||--o{ inv_month_snapshots2 : "closed months from Dec 2026"
   inv_products ||--o{ inv_product_log : "detail changes"
   inv_products ||..o| inv_product_tombstones : "full copy when deleted from the Archive (0032)"
+  inv_import_runs ||--o{ inv_stock_counts : "counts written by an import (0033)"
   inv_columns ||..o{ inv_products : "custom values (jsonb)"
   inv_products {
     uuid id
@@ -324,7 +372,7 @@ erDiagram
   }
 ```
 
-Migrations: `0027` (the `inventory` role), `0028` (the module), `0029` (compact page read, indexes), `0030` (details, minimum stock, Party search), `0031` (month-start balance: stock counts, `inv_rollover2`, `inv_page3`, `inv_range_report2`), `0032` (Archive tab: list, restore, delete with a tombstone). Every one is additive and idempotent; the functions a migration replaced stay in place and keep working (new behaviour gets a new function name). `supabase/scripts/0031_verify.sql` and `0032_verify.sql` are read-only checks to run after each.
+Migrations: `0027` (the `inventory` role), `0028` (the module), `0029` (compact page read, indexes), `0030` (details, minimum stock, Party search), `0031` (month-start balance: stock counts, `inv_rollover2`, `inv_page3`, `inv_range_report2`), `0032` (Archive tab: list, restore, delete with a tombstone), `0033` (Import from document: `inv_import_apply`, `inv_import_runs`). Every one is additive and idempotent; the functions a migration replaced stay in place and keep working (new behaviour gets a new function name). `supabase/scripts/0031_verify.sql`, `0032_verify.sql` and `0033_verify.sql` are read-only checks to run after each.
 
 ## Setup
 
@@ -340,7 +388,7 @@ Environment variable **names** (values live in `.env.local`, which is gitignored
 | `INVENTORY_ENV_FILE` | the scripts, to use another env file |
 | `INVENTORY_BACKUP_DIR` | the backup script's folder (default `D:\NR-Backups\inventory`) |
 
-1. Apply the migrations in order (`0027` → `0032`) to the database, after checking them. They only add objects (0032 also points the two delete guards at their tombstone-aware functions, see [Archive](#archive)).
+1. Apply the migrations in order (`0027` → `0033`) to the database, after checking them. They only add objects (0032 also points the two delete guards at their tombstone-aware functions, see [Archive](#archive)).
 2. Create the inventory account: `node scripts/inventory/create-account.mjs`.
 3. Import the product list: run `node scripts/inventory/import-docx.mjs` (a dry run that prints counts and issues only), then add `--apply`.
 
@@ -355,7 +403,8 @@ More in [`scripts/inventory/README.md`](../../scripts/inventory/README.md).
 - Row-level security on every `inv_` table; tables are read-only to signed-in accounts, and every write goes through a `SECURITY DEFINER` function that checks the role first.
 - Reads run with the caller's own session, so the database decides what each role sees. The service-role key never reaches the browser.
 - No hard deletes anywhere in the module, with one exception the owner asked for: an archived product with **no history at all** can be deleted from the Archive tab (serial typed to confirm), and only after a full copy of it is written to `inv_product_tombstones`. History is append-only and archive replaces delete.
-- All text is escaped on display and in every export (XML-escaped in Word and Excel).
+- All text is escaped on display and in every export (XML-escaped in Word and Excel); Excel text cells are inline strings, never formulas.
+- Imported documents are untrusted input: read only in the browser, with size, row, time and zip limits, no XML entities, no formulas run, and never stored.
 - The repository holds only the mechanism: code, schema-only migrations, scripts without values, and fake sample data (`scripts/inventory/inventory-sample.dummy.json`).
 - Backups are written only outside the repository; the script refuses a folder inside it.
 
@@ -368,10 +417,12 @@ More in [`scripts/inventory/README.md`](../../scripts/inventory/README.md).
 | `tests/sql/*.test.mjs` | every migration on a real Postgres 17 (PGlite): the role matrix in RLS and functions, append-only guards, the ledger rules, field validation, the old functions still working, reversal copying details, the party index, the compact page equal to the full one, and a backup restored into an empty database giving the same ledger and balances |
 | `tests/sql/inventory-month.sql.test.mjs` | 0031 with a fake clock: the 1 December rollover equal to the old one, double run, a gap of several months, pending → confirmed, count + entry atomic, the adjustment identity in every range, the old functions still working (and still unable to over-issue), the role matrix, backup + restore of the new tables, the dry run against the real rollover |
 | `tests/sql/inventory-archive.sql.test.mjs` | 0032: the archive list, restore one or many with the ledger untouched, the pending rule after a restore, delete allowed only with zero history (and refused in the database with history, with a stock count, with a closed month, even before the month was opened), the tombstone, every other delete still refused, the role matrix |
+| `tests/inventory-import.test.mjs` | the document readers on fake PDF / Word / Excel / CSV fixtures (`tests/fixtures/import`): headings, inferred columns, Indian numbers, 1E-13, formulas never calculated, wrapped PDF lines, the app's own export read back; scans, photos, macro and old Office files, wrong type, oversized, zip bombs, XML entities, the 5,000-row limit and the deadline |
+| `tests/sql/inventory-import.sql.test.mjs` | 0033: one-transaction apply, double apply, stale previews (nothing written), blanks filled only when empty, November rules, rate limit, role matrix, nothing about the file stored, backup + restore with an import |
 | `tests/inventory-exports.test.mjs` | the export rows and the Excel / Word files: the identity, the Adjustment column only when needed, Pending, text never a formula |
 
 ```sh
-npm test        # all of the above: 82 tests, about 20 s; CI runs it on every pull request
+npm test        # all of the above: 103 tests, about 25 s; CI runs it on every pull request
 ```
 
 Browser checks (role matrix on every page, the flows, layout at 360 / 390 / 768 / 1024 / 1440 px, exports through the Android app's bridge) run locally against a fake Supabase that applies every migration, so RLS is the real thing.

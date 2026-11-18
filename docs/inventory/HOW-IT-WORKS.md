@@ -104,6 +104,14 @@ flowchart LR
 
 December: Opening 40, Adjustment −2, Received 10, Issued 5, **Balance 43** (40 − 2 + 10 − 5).
 
+### Counting from a document
+
+If the counted balances are already in a file (PDF with text, Word, Excel or CSV), the store can
+**import** it instead of typing: the phone reads the file itself (it is never uploaded or kept),
+shows what it found, and only after a confirmation saves each balance as a normal **Stock count**
+line. Rows it isn't sure about (no serial, the same serial twice, an empty or negative number) are
+shown for review and never guessed. Scans and photos can't be read.
+
 ## 4. Low-stock alert: knowing when to reorder
 
 - The store sets a **minimum stock** for each product that matters (for example: keep at least 30 of ZZ-005).
@@ -136,6 +144,7 @@ December: Opening 40, Adjustment −2, Received 10, Issued 5, **Balance 43** (40
 | Enter month-start balances (stock count) | ✅ | sees the Pending count, read-only | — |
 | Products, minimums, settings | ✅ | — | — |
 | Archive tab: restore; delete a product added by mistake (no history) | ✅ | sees it, read-only | — |
+| Import from document | ✅ | — | — |
 | Exports (PDF, Word, Excel) | ✅ | ✅ | — |
 | Trends, top 10 issued, past months | — | ✅ | — |
 

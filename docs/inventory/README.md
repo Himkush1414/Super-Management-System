@@ -25,6 +25,7 @@ Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with
 - [How the numbers work](#how-the-numbers-work)
 - [Month-start balance](#month-start-balance)
 - [Receive and issue](#receive-and-issue)
+- [Archive](#archive)
 - [Minimum stock alert](#minimum-stock-alert)
 - [Party search](#party-search)
 - [Exports](#exports)
@@ -47,6 +48,7 @@ Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with
 | **Minimum stock** | An optional minimum per product; an alert box and a Low Stock list when the balance drops below it. |
 | **Party search** | A second search field: the products received from a party (all months), with the quantity and the last challan, bill and date. |
 | **Exports** | PDF, Word and Excel for this week, this month, the previous month, all time or any dates. |
+| **Archive tab** | Archived products with search, archived date and last balance: restore one or many; permanently delete only a product added by mistake (no history at all), after typing its serial. |
 | **Settings** | The inventory person, custom columns (add, rename, reorder, show / hide, archive) and minimum stock in bulk. |
 | **Admin view** | head_admin and admin see everything read-only, plus a 6-month trend, the month's top 10 issued and a month selector. |
 
@@ -67,6 +69,7 @@ Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with
 | Receive, issue, reverse | ✅ | — | — |
 | Enter month-start balances (stock counts) | ✅ | sees the Pending state and count, read-only | — |
 | Add, edit, archive products; minimums | ✅ | — | — |
+| Archive tab: restore; delete a product with no history | ✅ | sees the Archive, read-only | — |
 | Inventory settings | ✅ | — | — |
 | Alert box, Low Stock list, Party search, history | ✅ | ✅ | — |
 | Trend, top 10, month selector | — | ✅ | — |
@@ -147,6 +150,37 @@ The fast screen (**Enter balances**) lists the products that were pending when i
 </table>
 
 **Dry run before the 1st** (read-only, prints counts only): `node scripts/inventory/rollover-dry-run.mjs --as-of 2026-12-01` shows which months the rollover would close, into which table, and how many products would start the month pending.
+
+## Archive
+
+| | |
+|---|---|
+| **Where** | The **Archive** tab (menu, below Inventory): `/dashboard/inventory-archive`. |
+| **List** | Every archived product: serial, description, specification, archived date, last balance; instant search. Archived products stay out of the main list, the totals and the alerts (as before; the main list's *Archived* chip still shows them too). |
+| **Restore** | One, or many with the check boxes, after a confirmation. `inv_restore_products` only flips the product back to active and logs it: the ledger and balances never change. |
+| **Pending after a restore** | A restored product that existed before the current month and has no stock count in it is **Pending** until counted; one added this month comes back confirmed. (Derived, like every pending state.) |
+| **Delete** | Only an archived product with **zero history**: no ledger entry, no stock count, no closed-month snapshot (for example, added by mistake). The serial must be typed to confirm. Products with history show *"Has history, can only be restored"* instead of a Delete button. |
+| **Enforced in the database** | `inv_delete_archived_product` checks all of it again, closes any ended month first (so a product that lived through one has its snapshot), copies the whole row and its detail log into `inv_product_tombstones`, then deletes. |
+| **Who** | inventory restores and deletes; head_admin / admin see the Archive read-only; marketing and production have no access. |
+
+```mermaid
+flowchart TD
+  A[Archived product] --> H{History?<br/>entries · stock counts · closed months}
+  H -->|yes| R["Restore only<br/>'Has history, can only be restored'"]
+  H -->|no| D[Delete: type the serial]
+  D --> T[(inv_product_tombstones<br/>full copy)]
+  T --> X[row removed]
+  A --> R2[Restore: back to the list<br/>ledger unchanged]
+```
+
+The two existing delete guards (`inv_products_no_delete`, `inv_product_log_append_only`) now call functions that refuse exactly what they refused before, except that one product's own rows inside the transaction that has just written its tombstone. Every other delete, every update of the product log and every truncate is still refused, whatever tool is used.
+
+<table>
+  <tr>
+    <td align="center" width="30%"><img src="screens/phone-archive.png" alt="Phone: the Archive tab with one archived product that has history (fake data)" width="200"><br><sub>Phone: the Archive tab</sub></td>
+    <td align="center" width="70%"><img src="screens/desktop-archive.png" alt="Desktop: the Archive table with serial, description, archived date and last balance (fake data)" width="560"><br><sub>Desktop</sub></td>
+  </tr>
+</table>
 
 ## Receive and issue
 
@@ -250,6 +284,7 @@ erDiagram
   inv_products ||--o{ inv_month_snapshots : "closed months"
   inv_products ||--o{ inv_month_snapshots2 : "closed months from Dec 2026"
   inv_products ||--o{ inv_product_log : "detail changes"
+  inv_products ||..o| inv_product_tombstones : "full copy when deleted from the Archive (0032)"
   inv_columns ||..o{ inv_products : "custom values (jsonb)"
   inv_products {
     uuid id
@@ -289,7 +324,7 @@ erDiagram
   }
 ```
 
-Migrations: `0027` (the `inventory` role), `0028` (the module), `0029` (compact page read, indexes), `0030` (details, minimum stock, Party search), `0031` (month-start balance: stock counts, `inv_rollover2`, `inv_page3`, `inv_range_report2`). Every one is additive and idempotent; the functions a migration replaced stay in place and keep working (new behaviour gets a new function name). `supabase/scripts/0031_verify.sql` is a read-only check to run after 0031.
+Migrations: `0027` (the `inventory` role), `0028` (the module), `0029` (compact page read, indexes), `0030` (details, minimum stock, Party search), `0031` (month-start balance: stock counts, `inv_rollover2`, `inv_page3`, `inv_range_report2`), `0032` (Archive tab: list, restore, delete with a tombstone). Every one is additive and idempotent; the functions a migration replaced stay in place and keep working (new behaviour gets a new function name). `supabase/scripts/0031_verify.sql` and `0032_verify.sql` are read-only checks to run after each.
 
 ## Setup
 
@@ -305,7 +340,7 @@ Environment variable **names** (values live in `.env.local`, which is gitignored
 | `INVENTORY_ENV_FILE` | the scripts, to use another env file |
 | `INVENTORY_BACKUP_DIR` | the backup script's folder (default `D:\NR-Backups\inventory`) |
 
-1. Apply the migrations in order (`0027` → `0031`) to the database, after checking them. They only add objects.
+1. Apply the migrations in order (`0027` → `0032`) to the database, after checking them. They only add objects (0032 also points the two delete guards at their tombstone-aware functions, see [Archive](#archive)).
 2. Create the inventory account: `node scripts/inventory/create-account.mjs`.
 3. Import the product list: run `node scripts/inventory/import-docx.mjs` (a dry run that prints counts and issues only), then add `--apply`.
 
@@ -319,7 +354,7 @@ More in [`scripts/inventory/README.md`](../../scripts/inventory/README.md).
 
 - Row-level security on every `inv_` table; tables are read-only to signed-in accounts, and every write goes through a `SECURITY DEFINER` function that checks the role first.
 - Reads run with the caller's own session, so the database decides what each role sees. The service-role key never reaches the browser.
-- No hard deletes anywhere in the module; history is append-only and archive replaces delete.
+- No hard deletes anywhere in the module, with one exception the owner asked for: an archived product with **no history at all** can be deleted from the Archive tab (serial typed to confirm), and only after a full copy of it is written to `inv_product_tombstones`. History is append-only and archive replaces delete.
 - All text is escaped on display and in every export (XML-escaped in Word and Excel).
 - The repository holds only the mechanism: code, schema-only migrations, scripts without values, and fake sample data (`scripts/inventory/inventory-sample.dummy.json`).
 - Backups are written only outside the repository; the script refuses a folder inside it.
@@ -332,10 +367,11 @@ More in [`scripts/inventory/README.md`](../../scripts/inventory/README.md).
 | `tests/permissions.test.mjs` | the role matrix in code |
 | `tests/sql/*.test.mjs` | every migration on a real Postgres 17 (PGlite): the role matrix in RLS and functions, append-only guards, the ledger rules, field validation, the old functions still working, reversal copying details, the party index, the compact page equal to the full one, and a backup restored into an empty database giving the same ledger and balances |
 | `tests/sql/inventory-month.sql.test.mjs` | 0031 with a fake clock: the 1 December rollover equal to the old one, double run, a gap of several months, pending → confirmed, count + entry atomic, the adjustment identity in every range, the old functions still working (and still unable to over-issue), the role matrix, backup + restore of the new tables, the dry run against the real rollover |
+| `tests/sql/inventory-archive.sql.test.mjs` | 0032: the archive list, restore one or many with the ledger untouched, the pending rule after a restore, delete allowed only with zero history (and refused in the database with history, with a stock count, with a closed month, even before the month was opened), the tombstone, every other delete still refused, the role matrix |
 | `tests/inventory-exports.test.mjs` | the export rows and the Excel / Word files: the identity, the Adjustment column only when needed, Pending, text never a formula |
 
 ```sh
-npm test        # all of the above: 74 tests, about 15 s; CI runs it on every pull request
+npm test        # all of the above: 82 tests, about 20 s; CI runs it on every pull request
 ```
 
 Browser checks (role matrix on every page, the flows, layout at 360 / 390 / 768 / 1024 / 1440 px, exports through the Android app's bridge) run locally against a fake Supabase that applies every migration, so RLS is the real thing.

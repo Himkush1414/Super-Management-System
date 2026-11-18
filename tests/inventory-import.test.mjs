@@ -242,3 +242,20 @@ test("pdfRows without a heading: columns from where cells start", () => {
   const rows = pdfRows([[item("AB-1", 40, 500), item("Fake part one", 120, 500), item("5", 400, 500), item("AB-2", 40, 480), item("Fake part two", 120, 480), item("1,250", 400, 480)]]);
   assert.deepEqual(rows, [["AB-1", "Fake part one", "5"], ["AB-2", "Fake part two", "1,250"]]);
 });
+
+test("the app's own export layout: Closing (not Closing value) is the balance; title, total and note lines are skipped", () => {
+  const rows = [
+    ["NR Test Co", "", "", "", "", "", "", "", ""],
+    ["Product Specification · 01/11/2026 to 30/11/2026", "", "", "", "", "", "", "", ""],
+    ["Serial No", "Material Description", "Specification", "Rate (₹)", "Opening", "Received", "Issued", "Closing", "Closing value (₹)"],
+    ["ZZ-1", "Fake part", "2 mm", "4.70", "13", "0", "0", "13", "61.10"],
+    ["ZZ-2", "Fake part two", "", "—", "5", "1", "2", "4", "0.00"],
+    ["", "", "", "", "", "", "", "", ""],
+    ["Total · 2 products", "", "", "", "", "1", "2", "", "61.10"],
+    ["Closing value total: active products (archived ones are listed but not counted), like the Inventory page.", "", "", "", "", "", "", "", ""],
+  ];
+  const d = detectColumns(rows);
+  assert.equal(d.mapping.balance, 7);
+  const t = toRecords(rows, d);
+  assert.deepEqual(t.records.map((r) => [r.serial, r.balance.text]), [["ZZ-1", "13"], ["ZZ-2", "4"]]);
+});

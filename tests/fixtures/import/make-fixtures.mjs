@@ -134,11 +134,15 @@ const pdfRows = [
   ["ZZ-003", "Demo bolt kit 3", "", "", "0"],
 ];
 let y = 500;
+let lastY = y;
 for (const r of pdfRows) {
+  // a wrapped description sits one text line (11 pt) under its row; rows are 20 pt apart
+  const at = r[0] === null ? lastY - 11 : y;
   r.forEach((c, i) => {
-    if (c) page1 += text(X[i] + (i >= 3 ? 40 - c.length * 5 : 0), y, c);
+    if (c) page1 += text(X[i] + (i >= 3 ? 40 - c.length * 5 : 0), at, c);
   });
-  y -= r[0] === null ? 14 : 20;
+  lastY = at;
+  y = at - 20;
 }
 let page2 = LIST_HEAD.map((h, i) => text(X[i], 520, h)).join(""); // the header repeats on page 2
 page2 += ["ZZ-901", "Fake second new part", "", "", "2.125"].map((c, i) => (c ? text(X[i] + (i >= 3 ? 40 - c.length * 5 : 0), 500, c) : "")).join("");

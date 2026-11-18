@@ -594,8 +594,8 @@ export interface PdfItem {
  * onto a second line) is joined to the line above.
  */
 export function pdfRows(pages: PdfItem[][], check = deadline()): string[][] {
-  const lines: { y: number; cells: { x0: number; x1: number; text: string }[] }[] = [];
-  for (const items of pages) {
+  const lines: { y: number; h: number; page: number; cells: { x0: number; x1: number; text: string }[] }[] = [];
+  for (const [pageNo, items] of pages.entries()) {
     check();
     const sorted = items.filter((i) => i.str.trim()).sort((a, b) => b.y - a.y || a.x - b.x);
     const pageLines: { y: number; h: number; items: PdfItem[] }[] = [];
@@ -615,7 +615,7 @@ export function pdfRows(pages: PdfItem[][], check = deadline()): string[][] {
           last.x1 = Math.max(last.x1, it.x + it.w);
         } else cells.push({ x0: it.x, x1: it.x + it.w, text: it.str });
       }
-      lines.push({ y: pl.y, cells });
+      lines.push({ y: pl.y, h: pl.h, page: pageNo, cells });
       if (lines.length > (LIMITS.maxRows + 50) * 3) throw new SheetError("too_many_rows", `The file has more than ${LIMITS.maxRows} rows.`);
     }
   }
@@ -671,9 +671,11 @@ export function pdfRows(pages: PdfItem[][], check = deadline()): string[][] {
       const k = columnOf(c.x0, c.x1);
       r[k] = r[k] ? `${r[k]} ${c.text}` : c.text;
     }
-    // a wrapped line (nothing in the first column, under a data row): join it to that row
+    // a wrapped line (nothing in the first column, right under a data row on the same page): join it to that row
     const prev = rows[rows.length - 1];
-    if (idx > hi && hi >= 0 && idx !== hi && !r[0].trim() && prev && prev[0].trim() && !isHead(l.cells) && r.filter((x) => x.trim()).length <= 2) {
+    const above = lines[idx - 1];
+    const close = above && above.page === l.page && above.y - l.y <= Math.max(l.h, above.h) * 1.9;
+    if (idx > hi && hi >= 0 && close && !r[0].trim() && prev && prev[0].trim() && !isHead(l.cells) && r.filter((x) => x.trim()).length <= 2) {
       r.forEach((v, k) => {
         if (v.trim()) prev[k] = prev[k] ? `${prev[k]} ${v}` : v;
       });

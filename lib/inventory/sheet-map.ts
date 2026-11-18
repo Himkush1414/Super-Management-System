@@ -156,7 +156,8 @@ export function detectColumns(rows: string[][]): Detected {
       let idx = head.findIndex((h, i) => h && HEAD[f].test(h) && !Object.values(mapping).includes(i));
       // the balance: the last matching heading ("Opening ... Closing" -> Closing; "Qty ... Balance" -> Balance)
       if (f === "balance") {
-        const all = head.map((h, i) => (h && HEAD.balance.test(h) && !/opening/i.test(h) && !Object.values(mapping).includes(i) ? i : -1)).filter((i) => i >= 0);
+        // never "Opening", nor a money column ("Closing value (₹)", "Amount")
+        const all = head.map((h, i) => (h && HEAD.balance.test(h) && !/opening|value|amount|₹|\brs\b|rate/i.test(h) && !Object.values(mapping).includes(i) ? i : -1)).filter((i) => i >= 0);
         idx = all.length ? all[all.length - 1] : -1;
       }
       if (idx >= 0) {
@@ -271,6 +272,17 @@ export function toRecords(rows: string[][], d: Pick<Detected, "header" | "mappin
     }
     // a totals line ("Total", "Grand total") at the end of a sheet
     if (!at(r, m.serial) && /^(grand\s*)?total\b/i.test(at(r, m.description) || clean(r.find((c) => clean(c))))) {
+      blank++;
+      return;
+    }
+    // a totals line whose label sits in the serial column ("Total · 350 products")
+    if (/^(grand\s*)?total\b/i.test(at(r, m.serial))) {
+      blank++;
+      return;
+    }
+    // nothing in the balance column and no serial-like first cell: a title, letterhead or note line
+    const s0 = at(r, m.serial);
+    if (!at(r, m.balance) && (!s0 || s0.length > 40 || s0.split(" ").length > 4)) {
       blank++;
       return;
     }

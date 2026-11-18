@@ -310,6 +310,41 @@ export async function setProductActive(productId: string, active: boolean): Prom
   return res;
 }
 
+/** Restore one or many archived products (0032). The ledger and balances are not touched. */
+export async function restoreProducts(productIds: string[]): Promise<ActionResult> {
+  if (!(await manager())) return { ok: false, error: "Not permitted." };
+  if (!Array.isArray(productIds) || !productIds.length || productIds.length > 5000 || !productIds.every((id) => UUID.test(id))) {
+    return { ok: false, error: "No products chosen." };
+  }
+  const r = (await call("inv_restore_products", { p_product_ids: productIds })) as (InvWriteResult & { restored?: number }) | null;
+  const res = asResult(r, "Restored.");
+  if (res.ok) {
+    done();
+    revalidatePath("/dashboard/inventory-archive");
+    return { ...res, changed: r?.restored ?? 0 };
+  }
+  return res;
+}
+
+/**
+ * Permanently delete an ARCHIVED product with no history (0032), after the
+ * serial number was typed to confirm. The database checks everything again
+ * (archived, no ledger entry, no stock count, no month snapshot, the serial)
+ * and keeps a full copy in its tombstone table.
+ */
+export async function deleteArchivedProduct(productId: string, confirmSerial: string): Promise<ActionResult> {
+  if (!(await manager())) return { ok: false, error: "Not permitted." };
+  if (!UUID.test(productId)) return { ok: false, error: "Product not found." };
+  const typed = String(confirmSerial ?? "").trim().slice(0, 40);
+  if (!typed) return { ok: false, error: "Type the serial number to confirm." };
+  const res = asResult(await call("inv_delete_archived_product", { p_product_id: productId, p_confirm_serial: typed }), "Deleted.");
+  if (res.ok) {
+    done();
+    revalidatePath("/dashboard/inventory-archive");
+  }
+  return res;
+}
+
 export async function saveInventorySettings(input: { personName: string; phone: string }): Promise<ActionResult> {
   if (!(await manager())) return { ok: false, error: "Not permitted." };
   const res = asResult(await call("inv_save_settings", {

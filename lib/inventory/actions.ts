@@ -345,6 +345,67 @@ export async function deleteArchivedProduct(productId: string, confirmSerial: st
   return res;
 }
 
+/** One import's rows, as the import page sends them (the document itself is never sent). */
+export interface ImportInput {
+  batchKey: string;
+  rows: number;
+  counts: { id: string; key: string; counted: string }[];
+  added: { serial: string; description: string; specification: string; rate: string | null; balance: string }[];
+  fills: { id: string; specification: string | null; rate: string | null }[];
+  archive: string[];
+}
+export type ImportResult =
+  | { ok: true; duplicate: boolean; counted: number; adjusted: number; added: number; filled: number; archived: number }
+  | { ok: false; error: string; stale?: boolean };
+
+/**
+ * Apply an import ("Import from document", 0033): the rows the page read
+ * from the document in the browser. Checked here (shapes, sizes, numbers),
+ * then again in the database against the data as it is now, all in one
+ * transaction; the same batch key twice applies once.
+ */
+export async function applyImport(input: ImportInput): Promise<ImportResult> {
+  if (!(await manager())) return { ok: false, error: "Not permitted." };
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
+  const qty = (v: unknown) => {
+    const q = typeof v === "string" ? parseQty(v) : null;
+    return q !== null && q >= BigInt(0) && q < MAX_QTY ? qtyToText(q) : null;
+  };
+  const rate = (v: unknown) => {
+    if (v === null || v === undefined || v === "") return null;
+    const p = typeof v === "string" ? parsePaise(v) : null;
+    return p !== null && p >= BigInt(0) ? paiseToText(p) : undefined;
+  };
+  if (!input || !KEY.test(input.batchKey)) return { ok: false, error: "Please read the file again." };
+  const counts = Array.isArray(input.counts) ? input.counts : [];
+  const added = Array.isArray(input.added) ? input.added : [];
+  const fills = Array.isArray(input.fills) ? input.fills : [];
+  const archive = Array.isArray(input.archive) ? input.archive : [];
+  if (counts.length + added.length > 5000 || fills.length > 5000 || archive.length > 5000) return { ok: false, error: "At most 5,000 rows per import." };
+  const c2 = counts.map((c) => ({ id: c?.id, key: str(c?.key, 80), counted: qty(c?.counted) }));
+  const a2 = added.map((a) => ({ serial: str(a?.serial, 40), description: str(a?.description, 300), specification: str(a?.specification, 300), rate: rate(a?.rate), balance: qty(a?.balance) }));
+  const f2 = fills.map((f) => ({ id: f?.id, specification: str(f?.specification, 300) || null, rate: rate(f?.rate) }));
+  if (c2.some((c) => !UUID.test(String(c.id)) || !c.key || c.counted === null) || f2.some((f) => !UUID.test(String(f.id)) || f.rate === undefined)
+      || a2.some((a) => !a.serial || !a.description || a.balance === null || a.rate === undefined) || !archive.every((id) => UUID.test(String(id)))) {
+    return { ok: false, error: "Some rows in the import are not usable. Please read the file again." };
+  }
+  const r = (await call("inv_import_apply", {
+    p_batch_key: input.batchKey,
+    p_counts: c2,
+    p_new: a2,
+    p_fills: f2,
+    p_archive: archive,
+    p_rows: Math.max(0, Math.min(100000, Math.trunc(Number(input.rows) || 0))),
+  })) as unknown as { status: string; message?: string; counted?: number; adjusted?: number; added?: number; filled?: number; archived?: number } | null;
+  if (!r) return { ok: false, error: FAILED };
+  if (r.status === "ok" || r.status === "duplicate") {
+    done();
+    revalidatePath("/dashboard/inventory-archive");
+    return { ok: true, duplicate: r.status === "duplicate", counted: r.counted ?? 0, adjusted: r.adjusted ?? 0, added: r.added ?? 0, filled: r.filled ?? 0, archived: r.archived ?? 0 };
+  }
+  return { ok: false, error: r.message ?? FAILED, stale: r.status === "stale" || undefined };
+}
+
 export async function saveInventorySettings(input: { personName: string; phone: string }): Promise<ActionResult> {
   if (!(await manager())) return { ok: false, error: "Not permitted." };
   const res = asResult(await call("inv_save_settings", {

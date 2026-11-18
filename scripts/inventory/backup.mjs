@@ -38,6 +38,8 @@ export const TABLES = [
   { name: "inv_stock_counts", order: "id", identity: "id", generated: ["adjustment"], optional: true },
   { name: "inv_month_snapshots2", order: "product_id,month", optional: true },
   { name: "inv_closed_months2", order: "month", optional: true },
+  // 0032 (Archive tab): full copies of products deleted from the archive
+  { name: "inv_product_tombstones", order: "id", identity: "id", optional: true },
 ];
 
 /** The table isn't there (yet): Postgres 42P01 / PostgREST PGRST205. */

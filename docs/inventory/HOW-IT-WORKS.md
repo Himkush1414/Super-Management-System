@@ -16,6 +16,9 @@ The system works the same way.
   who saved it, and details such as party, challan and bill, or job number.
 - An entry can **never be edited or deleted**, not by the store person and not
   by an admin. The database itself refuses it, whatever screen or tool is used.
+- Products are **archived**, not deleted. The only exception: a product added by mistake that has
+  **no history at all** (no entry, no count, no closed month) can be deleted from the Archive tab,
+  after typing its serial; a full copy is kept in the database. Anything with history can only be restored.
 - A mistake is fixed the way an accountant does it: a **reversal**, a new line
   that cancels the wrong one. Both lines stay, so the history always shows what happened.
 - The balance is **never typed over**. It is always calculated from the lines:
@@ -132,6 +135,7 @@ December: Opening 40, Adjustment −2, Received 10, Issued 5, **Balance 43** (40
 | Receive, issue, reverse | ✅ | — | — |
 | Enter month-start balances (stock count) | ✅ | sees the Pending count, read-only | — |
 | Products, minimums, settings | ✅ | — | — |
+| Archive tab: restore; delete a product added by mistake (no history) | ✅ | sees it, read-only | — |
 | Exports (PDF, Word, Excel) | ✅ | ✅ | — |
 | Trends, top 10 issued, past months | — | ✅ | — |
 

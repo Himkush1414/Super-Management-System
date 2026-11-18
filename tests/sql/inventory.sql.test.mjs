@@ -73,9 +73,32 @@ test("0027 only widens user_role; 0027 + 0028 are idempotent", async () => {
   assert.equal(cols, 8);
 });
 
+/**
+ * The ONE delete the owner asked for (2026-11-18): 0032's inv_delete_archived_product
+ * permanently deletes an archived product with no history, after copying it into
+ * inv_product_tombstones. Its body is checked on its own (exactly these two deletes,
+ * keyed to that one product, after the tombstone insert) and left out of the
+ * general scan below, which still applies to every other line of every migration.
+ */
+const DELETE_FN = /create or replace function public\.inv_delete_archived_product\([\s\S]*?\nend \$\$;/;
+function withoutTheDeleteFunction(name, code) {
+  if (name !== "0032_inventory_archive.sql") return code;
+  const fn = DELETE_FN.exec(code)?.[0];
+  assert.ok(fn, "0032 has inv_delete_archived_product");
+  const deletes = [...fn.matchAll(/\bdelete\s+from\s+[^;]+;/gi)].map((m) => m[0].replace(/\s+/g, " "));
+  assert.deepEqual(deletes, [
+    "delete from public.inv_product_log where product_id = v_p.id;",
+    "delete from public.inv_products where id = v_p.id;",
+  ]);
+  assert.ok(fn.indexOf("insert into public.inv_product_tombstones") < fn.indexOf("delete from"), "the tombstone is written first");
+  assert.match(fn, /inv_has_history\(v_p\.id\)/, "products with history are refused");
+  assert.match(fn, /if v_p\.is_active then/, "only archived products");
+  return code.replace(fn, "");
+}
+
 test("the inventory migrations contain no destructive statement", () => {
   for (const m of migrationFiles(REPO).filter((f) => f.name >= "0027")) {
-    const code = m.sql.replace(/--.*$/gm, "");
+    const code = withoutTheDeleteFunction(m.name, m.sql.replace(/--.*$/gm, ""));
     assert.doesNotMatch(code, /\bdrop\s+(table|function|policy|type|view|index|trigger|schema|column)\b/i, m.name);
     assert.doesNotMatch(code, /\btruncate\s+(table\s+)?[a-z_.]+\s*;/i, m.name);
     assert.doesNotMatch(code, /\bdelete\s+from\b/i, m.name);

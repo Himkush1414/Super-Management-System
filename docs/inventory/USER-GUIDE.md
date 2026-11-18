@@ -121,7 +121,20 @@ The totals always match the screen.
 - In this month's file, a product not counted yet shows **Pending** instead of a closing
   balance, and is left out of the closing value. The file says *"Confirmed: N of M"*.
 
-## 9. Good habits
+## 9. Archive
+
+- **Archive** a product that is no longer used from its panel (**Archive product**). It leaves the list,
+  the totals and the alerts. Nothing is deleted: its history stays.
+- The **Archive** tab (in the menu) lists every archived product with its archived date and last balance.
+  Search works the same way.
+- **Restore:** tap **Restore** on one, or tick several and tap **Restore N**, then confirm.
+  It comes back with its history; nothing in the ledger changes. From December 2026 a product that
+  existed before this month comes back **Pending** until you enter its balance.
+- **Delete:** only for a product **added by mistake** that never had any entry, count or closed month.
+  Type its serial to confirm. It can't be undone (a copy is kept in the database).
+  A product with history shows *"Has history, can only be restored"*.
+
+## 10. Good habits
 
 - On the 1st, count and enter every balance **before** the first receipt or issue of the month.
 - Record receipts **the same day**, with the **Party** and **Challan No**.

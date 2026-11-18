@@ -1090,7 +1090,7 @@ function ArchiveSheet({ row, onClose }: { row: Row; onClose: () => void }) {
       <div className="space-y-4 text-[13px] text-text-secondary">
         {archive ? (
           <>
-            <p>It leaves the list and takes no new entries. Nothing is deleted: its history and month records stay, and you can restore it any time from “Archived”.</p>
+            <p>It leaves the list and takes no new entries. Nothing is deleted: its history and month records stay, and you can restore it any time from the Archive tab (or “Archived” in the list).</p>
             {row.b !== BigInt(0) && (
               <p className="rounded-lg border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-status-warning">
                 It still has a balance of <span className="tnum font-semibold">{formatQty(row.b)}</span>.

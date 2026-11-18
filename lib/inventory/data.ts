@@ -67,3 +67,39 @@ export async function getInventoryRange(from: string | null, to: string): Promis
   if (error || !data) throw new ReadError("the inventory report", error ?? "empty answer");
   return data as InvRangeReport;
 }
+
+/** One archived product for the Archive tab (0032). */
+export interface InvArchivedProduct {
+  id: string;
+  serial_no: string;
+  description: string;
+  specification: string;
+  archived_at: string | null;
+  /** the balance it was archived with (opening + every entry + every stock count) */
+  balance: string;
+  /** any ledger entry, stock count or closed month: can only be restored, never deleted */
+  has_history: boolean;
+  entries: number;
+}
+
+/** The Archive tab: archived products, newest archive first, and how many were ever deleted. */
+export async function getArchiveList(): Promise<{ products: InvArchivedProduct[]; deleted: number }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("inv_archive_list");
+  if (error || !data) throw new ReadError("the archive", error ?? "empty answer");
+  const d = data as { fields: string[]; rows: unknown[][]; deleted: number };
+  const at = (f: string) => d.fields.indexOf(f);
+  return {
+    deleted: Number(d.deleted ?? 0),
+    products: d.rows.map((r) => ({
+      id: r[at("id")] as string,
+      serial_no: r[at("serial_no")] as string,
+      description: (r[at("description")] as string) ?? "",
+      specification: (r[at("specification")] as string) ?? "",
+      archived_at: (r[at("archived_at")] as string | null) ?? null,
+      balance: (r[at("balance")] as string) ?? "0",
+      has_history: r[at("has_history")] === true,
+      entries: Number(r[at("entries")] ?? 0),
+    })),
+  };
+}

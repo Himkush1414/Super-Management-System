@@ -135,14 +135,15 @@ const CountRow = memo(function CountRow({
     <li
       className={cn(
         "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-panel/60 p-3",
-        "md:grid-cols-[minmax(5.5rem,0.6fr)_minmax(10rem,2fr)_7rem_minmax(9rem,10rem)_auto] md:rounded-none md:border-0 md:bg-transparent md:px-3 md:py-2",
+        // text columns may shrink (truncate): the row never scrolls sideways next to the sidebar
+        "md:grid-cols-[minmax(5rem,0.7fr)_minmax(0,2fr)_4.5rem_minmax(5.5rem,8rem)_auto] md:rounded-none md:border-0 md:bg-transparent md:px-3 md:py-2",
         confirmed && "bg-status-success/[0.04]",
       )}
       data-inv-count-row={row.serial_no}
       data-confirmed={confirmed || undefined}
     >
       <label htmlFor={inputId} className="col-span-2 min-w-0 md:contents">
-        <span className="tnum block text-[12px] font-semibold text-accent md:text-[13px] md:text-text">
+        <span className="tnum block truncate text-[12px] font-semibold text-accent md:text-[13px] md:text-text">
           <Highlight text={row.serial_no} query={query} />
         </span>
         <span className="block min-w-0 truncate text-[14px] font-medium md:text-[13px]">
@@ -191,11 +192,14 @@ const CountRow = memo(function CountRow({
             type="button"
             onClick={() => void save(qtyToText(opening))}
             disabled={saving}
-            className="nr-interactive inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border-strong px-3 text-[13px] font-medium text-text-secondary hover:border-accent/40 hover:text-text disabled:opacity-50 md:h-9"
+            aria-label="Same as opening"
+            className="nr-interactive inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border-strong px-3 text-[13px] font-medium text-text-secondary hover:border-accent/40 hover:text-text disabled:opacity-50 md:h-9 md:px-2.5"
           >
-            <Equal size={14} /> Same as opening
+            <Equal size={14} />
+            <span className="max-lg:md:hidden">Same as opening</span>
+            <span className="hidden max-lg:md:inline">Opening</span>
           </button>
-          <span className="w-[6.5rem] text-[12px]" aria-live="polite">
+          <span className="w-[5.25rem] text-[12px]" aria-live="polite">
             {done ? (
               <span className="inline-flex items-center gap-1 font-medium text-status-success">
                 <Check size={14} />

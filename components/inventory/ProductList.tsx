@@ -64,6 +64,7 @@ export function ProductList({
   // the fast balance screen (inventory account, current month): the products
   // pending when it opened stay listed after they're saved, so focus never jumps
   const countMode = pendingOnly && canManage && isCurrent && counting;
+  const crowded = pendingCount > 0 || pendingOnly;
   const [countSet, setCountSet] = useState<Set<string> | null>(null);
   if (countMode && !countSet) setCountSet(new Set(rows.filter((r) => r.pending).map((r) => r.id)));
   if (!countMode && countSet) setCountSet(null);
@@ -162,8 +163,9 @@ export function ProductList({
         ref={toolbarRef}
         className="sticky top-14 z-20 -mx-4 border-b border-border bg-bg/85 px-4 py-3 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"
       >
-        <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center">
-          <div className="flex flex-col gap-2 sm:flex-row lg:max-w-2xl lg:flex-1">
+        {/* one row from 1024 px; with the Pending chip as well, from 1280 px (the search keeps its width) */}
+        <div className={cn("flex flex-col gap-2.5", crowded ? "xl:flex-row xl:items-center" : "lg:flex-row lg:items-center")}>
+          <div className={cn("flex flex-col gap-2 sm:flex-row", crowded ? "xl:max-w-2xl xl:flex-1" : "lg:max-w-2xl lg:flex-1")}>
           <div className="relative flex-1">
             <Search size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-text-tertiary" />
             <input
@@ -209,8 +211,8 @@ export function ProductList({
             />
           </div>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2 lg:ml-auto lg:flex-nowrap">
-            <p className="tnum mr-auto whitespace-nowrap text-[12.5px] text-text-tertiary lg:mr-1" aria-live="polite" aria-atomic="true" data-inv-count>
+          <div className={cn("flex flex-wrap items-center justify-end gap-2", crowded ? "xl:ml-auto xl:flex-nowrap" : "lg:ml-auto lg:flex-nowrap")}>
+            <p className={cn("tnum mr-auto whitespace-nowrap text-[12.5px] text-text-tertiary", crowded ? "xl:mr-1" : "lg:mr-1")} aria-live="polite" aria-atomic="true" data-inv-count>
               {filtering
                 ? `${shown.length} of ${pool.length} product${pool.length === 1 ? "" : "s"}`
                 : `${pool.length} product${pool.length === 1 ? "" : "s"}`}

@@ -14,9 +14,19 @@ export function SummaryCards({ rows, month, lowCount }: { rows: Row[]; month: st
   // 768+: Stock value (wide) | Products | Low stock, then Received | Issued.
   // 1280+: one row, in reading order (Stock value wide enough for crores).
   const cards = [
-    { label: "Products", value: s.products.toLocaleString("en-IN"), sub: "active", icon: Boxes, cls: "md:order-2 xl:order-1" },
+    {
+      label: "Products", value: s.products.toLocaleString("en-IN"),
+      // month-start balance (0031): how many are counted this month, beside the totals
+      sub: s.pending ? `${s.confirmed.toLocaleString("en-IN")} of ${s.products.toLocaleString("en-IN")} confirmed` : "active",
+      icon: Boxes, cls: "md:order-2 xl:order-1",
+    },
     { label: "Low stock", value: lowCount.toLocaleString("en-IN"), sub: `${s.zero.toLocaleString("en-IN")} out of stock`, icon: TriangleAlert, tone: lowCount || s.zero ? ("warn" as const) : undefined, cls: "md:order-3 xl:order-5" },
-    { label: "Stock value", value: formatINR(s.value), sub: "balance × rate", icon: IndianRupee, cls: "col-span-2 md:order-1 xl:order-2" },
+    {
+      label: "Stock value", value: formatINR(s.value),
+      // never an unconfirmed balance as if it were real: pending products are left out
+      sub: s.pending ? `balance × rate · ${s.confirmed.toLocaleString("en-IN")} of ${s.products.toLocaleString("en-IN")} confirmed` : "balance × rate",
+      icon: IndianRupee, cls: "col-span-2 md:order-1 xl:order-2",
+    },
     { label: `Received · ${m}`, value: formatQty(s.received), sub: `${formatINR(s.receivedValue)} value`, icon: ArrowDownToLine, tone: "in" as const, cls: "md:order-4 md:col-span-2 xl:order-3 xl:col-span-1" },
     { label: `Issued · ${m}`, value: formatQty(s.issued), sub: `${formatINR(s.issuedValue)} value`, icon: ArrowUpFromLine, tone: "out" as const, cls: "md:order-5 md:col-span-2 xl:order-4 xl:col-span-1" },
   ];
@@ -36,7 +46,7 @@ export function SummaryCards({ rows, month, lowCount }: { rows: Row[]; month: st
             />
           </div>
           <div className="tnum mt-2 truncate text-[1.375rem] font-semibold leading-none tracking-[-0.02em] sm:text-[1.5rem]">{c.value}</div>
-          <div className="tnum mt-1.5 truncate text-[11.5px] text-text-tertiary">{c.sub}</div>
+          <div className="tnum mt-1.5 truncate text-[11.5px] text-text-tertiary" title={c.sub}>{c.sub}</div>
         </div>
       ))}
     </div>

@@ -230,7 +230,7 @@ export function ProductList({
                 )}
               >
                 <ClipboardList size={14} />
-                <span className="sr-only sm:not-sr-only">Pending</span> <span className="tnum">{pendingCount}</span>
+                <span className="sr-only sm:not-sr-only">Pending</span> <span className="tnum">{pendingCount.toLocaleString("en-IN")}</span>
               </button>
             )}
             {(lowCount > 0 || lowOnly) && (

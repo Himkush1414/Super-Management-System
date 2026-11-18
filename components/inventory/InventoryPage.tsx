@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Download, Phone, UserRound, CalendarRange, TriangleAlert, ChevronRight, ClipboardList } from "lucide-react";
+import { Plus, Download, Phone, UserRound, CalendarRange, TriangleAlert, ChevronRight, ClipboardList, FileUp } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { formatQty, parseQty, valueOf } from "@/lib/inventory/numbers";
 import { activeCustomColumns, countingApplies, pageExtras, pageMonthFields, pageProducts, visibleCustomColumns, type InvPage3 } from "@/lib/inventory/types";
@@ -267,7 +267,7 @@ function InventoryInner({ data, canManage, showAnalytics }: Props) {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[14px] font-semibold text-text">
-              {pendingCount} {pendingCount === 1 ? "product needs" : "products need"} balance
+              {pendingCount.toLocaleString("en-IN")} {pendingCount === 1 ? "product needs" : "products need"} balance
             </span>
             <span className="tnum block text-[12.5px] text-text-secondary">
               {(active - pendingCount).toLocaleString("en-IN")} of {active.toLocaleString("en-IN")} confirmed for {monthLabel(data.current_month)}.{" "}
@@ -279,6 +279,15 @@ function InventoryInner({ data, canManage, showAnalytics }: Props) {
               <Button type="button" className="h-11 md:h-9" onClick={() => setPendingOnly(true)} aria-pressed={pendingOnly}>
                 Enter balances
               </Button>
+            )}
+            {canManage && (
+              <Link
+                href="/dashboard/inventory-import"
+                className="nr-interactive inline-flex h-11 items-center gap-1.5 rounded-lg border border-border-strong px-3.5 text-[13px] font-medium text-text-secondary hover:text-text md:h-9"
+                data-inv-import-link
+              >
+                <FileUp size={14} /> Import from document
+              </Link>
             )}
             {!canManage && !pendingOnly && (
               <Button type="button" variant="secondary" className="h-11 md:h-9" onClick={() => setPendingOnly(true)}>

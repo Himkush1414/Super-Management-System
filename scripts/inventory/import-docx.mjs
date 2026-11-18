@@ -28,61 +28,27 @@ import { inflateRawSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 import { dirname, join, extname } from "node:path";
 import { loadEnv, localPath, managementQuery, serviceRpc, dollarTag } from "./lib.mjs";
+// The reading and number rules are shared with the app's "Import from document"
+// (lib/inventory/sheet-read.ts, sheet-map.ts). Needs Node 23.6+ (or
+// node --experimental-strip-types on Node 22) to load those .ts files.
+import { zipDirectory, zipRead, xmlText as partText, docxTables as wordTables } from "../../lib/inventory/sheet-read.ts";
+import { clean, RE, slotRuns, decimal as readDecimal, toMilli, fromMilli } from "../../lib/inventory/sheet-map.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APPLY = process.argv.includes("--apply");
 
 // ── reading ─────────────────────────────────────────────────────────────
 
-/** Files of a zip (the .docx), by name. */
-function unzip(buf) {
-  let eocd = buf.length - 22;
-  while (eocd >= 0 && buf.readUInt32LE(eocd) !== 0x06054b50) eocd--;
-  if (eocd < 0) throw new Error("not a zip / docx file");
-  const count = buf.readUInt16LE(eocd + 10);
-  let p = buf.readUInt32LE(eocd + 16);
-  const files = {};
-  for (let i = 0; i < count; i++) {
-    const method = buf.readUInt16LE(p + 10);
-    const size = buf.readUInt32LE(p + 20);
-    const nameLen = buf.readUInt16LE(p + 28);
-    const extraLen = buf.readUInt16LE(p + 30);
-    const commentLen = buf.readUInt16LE(p + 32);
-    const local = buf.readUInt32LE(p + 42);
-    const name = buf.toString("utf8", p + 46, p + 46 + nameLen);
-    const lNameLen = buf.readUInt16LE(local + 26);
-    const lExtraLen = buf.readUInt16LE(local + 28);
-    const data = buf.subarray(local + 30 + lNameLen + lExtraLen, local + 30 + lNameLen + lExtraLen + size);
-    files[name] = method === 8 ? inflateRawSync(data) : data;
-    p += 46 + nameLen + extraLen + commentLen;
-  }
-  return files;
-}
-
-const xmlText = (s) =>
-  s.replace(/<w:tab\/>/g, " ").replace(/<w:br\/>/g, " ").replace(/<[^>]+>/g, "")
-    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+/** Node's zlib with a hard output limit (the shared zip reader asks for one). */
+const inflate = async (data, maxOut) => new Uint8Array(inflateRawSync(data, { maxOutputLength: Math.max(1, maxOut) }));
 
 /** Tables of a .docx as arrays of rows of cell text (merged cells repeated as blanks). */
-function docxTables(buf) {
-  const doc = unzip(buf)["word/document.xml"];
+async function docxTables(buf) {
+  const bytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  const entries = zipDirectory(bytes);
+  const doc = entries.find((e) => e.name === "word/document.xml");
   if (!doc) throw new Error("word/document.xml not found");
-  const xml = doc.toString("utf8");
-  const tables = [];
-  for (const tbl of xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g) ?? []) {
-    const rows = [];
-    for (const tr of tbl.match(/<w:tr[ >][\s\S]*?<\/w:tr>/g) ?? []) {
-      const row = [];
-      for (const tc of tr.match(/<w:tc>[\s\S]*?<\/w:tc>/g) ?? []) {
-        const span = Number(/<w:gridSpan w:val="(\d+)"/.exec(tc)?.[1] ?? 1);
-        const text = (tc.match(/<w:p[ >][\s\S]*?<\/w:p>/g) ?? []).map(xmlText).join(" ");
-        row.push(text, ...Array(span - 1).fill(""));
-      }
-      rows.push(row);
-    }
-    tables.push(rows);
-  }
-  return tables;
+  return wordTables(partText(await zipRead(bytes, doc, inflate)), () => {}).tables;
 }
 
 function pdfTables(path) {
@@ -91,66 +57,17 @@ function pdfTables(path) {
 }
 
 // ── mapping ─────────────────────────────────────────────────────────────
+// clean, RE (the heading patterns), slotRuns, the decimal reader and the
+// thousandths helpers come from lib/inventory/sheet-map.ts (shared).
 
-const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
-const RE = {
-  serial: /^(sr|s|serial)\.?\s*(no|number)?\.?$|^serial/i,
-  description: /d[ie]sc?r[ie]?p?tion|^material$/i,
-  specification: /spec/i,
-  rate: /^rate/i,
-  uom: /^u\.?o\.?m\.?$|^unit/i,
-  opening: /opening/i,
-  balance: /balance|closing|in\s*stock/i,
-  issued: /issue/i,
-};
-
-/** Runs of consecutive integers 1, 2, 3… in a header row: the receipt / issue cells. */
-function slotRuns(row) {
-  const runs = [];
-  let cur = null;
-  row.forEach((c, i) => {
-    const n = /^\d+$/.test(clean(c)) ? Number(clean(c)) : null;
-    if (n === 1) {
-      cur = { start: i, end: i };
-      runs.push(cur);
-    } else if (cur && n === i - cur.start + 1 && i === cur.end + 1) cur.end = i;
-    else cur = null;
-  });
-  return runs.filter((r) => r.end > r.start);
-}
-
-const NUM = /^-?\d+(\.\d+)?$/;
 /** A printed sheet shows rounded numbers: up to 0.5 between opening + receipts − issues and the closing is rounding. */
 const ROUNDING = BigInt(500);
-const num = (s) => clean(s).replace(/,/g, "").replace(/^(rs\.?|₹)\s*/i, "");
 
 /** Cells a spreadsheet wrote as a tiny float instead of 0 (like "1E-13" left over from x − x). */
 export const artefacts = [];
 
 /** Decimal text checked for scale; null = empty, false = invalid. */
-function decimal(s, scale) {
-  let t = num(s);
-  if (t === "" || t === "-") return null;
-  if (/^-?\d+(\.\d+)?e-\d+$/i.test(t) && Math.abs(Number(t)) < 0.0005) {
-    artefacts.push(t);
-    t = "0";
-  }
-  if (!NUM.test(t)) return false;
-  const frac = t.split(".")[1] ?? "";
-  if (frac.replace(/0+$/, "").length > scale) return false;
-  return t;
-}
-const toMilli = (t) => {
-  const [i, f = ""] = t.replace("-", "").split(".");
-  const v = BigInt(i) * BigInt(1000) + BigInt((f + "000").slice(0, 3));
-  return t.startsWith("-") ? -v : v;
-};
-const fromMilli = (m) => {
-  const neg = m < BigInt(0);
-  const a = neg ? -m : m;
-  const f = (a % BigInt(1000)).toString().padStart(3, "0").replace(/0+$/, "");
-  return `${neg ? "-" : ""}${a / BigInt(1000)}${f ? "." + f : ""}`;
-};
+const decimal = (s, scale) => readDecimal(s, scale, artefacts);
 
 function mapSheet(tables) {
   // header row: the first row with a serial-number heading
@@ -374,7 +291,7 @@ if (ext === ".json") {
   ({ payload } = res);
   report = { ...report, blocking: res.blocking, warnings: res.warnings, mapping: { source: "json" } };
 } else {
-  const tables = ext === ".docx" ? docxTables(readFileSync(path)) : ext === ".pdf" ? pdfTables(path) : null;
+  const tables = ext === ".docx" ? await docxTables(readFileSync(path)) : ext === ".pdf" ? pdfTables(path) : null;
   if (!tables) {
     console.error("INVENTORY_DOCX_PATH must be a .docx, .pdf or .json file.");
     process.exit(1);

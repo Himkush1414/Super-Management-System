@@ -134,7 +134,27 @@ The totals always match the screen.
   Type its serial to confirm. It can't be undone (a copy is kept in the database).
   A product with history shows *"Has history, can only be restored"*.
 
-## 10. Good habits
+## 10. Import from document
+
+Have the balances in a file? **Inventory settings → Import from document** (or the button in the
+blue *products need balance* box).
+
+1. **Choose a file:** a PDF with text, Word (.docx), Excel (.xlsx) or CSV, up to 4 MB.
+   It is read on the phone only: it is never uploaded or saved.
+2. **Columns:** check that Serial No and Balance point at the right columns (change them if not).
+3. **Preview:** *Matched* (now vs in the file), *New products*, *Not in file*, *Need review*.
+   Nothing has changed yet.
+4. **Products not in the file:** leave them (*Keep as they are*) or tick the ones to archive.
+5. Tap **Review and apply**, check the counts, **Apply import**.
+
+- Matched balances are saved as **Stock count** lines, exactly like typing them.
+- Rows that need review (no serial, duplicate serial, empty or negative balance, archived product)
+  are **not** applied: fix them by hand or in the file.
+- Empty rate / specification are filled from the file only where the product has none.
+- A **scan or a photo** can't be read: use the balance screen instead.
+- Until 1 December 2026 an import only adds new products (balances count from December).
+
+## 11. Good habits
 
 - On the 1st, count and enter every balance **before** the first receipt or issue of the month.
 - Record receipts **the same day**, with the **Party** and **Challan No**.

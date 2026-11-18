@@ -4,6 +4,7 @@ import {
   PlusCircle,
   DatabaseZap,
   Boxes,
+  Archive,
   SlidersHorizontal,
   ScrollText,
   type LucideIcon,
@@ -53,6 +54,13 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/dashboard/inventory",
     label: "Inventory",
     icon: Boxes,
+    perm: "inventory.view",
+  },
+  {
+    // archived products: restore (inventory), read only (admin tier)
+    href: "/dashboard/inventory-archive",
+    label: "Archive",
+    icon: Archive,
     perm: "inventory.view",
   },
   {

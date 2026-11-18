@@ -160,12 +160,19 @@ $$;
 -- The over-issue rule for every writer of inv_transactions: an entry that
 -- would take the balance (stock counts included) below zero is refused.
 -- (BEFORE INSERT: the generated `delta` isn't computed yet, so it's derived here.)
+-- A restore from a backup (docs/inventory/BACKUP.md) re-inserts rows that
+-- were valid when they were written, in id order, with every stock count
+-- already there; it sets the transaction-local flag inv.restoring, which
+-- only a database owner's SQL session can set (never an API call).
 create or replace function public.inv_guard_negative_balance()
 returns trigger
 language plpgsql set search_path = public as $$
 declare
   v_delta numeric := case when (new.kind = 'receive') = (new.reverses_id is null) then new.qty else -new.qty end;
 begin
+  if coalesce(current_setting('inv.restoring', true), '') = 'on' then
+    return new;
+  end if;
   if v_delta < 0 and public.inv_balance_now(new.product_id) + v_delta < 0 then
     raise exception 'not enough stock: the balance would go below zero' using errcode = '23514';
   end if;

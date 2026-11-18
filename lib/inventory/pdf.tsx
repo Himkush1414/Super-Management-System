@@ -5,7 +5,7 @@ import { Rupees } from "@/lib/pdf/Rupees";
 import { RUPEE_FONT_FAMILY } from "@/lib/pdf/rupee-font";
 import { formatQty, paiseToText } from "@/lib/inventory/numbers";
 import { dmySlash } from "@/lib/inventory/ranges";
-import type { ExportRow, ExportModel } from "@/lib/inventory/export-model";
+import { signedQty, type ExportRow, type ExportModel } from "@/lib/inventory/export-model";
 
 /**
  * "NR Industries Product Specification" — A4 landscape. Reuses the order
@@ -81,10 +81,13 @@ function columns(model: ExportModel): Col[] {
     { key: "spec", label: "Specification", width: 104, cell: (r) => r.specification || "—" },
     { key: "rate", label: "Rate (₹)", width: 56, align: "right", cell: (r) => money(r.rate) },
     { key: "open", label: "Opening", width: 56, align: "right", cell: (r) => formatQty(r.opening) },
+    // 0031: shown when any row has a stock count adjustment
+    ...(model.showAdjustment ? [{ key: "adj", label: "Adjustment", width: 56, align: "right", cell: (r) => signedQty(r.adjustment) } as Col] : []),
     { key: "recv", label: "Received", width: 56, align: "right", cell: (r) => formatQty(r.received) },
     { key: "iss", label: "Issued", width: 56, align: "right", cell: (r) => formatQty(r.issued) },
-    { key: "close", label: "Closing", width: 58, align: "right", cell: (r) => formatQty(r.closing) },
-    { key: "value", label: "Closing value (₹)", width: 72, align: "right", cell: (r) => money(r.value) },
+    // a pending balance is never printed as a number
+    { key: "close", label: "Closing", width: 58, align: "right", cell: (r) => (r.pending ? "Pending" : formatQty(r.closing)) },
+    { key: "value", label: "Closing value (₹)", width: 72, align: "right", cell: (r) => (r.pending ? "—" : money(r.value)) },
   ];
   const cols = [...fixed, ...custom.map((c, i): Col => ({ key: `c${i}`, label: c.label, width: customW, cell: (r) => r.custom[i] || "" }))];
   const used = cols.reduce((a, c) => a + c.width, 0);
@@ -155,6 +158,18 @@ export function InventoryReport({ model }: { model: ExportModel }) {
                 <Text style={s.label}>Issued: </Text>
                 {formatQty(model.totals.issued)}
               </Text>
+              {model.showAdjustment && (
+                <Text style={s.summaryItem}>
+                  <Text style={s.label}>Adjustment: </Text>
+                  {signedQty(model.totals.adjustment)}
+                </Text>
+              )}
+              {model.counts.pending > 0 && (
+                <Text style={s.summaryItem}>
+                  <Text style={s.label}>Confirmed: </Text>
+                  {model.counts.confirmed.toLocaleString("en-IN")} of {model.counts.active.toLocaleString("en-IN")} (Pending not in the value)
+                </Text>
+              )}
               {model.person && (
                 <Text style={s.summaryItem}>
                   <Text style={s.label}>Inventory: </Text>

@@ -324,3 +324,40 @@ test("inv_page2 rows: the three extra fields are read by name", () => {
   assert.deepEqual(ex.get("p2"), [null, null, null]);
   assert.equal(pageExtras({ fields: fields.slice(0, 11), rows: [] }).size, 0); // inv_page (no extras)
 });
+
+test("month-start balance (0031): pending products are in no stock value, zero count or low alert", async () => {
+  const { summarize: sz, isLow: low } = await import("../lib/inventory/numbers.ts");
+  const P = (v) => parsePaise(v);
+  const rows = [
+    { is_active: true, r: q("0"), i: q("0"), b: q("10"), ratePaise: P("2"), pending: false },
+    { is_active: true, r: q("0"), i: q("0"), b: q("0"), ratePaise: P("5"), pending: true },
+    { is_active: true, r: q("0"), i: q("0"), b: q("4"), ratePaise: P("100"), pending: true },
+    { is_active: false, r: q("0"), i: q("0"), b: q("3"), ratePaise: P("1"), pending: false },
+  ];
+  const s = sz(rows);
+  assert.equal(s.products, 3);
+  assert.equal(s.confirmed, 1);
+  assert.equal(s.pending, 2);
+  assert.equal(s.zero, 0, "a pending 0 is not 'out of stock'");
+  assert.equal(formatINR(s.value), "₹20.00", "only the confirmed balance counts");
+  // nothing pending: the same summary as before
+  const before = sz(rows.map((r) => ({ ...r, pending: undefined })));
+  assert.equal(before.confirmed, before.products);
+  assert.equal(before.pending, 0);
+  assert.equal(formatINR(before.value), "₹420.00"); // 10 × 2 + 0 × 5 + 4 × 100; the archived one is never counted
+  assert.equal(low(q("1"), q("5")), true);
+});
+
+test("inv_page3 rows: adjustment and pending are read by name; counting applies from counts_from", async () => {
+  const { pageMonthFields, countingApplies } = await import("../lib/inventory/types.ts");
+  const fields = ["id", "serial_no", "description", "specification", "rate", "custom", "is_active", "opening", "received", "issued", "balance", "min_stock", "last_party", "last_received", "adjustment", "pending"];
+  const mf = pageMonthFields({ fields, rows: [["p1", "A", "x", "", null, {}, true, "12", "0", "4", "6", null, null, null, "-2", false], ["p2", "B", "y", "", null, {}, true, "4", "0", "0", "4", null, null, null, "0", true]] });
+  assert.deepEqual(mf.get("p1"), { adjustment: "-2", pending: false });
+  assert.deepEqual(mf.get("p2"), { adjustment: "0", pending: true });
+  assert.equal(pageMonthFields({ fields: fields.slice(0, 14), rows: [] }).size, 0); // inv_page2: no month fields
+  assert.equal(countingApplies("2026-12-01", "2026-11-01"), false);
+  assert.equal(countingApplies("2026-12-01", "2026-12-01"), true);
+  assert.equal(countingApplies("2026-12-01", "2027-01-01"), true);
+  assert.equal(countingApplies("infinity", "2027-01-01"), false);
+  assert.equal(countingApplies(null, "2027-01-01"), false);
+});

@@ -57,8 +57,25 @@ function rowXml(r: number, cells: Cell[]): string {
 }
 
 export function buildXlsx(m: ExportModel, o: { company: string; subtitle: string; generated: string }): Buffer {
-  const head = ["Serial No", "Material Description", "Specification", "Rate (₹)", "Opening", "Received", "Issued", "Closing", "Closing value (₹)", ...m.customColumns.map((c) => c.label)];
-  const widths = [12, 36, 24, 12, 12, 12, 12, 12, 16, ...m.customColumns.map(() => 14)];
+  const adj = m.showAdjustment;
+  // one list of columns: header, width, the row cell and the total cell (empty when none)
+  type Col = { head: string; width: number; cell: (x: ExportModel["rows"][number]) => Cell; total?: () => Cell };
+  const cols: Col[] = [
+    { head: "Serial No", width: 12, cell: (x) => str(x.serial) },
+    { head: "Material Description", width: 36, cell: (x) => str(x.archived ? `${x.description} (archived)` : x.description) },
+    { head: "Specification", width: 24, cell: (x) => str(x.specification || "—") },
+    { head: "Rate (₹)", width: 12, cell: (x) => inr(x.rate) },
+    { head: "Opening", width: 12, cell: (x) => qty(x.opening) },
+    ...(adj ? [{ head: "Adjustment", width: 12, cell: (x) => qty(x.adjustment), total: () => qty(m.totals.adjustment, true) } as Col] : []),
+    { head: "Received", width: 12, cell: (x) => qty(x.received), total: () => qty(m.totals.received, true) },
+    { head: "Issued", width: 12, cell: (x) => qty(x.issued), total: () => qty(m.totals.issued, true) },
+    // a pending balance is never written as a number
+    { head: "Closing", width: 12, cell: (x) => (x.pending ? str("Pending") : qty(x.closing)) },
+    { head: "Closing value (₹)", width: 16, cell: (x) => (x.pending ? str("—") : inr(x.value)), total: () => inr(m.totals.value, true) },
+    ...m.customColumns.map((c, i): Col => ({ head: c.label, width: 14, cell: (x) => str(x.custom[i] ?? "") })),
+  ];
+  const head = cols.map((c) => c.head);
+  const widths = cols.map((c) => c.width);
   const last = colName(head.length - 1);
   const HEAD_ROW = 5;
 
@@ -68,42 +85,23 @@ export function buildXlsx(m: ExportModel, o: { company: string; subtitle: string
   rows.push(rowXml(3, [str(`Generated: ${o.generated}${m.person ? ` · Inventory: ${m.person}` : ""}`, S.note)]));
   rows.push(rowXml(HEAD_ROW, head.map((h) => str(h, S.head))));
   let r = HEAD_ROW + 1;
-  for (const x of m.rows) {
-    rows.push(
-      rowXml(r++, [
-        str(x.serial),
-        str(x.archived ? `${x.description} (archived)` : x.description),
-        str(x.specification || "—"),
-        inr(x.rate),
-        qty(x.opening),
-        qty(x.received),
-        qty(x.issued),
-        qty(x.closing),
-        inr(x.value),
-        ...x.custom.map((v) => str(v)),
-      ]),
-    );
-  }
+  for (const x of m.rows) rows.push(rowXml(r++, cols.map((c) => c.cell(x))));
   const totalRow = r + 1;
-  rows.push(
-    rowXml(totalRow, [
-      str(`Total · ${m.rows.length} products`, S.totalLabel),
-      { t: "e", s: S.totalLabel },
-      { t: "e", s: S.totalLabel },
-      { t: "e", s: S.totalLabel },
-      { t: "e", s: S.totalLabel },
-      qty(m.totals.received, true),
-      qty(m.totals.issued, true),
-      { t: "e", s: S.totalLabel },
-      inr(m.totals.value, true),
-    ]),
-  );
-  rows.push(rowXml(totalRow + 1, [str("Closing value total: active products (archived ones are listed but not counted), like the Inventory page.", S.note)]));
+  const totalCells: Cell[] = cols
+    .map((c, i) => (i === 0 ? str(`Total · ${m.rows.length} products`, S.totalLabel) : c.total ? c.total() : ({ t: "e", s: S.totalLabel } as Cell)))
+    // the total row stops after the value column, as before
+    .slice(0, cols.findIndex((c) => c.head === "Closing value (₹)") + 1);
+  rows.push(rowXml(totalRow, totalCells));
+  const notes = ["Closing value total: active products (archived ones are listed but not counted), like the Inventory page."];
+  if (m.counts.pending) notes.push(`${m.counts.confirmed} of ${m.counts.active} active products confirmed this month; "Pending" balances are not counted yet and not in the value.`);
+  if (adj) notes.push("Opening + Adjustment + Received − Issued = Closing. Adjustment = stock counts (counted balance − balance before).");
+  notes.forEach((n, i) => rows.push(rowXml(totalRow + 1 + i, [str(n, S.note)])));
+  const lastRow = totalRow + notes.length;
 
   const sheet =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
-    `<dimension ref="A1:${last}${totalRow + 1}"/>` +
+    `<dimension ref="A1:${last}${lastRow}"/>` +
     `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${HEAD_ROW}" topLeftCell="A${HEAD_ROW + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
     `<sheetFormatPr defaultRowHeight="15"/>` +
     `<cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("")}</cols>` +

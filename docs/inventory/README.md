@@ -2,7 +2,7 @@
 
 # Inventory module
 
-**Store stock on an append-only ledger: receive, issue, balance, minimum-stock alerts, Party search and exports.**
+**Store stock on an append-only ledger: receive, issue, month-start balance, minimum-stock alerts, Party search and exports.**
 
 Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with row-level security · works inside the Android app
 
@@ -23,6 +23,7 @@ Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with
 - [What it does](#what-it-does)
 - [Roles and access](#roles-and-access)
 - [How the numbers work](#how-the-numbers-work)
+- [Month-start balance](#month-start-balance)
 - [Receive and issue](#receive-and-issue)
 - [Minimum stock alert](#minimum-stock-alert)
 - [Party search](#party-search)
@@ -41,6 +42,7 @@ Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with
 | **Stock table** | Serial No, Material Description, Specification, Rate, Opening Balance, Receiving, Issue, Balance, plus the store's own columns. Cards on phones, an expandable table from 768 px. |
 | **Instant search** | Every product, case-insensitive, extra spaces ignored, matches highlighted, under 100 ms per keystroke. |
 | **Receive / Issue** | Quantity, date and the entry's details, then a confirm step showing the balance before and after. One tap saves once, even on a double tap or a retried request. |
+| **Month-start balance** | From 1 December 2026, every product starts the month **Pending**; the store enters the counted balance (fast screen: Enter saves and moves on, *Same as opening*). Saved as an append-only *Stock count* with its adjustment. |
 | **History** | Each product's recent entries with their details; a mistake is fixed with **Reverse**, never by editing or deleting. |
 | **Minimum stock** | An optional minimum per product; an alert box and a Low Stock list when the balance drops below it. |
 | **Party search** | A second search field: the products received from a party (all months), with the quantity and the last challan, bill and date. |
@@ -63,6 +65,7 @@ Part of [NR Management](../../README.md) · Next.js 16 · Supabase Postgres with
 |---|:---:|:---:|:---:|
 | Open the Inventory module | ✅ (only this module) | ✅ read-only | — |
 | Receive, issue, reverse | ✅ | — | — |
+| Enter month-start balances (stock counts) | ✅ | sees the Pending state and count, read-only | — |
 | Add, edit, archive products; minimums | ✅ | — | — |
 | Inventory settings | ✅ | — | — |
 | Alert box, Low Stock list, Party search, history | ✅ | ✅ | — |
@@ -77,19 +80,22 @@ The same rule is enforced three times: the screen, every server action and route
 flowchart LR
   P["Product<br/>opening_qty<br/>opening_month"] --> B
   L["Ledger<br/>(append-only)"] --> B
-  B["Balance = Opening + Receiving − Issue"]
+  C["Stock counts<br/>(append-only, 0031)"] -->|adjustment| A[Adjustment]
+  B["Balance = Opening + Adjustment + Receiving − Issue"]
   L -->|receipts this month| R[Receiving]
   L -->|issues this month| I[Issue]
+  A --> B
   R --> B
   I --> B
-  S["Month snapshots<br/>opening · received · issued · closing"] -.->|closed months| H[History / month selector]
+  S["Month snapshots<br/>opening · (adjustment) · received · issued · closing"] -.->|closed months| H[History / month selector]
 ```
 
 - **Append-only ledger.** Every receipt or issue is a new row in `inv_transactions`; database triggers refuse UPDATE, DELETE and TRUNCATE, even for the database owner. A mistake is corrected with a **reversal**: a new entry of the same kind that cancels it (it copies the original's details). Products and columns are archived, never deleted.
 - **Exact numbers.** Quantities are `numeric(14,3)`, rates `numeric(14,2)`; the app computes in integer thousandths and paise (`bigint`), never floating point. Money is shown en-IN: ₹1,23,456.00.
 - **Opening = last month's closing.** The opening of a month is the balance before its first day, so it always equals the previous month's closing. It is never typed.
 - **Dates are IST.** An entry's date must be in the current month and not in the future, so a closed month never changes.
-- **Over-issue is refused** in the database, under a row lock: an issue larger than the balance never saves.
+- **Over-issue is refused** in the database, under a row lock: an issue larger than the balance never saves. From 0031 the balance includes stock count adjustments, and a trigger on the ledger refuses any entry (from any function, old or new) that would take a balance below zero.
+- **The one calculation change (0031):** Balance = Opening + Adjustment + Receiving − Issue. Adjustment = the month's stock counts (counted − balance before). Months before December 2026 have no adjustment and calculate exactly as before.
 
 ### Month rollover
 
@@ -97,16 +103,50 @@ flowchart LR
 sequenceDiagram
   participant U as Anyone opens Inventory
   participant DB as Postgres
-  U->>DB: inv_page2()
-  DB->>DB: inv_rollover(): any ended month not closed yet?
+  U->>DB: inv_page3()
+  DB->>DB: inv_rollover2(): any ended month not closed yet?
   alt one or more months ended
-    DB->>DB: for each, oldest first: snapshot every product<br/>(opening, received, issued, closing)
+    DB->>DB: months before counts_from: snapshot exactly like inv_rollover<br/>(opening, received, issued, closing)
+    DB->>DB: months from counts_from: snapshot with the adjustment<br/>(inv_month_snapshots2, confirmed flag)
     DB->>DB: mark the month closed
   end
-  DB-->>U: this month's figures
+  DB-->>U: this month's figures, each row pending or confirmed
 ```
 
-The rollover is idempotent and fills gaps: if nobody opened the module for three months, all three are closed in order, each month's opening equal to the one before's closing.
+The rollover is idempotent and fills gaps: if nobody opened the module for three months, all three are closed in order, each month's opening equal to the one before's closing. Before 0031 the page called `inv_page2()` / `inv_rollover()`; both still exist and work, and `inv_rollover2()` closes November 2026 with the very same SQL, into the same table.
+
+## Month-start balance
+
+| | |
+|---|---|
+| **When** | Every month from `inv_count_settings.counts_from` (set by migration 0031 to the month after it was applied: **1 December 2026** on live). |
+| **Pending** | An active product that existed before the month and has no stock count in it yet. Derived, not stored: the rollover writes nothing for it. |
+| **Counting** | `inv_record_stock_count`: one append-only `inv_stock_counts` row, `adjustment = counted − balance before` (generated column), user and time. The first count of a pending product is dated the 1st (it *is* the month-start balance). |
+| **Again later** | A new count adds a new adjustment; nothing is overwritten. |
+| **Receive / Issue on a pending product** | `inv_record_entry2(…, p_count, p_count_key)`: the count and the entry in one transaction; an issue larger than the counted balance writes nothing. |
+| **Totals and alerts** | Pending products are left out of the stock value, the out-of-stock count and the low-stock alert; *"N of M confirmed"* sits beside the totals. |
+| **Who** | inventory enters counts; head_admin / admin see the Pending banner, chip and count, read-only. |
+| **Added mid-month** | Confirmed when added (as before). |
+
+```mermaid
+stateDiagram-v2
+  [*] --> Pending: 1st of the month (product existed before)
+  [*] --> Confirmed: product added this month
+  Pending --> Confirmed: stock count saved (Enter / Same as opening / Receive-Issue sheet)
+  Confirmed --> Confirmed: count again later (new adjustment)
+  Confirmed --> Pending: next 1st of the month
+```
+
+The fast screen (**Enter balances**) lists the products that were pending when it opened, with the opening, an input, **Same as opening** and the result; **Enter** saves the row (one small request, under 400 ms) and moves the cursor to the next product. Rows stay in place after saving, so focus never jumps.
+
+<table>
+  <tr>
+    <td align="center" width="30%"><img src="screens/phone-pending.png" alt="Phone: the blue box says 360 products need balance, 0 of 360 confirmed; stock value is 0 because nothing is counted yet (fake data)" width="200"><br><sub>Phone: products need balance</sub></td>
+    <td align="center" width="70%"><img src="screens/desktop-month-balance.png" alt="Desktop: the fast balance screen with an input and Same as opening on every row, 8 of 360 confirmed (fake data)" width="560"><br><sub>The fast balance screen</sub></td>
+  </tr>
+</table>
+
+**Dry run before the 1st** (read-only, prints counts only): `node scripts/inventory/rollover-dry-run.mjs --as-of 2026-12-01` shows which months the rollover would close, into which table, and how many products would start the month pending.
 
 ## Receive and issue
 
@@ -169,6 +209,8 @@ Party search's data is computed in SQL (`inv_party_index`) and loaded in the bac
 | Ranges | This week · This month · Previous month · All · Custom (IST) | same | same |
 
 - **Figures:** Opening is the balance before the start date. Received and Issued are the sums inside the range. Closing is the balance at the end date.
+- **Adjustment (0031):** when any row has a stock count adjustment in the range, an **Adjustment** column appears, so Opening + Adjustment + Received − Issued = Closing on every row. A product still pending in the current month prints **Pending** (no closing value) and the summary says *"Confirmed: N of M"*.
+- **Text stays text:** every text cell is written as a string (Excel inline strings, never a formula), so a value starting with = + − @ can never run.
 - **Totals:** they come from the same summary function as the screen, so they always agree.
 - **File name:** `NR Industries Product Specification DD-MM-YYYY to DD-MM-YYYY`.
 - **Server-side:** the files are made on the server (no package was added for Word or Excel).
@@ -204,7 +246,9 @@ Every target is met at 350 products. At 3,500 products a PDF of every product ta
 ```mermaid
 erDiagram
   inv_products ||--o{ inv_transactions : "ledger"
+  inv_products ||--o{ inv_stock_counts : "month-start counts (0031)"
   inv_products ||--o{ inv_month_snapshots : "closed months"
+  inv_products ||--o{ inv_month_snapshots2 : "closed months from Dec 2026"
   inv_products ||--o{ inv_product_log : "detail changes"
   inv_columns ||..o{ inv_products : "custom values (jsonb)"
   inv_products {
@@ -233,9 +277,19 @@ erDiagram
     text rating
     text no_of_jobs
   }
+  inv_stock_counts {
+    bigint id
+    date month
+    date entry_date "IST"
+    numeric counted ">= 0"
+    numeric balance_before
+    numeric adjustment "generated: counted - balance_before"
+    text source "app | import"
+    text idempotency_key "unique"
+  }
 ```
 
-Migrations: `0027` (the `inventory` role), `0028` (the module), `0029` (compact page read, indexes), `0030` (details, minimum stock, Party search). Every one is additive and idempotent; the functions a migration replaced stay in place and keep working (new behaviour gets a new function name).
+Migrations: `0027` (the `inventory` role), `0028` (the module), `0029` (compact page read, indexes), `0030` (details, minimum stock, Party search), `0031` (month-start balance: stock counts, `inv_rollover2`, `inv_page3`, `inv_range_report2`). Every one is additive and idempotent; the functions a migration replaced stay in place and keep working (new behaviour gets a new function name). `supabase/scripts/0031_verify.sql` is a read-only check to run after 0031.
 
 ## Setup
 
@@ -251,7 +305,7 @@ Environment variable **names** (values live in `.env.local`, which is gitignored
 | `INVENTORY_ENV_FILE` | the scripts, to use another env file |
 | `INVENTORY_BACKUP_DIR` | the backup script's folder (default `D:\NR-Backups\inventory`) |
 
-1. Apply the migrations in order (`0027` → `0030`) to the database, after checking them. They only add objects.
+1. Apply the migrations in order (`0027` → `0031`) to the database, after checking them. They only add objects.
 2. Create the inventory account: `node scripts/inventory/create-account.mjs`.
 3. Import the product list: run `node scripts/inventory/import-docx.mjs` (a dry run that prints counts and issues only), then add `--apply`.
 
@@ -259,7 +313,7 @@ More in [`scripts/inventory/README.md`](../../scripts/inventory/README.md).
 
 ## Backup
 
-`node scripts/inventory/backup.mjs` copies all 7 `inv_` tables to `D:\NR-Backups\inventory` (JSON + an additive restore `.sql` + checksums). It only reads, prints only counts, and refuses a folder inside the repository. How to run it and how to restore: [BACKUP.md](BACKUP.md).
+`node scripts/inventory/backup.mjs` copies all 7 `inv_` tables (plus the 4 tables of 0031 once they exist) to `D:\NR-Backups\inventory` (JSON + an additive restore `.sql` + checksums). It only reads, prints only counts, and refuses a folder inside the repository. How to run it and how to restore: [BACKUP.md](BACKUP.md).
 
 ## Security
 
@@ -277,9 +331,11 @@ More in [`scripts/inventory/README.md`](../../scripts/inventory/README.md).
 | `tests/inventory.test.mjs` (`npm test`) | exact quantities and money, ledger rules, month rollover and gaps, reversal, double submit, search, ranges, low-stock boundaries, party matching (fast on 3,500 products) |
 | `tests/permissions.test.mjs` | the role matrix in code |
 | `tests/sql/*.test.mjs` | every migration on a real Postgres 17 (PGlite): the role matrix in RLS and functions, append-only guards, the ledger rules, field validation, the old functions still working, reversal copying details, the party index, the compact page equal to the full one, and a backup restored into an empty database giving the same ledger and balances |
+| `tests/sql/inventory-month.sql.test.mjs` | 0031 with a fake clock: the 1 December rollover equal to the old one, double run, a gap of several months, pending → confirmed, count + entry atomic, the adjustment identity in every range, the old functions still working (and still unable to over-issue), the role matrix, backup + restore of the new tables, the dry run against the real rollover |
+| `tests/inventory-exports.test.mjs` | the export rows and the Excel / Word files: the identity, the Adjustment column only when needed, Pending, text never a formula |
 
 ```sh
-npm test        # all of the above: 58 tests, about 10 s; CI runs it on every pull request
+npm test        # all of the above: 74 tests, about 15 s; CI runs it on every pull request
 ```
 
 Browser checks (role matrix on every page, the flows, layout at 360 / 390 / 768 / 1024 / 1440 px, exports through the Android app's bridge) run locally against a fake Supabase that applies every migration, so RLS is the real thing.

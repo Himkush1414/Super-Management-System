@@ -1,8 +1,8 @@
 # How the inventory works, in plain words
 
-A short explanation to give the client. It covers three ideas: the
-**ledger**, the **month rollover** and the **low-stock alert**. All numbers
-are made up.
+A short explanation to give the client. It covers four ideas: the
+**ledger**, the **month rollover**, the **month-start balance** and the
+**low-stock alert**. All numbers are made up.
 
 ---
 
@@ -18,9 +18,12 @@ The system works the same way.
   by an admin. The database itself refuses it, whatever screen or tool is used.
 - A mistake is fixed the way an accountant does it: a **reversal**, a new line
   that cancels the wrong one. Both lines stay, so the history always shows what happened.
-- The balance is **never typed**. It is always calculated from the lines:
+- The balance is **never typed over**. It is always calculated from the lines:
 
-> **Balance = Opening + Received − Issued**
+> **Balance = Opening + Received − Issued** (until November 2026)
+>
+> **Balance = Opening + Adjustment + Received − Issued** (from December 2026: the
+> Adjustment comes from the store's month-start count, section 3)
 
 ### Example: product ZZ-005 in November
 
@@ -59,8 +62,46 @@ flowchart LR
 - If nobody opens the module for a while, say three months, all three months are closed in order
   the next time someone opens it, each one starting from the previous month's closing.
 - Admins can pick any closed month and see its figures. Exports for any dates work the same way.
+- Months up to November 2026 are closed exactly as before. From December 2026 each closed month
+  also keeps its **Adjustment** and whether each balance was counted.
 
-## 3. Low-stock alert: knowing when to reorder
+## 3. Month-start balance: counting the shelf on the 1st
+
+From **1 December 2026**, the store counts every product at the start of each month and types
+what is really on the shelf. The difference with the books becomes an **Adjustment** line.
+
+```mermaid
+flowchart LR
+  A["1 Dec: Opening 40<br/>(November's closing, locked)"] --> P["Pending"]
+  P -->|"store counts 38"| C["Stock count line<br/>adjustment −2"]
+  C --> B["Balance 38"]
+  B -->|"issue 5"| D["Balance 33"]
+```
+
+- On the 1st, the **Opening** is still last month's closing and is **locked**.
+- Every active product is **Pending** until its balance is entered. The screen says
+  *"N products need balance"* and *"120 of 287 confirmed"*; Balance shows **Pending**.
+- The count is saved as a new **Stock count** line (never an overwrite):
+  **adjustment = counted − opening**, with who saved it and when. Equal numbers give an adjustment of 0.
+- Counting again later in the month adds **another** stock count line with its own adjustment.
+- A **Pending** balance is never shown as if it were real: it is left out of the stock value,
+  the out-of-stock count and the low-stock alert, and exports print **Pending**.
+- Receiving or issuing a Pending product first asks for the counted balance; both are saved together.
+- Products added during the month are confirmed when they are added.
+- You still **can't issue more than you have**, now counting the adjustment too.
+
+### Example: product ZZ-005 in December
+
+| Date | Line | Qty | Balance after |
+|---|---|---:|---:|
+| 1 Dec | Opening (November's closing) | | 40 |
+| 1 Dec | **Stock count**: counted 38 | −2 | 38 |
+| 4 Dec | Issued for job J-12 | −5 | 33 |
+| 10 Dec | Received from Beta Sample Supplies | +10 | 43 |
+
+December: Opening 40, Adjustment −2, Received 10, Issued 5, **Balance 43** (40 − 2 + 10 − 5).
+
+## 4. Low-stock alert: knowing when to reorder
 
 - The store sets a **minimum stock** for each product that matters (for example: keep at least 30 of ZZ-005).
   Products without a minimum never raise an alert.
@@ -80,6 +121,7 @@ flowchart LR
 - When an issue would take a product below its minimum, the store person gets a **warning before
   confirming**. It is a warning, not a block: production may need the material now.
 - The alert **follows the live balance**: once enough stock is received, it disappears by itself.
+- A product whose month-start balance is still **Pending** never raises the alert: its balance isn't known yet.
 - Admins see the same alert and list (read-only) and a **Low stock** card on their screen.
 
 ## Who can do what
@@ -88,6 +130,7 @@ flowchart LR
 |---|:---:|:---:|:---:|
 | See stock, history, alerts, Party search | ✅ | ✅ read-only | — |
 | Receive, issue, reverse | ✅ | — | — |
+| Enter month-start balances (stock count) | ✅ | sees the Pending count, read-only | — |
 | Products, minimums, settings | ✅ | — | — |
 | Exports (PDF, Word, Excel) | ✅ | ✅ | — |
 | Trends, top 10 issued, past months | — | ✅ | — |

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { perf } from "@/lib/perf";
-import { checkQty, parsePaise, parseQty, paiseToText, qtyToText } from "@/lib/inventory/numbers";
+import { MAX_QTY, checkQty, parsePaise, parseQty, paiseToText, qtyToText } from "@/lib/inventory/numbers";
 import { getInventoryHistory } from "@/lib/inventory/data";
 import type { InvHistory, InvWriteResult } from "@/lib/inventory/types";
 
@@ -18,8 +18,13 @@ import type { InvHistory, InvWriteResult } from "@/lib/inventory/types";
 
 export type ActionResult =
   /** id: the new ledger entry's id (receive / issue / reverse) or the new product's id */
-  | { ok: true; message?: string; balanceAfter?: string; id?: string | number; belowMin?: boolean; minStock?: string | null; changed?: number }
-  | { ok: false; error: string; balance?: string };
+  | {
+      ok: true; message?: string; balanceAfter?: string; id?: string | number; belowMin?: boolean; minStock?: string | null; changed?: number;
+      /** 0031: the stock count saved (alone, or first in the same save as an entry) */
+      countId?: number; adjustment?: string;
+    }
+  /** pending: the product's balance must be counted first this month (0031) */
+  | { ok: false; error: string; balance?: string; pending?: boolean };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KEY = /^[A-Za-z0-9:_-]{8,120}$/;
@@ -33,15 +38,19 @@ async function manager() {
 
 function asResult(r: InvWriteResult | null, ok: string): ActionResult {
   if (!r) return { ok: false, error: FAILED };
+  const x = r as InvWriteResult & { below_min?: boolean; min_stock?: string | null; changed?: number | boolean; count_id?: number; adjustment?: string };
   if (r.status === "ok") {
-    const x = r as InvWriteResult & { below_min?: boolean; min_stock?: string | null; changed?: number | boolean };
-    return { ok: true, message: ok, balanceAfter: r.balance_after, id: r.id, belowMin: x.below_min, minStock: x.min_stock ?? null, changed: typeof x.changed === "number" ? x.changed : undefined };
+    return {
+      ok: true, message: ok, balanceAfter: r.balance_after, id: r.id ?? x.count_id, belowMin: x.below_min, minStock: x.min_stock ?? null,
+      changed: typeof x.changed === "number" ? x.changed : undefined,
+      countId: typeof x.count_id === "number" ? x.count_id : undefined, adjustment: x.adjustment,
+    };
   }
   // the same request again (double tap, retried network): it was saved once
   if (r.status === "duplicate" && r.balance_after !== undefined) {
-    return { ok: true, message: "Already saved.", balanceAfter: r.balance_after, id: r.id };
+    return { ok: true, message: "Already saved.", balanceAfter: r.balance_after, id: r.id ?? x.count_id, countId: x.count_id };
   }
-  return { ok: false, error: r.message ?? FAILED, balance: r.balance };
+  return { ok: false, error: r.message ?? FAILED, balance: r.balance ?? (r as { opening?: string }).opening, pending: r.status === "pending" || undefined };
 }
 
 /**
@@ -89,7 +98,39 @@ export type EntryDetails = {
 
 const txt = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) || null : null);
 
-/** Receive or issue stock. `key` is made once per entry, so a retry or a double tap records once. */
+/** A counted balance typed by the user: 0 or more, at most 3 decimals, within range. */
+function checkCounted(text: string): { ok: true; value: string } | { ok: false; message: string } {
+  const t = String(text ?? "").trim();
+  if (!t) return { ok: false, message: "Enter the balance you counted." };
+  const v = parseQty(t);
+  if (v === null) return { ok: false, message: "Enter a number, like 12 or 2.5 (at most 3 decimals)." };
+  if (v < BigInt(0)) return { ok: false, message: "The balance can't be below 0." };
+  if (v >= MAX_QTY) return { ok: false, message: "That balance is too large." };
+  return { ok: true, value: qtyToText(v) };
+}
+
+/**
+ * Record the balance the store person counted (0031): a "Stock count"
+ * ledger entry with adjustment = counted − the balance before. Nothing is
+ * overwritten; counting again later adds a new adjustment. `key` is made
+ * once per count, so a double tap or a retry records once.
+ */
+export async function recordStockCount(input: { productId: string; counted: string; key: string; note?: string }): Promise<ActionResult> {
+  if (!UUID.test(input.productId) || !KEY.test(input.key)) return { ok: false, error: "Product not found." };
+  const c = checkCounted(input.counted);
+  if (!c.ok) return { ok: false, error: c.message };
+  return ledgerWrite("inv_record_stock_count", {
+    p_product_id: input.productId,
+    p_counted: c.value,
+    p_note: String(input.note ?? "").trim().slice(0, 300) || null,
+    p_idempotency_key: input.key,
+  }, "Balance saved.");
+}
+
+/**
+ * Receive or issue stock. `key` is made once per entry, so a retry or a double tap records once.
+ * `count`: for a product pending this month, the balance counted first, saved in the same transaction (0031).
+ */
 export async function recordEntry(input: {
   productId: string;
   kind: "receive" | "issue";
@@ -98,8 +139,16 @@ export async function recordEntry(input: {
   note: string;
   key: string;
   details?: EntryDetails;
+  count?: { counted: string; key: string };
 }): Promise<ActionResult> {
   if (!UUID.test(input.productId) || !KEY.test(input.key)) return { ok: false, error: "Product not found." };
+  let count: { value: string; key: string } | null = null;
+  if (input.count) {
+    if (!KEY.test(input.count.key)) return { ok: false, error: "Please try again." };
+    const c = checkCounted(input.count.counted);
+    if (!c.ok) return { ok: false, error: c.message };
+    count = { value: c.value, key: input.count.key };
+  }
   if (input.kind !== "receive" && input.kind !== "issue") return { ok: false, error: "Choose Receive or Issue." };
   const q = checkQty(input.qty);
   if (!q.ok) return { ok: false, error: q.message };
@@ -109,7 +158,8 @@ export async function recordEntry(input: {
   const billDate = receive && typeof d.billDate === "string" && d.billDate ? d.billDate : null;
   if (billDate && !DAY.test(billDate)) return { ok: false, error: "Choose a real bill date." };
   // only the details that belong to this kind are sent; the database checks again
-  return ledgerWrite("inv_record_entry", {
+  // inv_record_entry2 (0031): the balance counts stock counts; a pending product is counted first
+  return ledgerWrite("inv_record_entry2", {
     p_product_id: input.productId,
     p_kind: input.kind,
     p_qty: qtyToText(q.qty),
@@ -123,6 +173,8 @@ export async function recordEntry(input: {
     p_job_no: receive ? null : txt(d.jobNo, 60),
     p_rating: receive ? null : txt(d.rating, 60),
     p_no_of_jobs: receive ? null : txt(d.noOfJobs, 20),
+    p_count: count?.value ?? null,
+    p_count_key: count?.key ?? null,
   }, receive ? "Receipt saved." : "Issue saved.");
 }
 
@@ -131,8 +183,8 @@ export async function reverseEntry(input: { entryId: number; note: string; key: 
   if (!Number.isSafeInteger(input.entryId) || input.entryId <= 0 || !KEY.test(input.key)) {
     return { ok: false, error: "Entry not found." };
   }
-  // inv_reverse_entry (0030): the reversal carries the original's details
-  return ledgerWrite("inv_reverse_entry", {
+  // inv_reverse_entry2 (0031): the reversal carries the original's details; the balance counts stock counts
+  return ledgerWrite("inv_reverse_entry2", {
     p_transaction_id: input.entryId,
     p_note: input.note.trim().slice(0, 300) || null,
     p_idempotency_key: input.key,

@@ -125,15 +125,22 @@ export function checkQty(text: string): { ok: true; qty: Milli } | { ok: false; 
 /**
  * The summary cards' figures — ONE definition, used by the screen and by
  * the exports' totals, so the two always agree:
- *   products / zero stock / stock value: active products only
+ *   products / zero stock / stock value: active products only; zero stock
+ *   and stock value leave out products whose balance is still pending
+ *   (0031), so an unconfirmed balance is never counted as real
  *   received / issued (+ their value at each product's rate): every product
  */
-export function summarize(rows: Array<{ is_active: boolean; r: Milli; i: Milli; b: Milli; ratePaise: Paise | null }>) {
+export function summarize(rows: Array<{ is_active: boolean; r: Milli; i: Milli; b: Milli; ratePaise: Paise | null; pending?: boolean }>) {
   const active = rows.filter((x) => x.is_active);
+  // a pending product's balance isn't counted yet: never in the stock value or zero count
+  const confirmed = active.filter((x) => !x.pending);
   return {
     products: active.length,
-    zero: active.filter((x) => x.b === ZERO).length,
-    value: sum(active.map((x) => valueOf(x.b, x.ratePaise))),
+    /** active products whose balance is confirmed this month (= products when nothing is pending) */
+    confirmed: confirmed.length,
+    pending: active.length - confirmed.length,
+    zero: confirmed.filter((x) => x.b === ZERO).length,
+    value: sum(confirmed.map((x) => valueOf(x.b, x.ratePaise))),
     received: sum(rows.map((x) => x.r)),
     receivedValue: sum(rows.map((x) => valueOf(x.r, x.ratePaise))),
     issued: sum(rows.map((x) => x.i)),

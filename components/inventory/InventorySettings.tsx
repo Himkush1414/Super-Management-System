@@ -1,7 +1,8 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { Lock, ArrowUp, ArrowDown, Eye, EyeOff, Archive, ArchiveRestore, Plus, Check } from "lucide-react";
+import Link from "next/link";
+import { Lock, ArrowUp, ArrowDown, Eye, EyeOff, Archive, ArchiveRestore, Plus, Check, FileUp } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { addColumn, reorderColumns, saveInventorySettings, setColumnArchived, updateColumn } from "@/lib/inventory/actions";
 import type { ColumnType, InvColumn, InvSettings } from "@/lib/inventory/types";
@@ -25,10 +26,27 @@ export function InventorySettings(props: { settings: InvSettings; columns: InvCo
       </div>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)] lg:items-start">
         <PersonCard settings={props.settings} />
+        <ImportCard />
         <ColumnsCard columns={props.columns} />
         <MinStockCard products={props.products} />
       </div>
     </ToastProvider>
+  );
+}
+
+/** "Import from document": balances and new products from a PDF, Word, Excel or CSV file. */
+function ImportCard() {
+  return (
+    <Card title="Import from document" description="Read balances and new products from a PDF (with text), Word, Excel or CSV file. It is read on this device only and never uploaded.">
+      <Link
+        href="/dashboard/inventory-import"
+        className="nr-interactive inline-flex h-11 items-center gap-2 rounded-lg bg-[var(--accent-solid)] px-4 text-[14px] font-medium text-white md:h-10"
+        data-inv-import-link
+      >
+        <FileUp size={15} /> Import from document
+      </Link>
+      <p className="mt-3 text-[12.5px] text-text-tertiary">You see a preview first; nothing changes until you confirm. Scans and photos can&apos;t be read.</p>
+    </Card>
   );
 }
 

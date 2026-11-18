@@ -19,6 +19,7 @@ const CRUMB_LABELS: Record<string, string> = {
   inventory: "Inventory",
   "inventory-settings": "Inventory settings",
   "inventory-archive": "Archive",
+  "inventory-import": "Import from document",
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i;

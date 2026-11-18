@@ -267,7 +267,7 @@ function InventoryInner({ data, canManage, showAnalytics }: Props) {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[14px] font-semibold text-text">
-              {pendingCount} {pendingCount === 1 ? "product needs" : "products need"} balance
+              {pendingCount.toLocaleString("en-IN")} {pendingCount === 1 ? "product needs" : "products need"} balance
             </span>
             <span className="tnum block text-[12.5px] text-text-secondary">
               {(active - pendingCount).toLocaleString("en-IN")} of {active.toLocaleString("en-IN")} confirmed for {monthLabel(data.current_month)}.{" "}

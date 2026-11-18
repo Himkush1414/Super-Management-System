@@ -118,14 +118,18 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- The Archive tab: every archived product with its archived date, its last
--- balance and whether it has history. SECURITY INVOKER: RLS applies.
+-- balance and whether it has history. SECURITY INVOKER: RLS applies. It
+-- closes ended months first (inv_rollover2, like the main page), so a
+-- product that lived through an ended month always has its snapshot, and
+-- with it history.
 create or replace function public.inv_archive_list()
 returns jsonb
-language plpgsql stable security invoker set search_path = public as $$
+language plpgsql volatile security invoker set search_path = public as $$
 begin
   if not public.inv_can_view() then
     raise exception 'not permitted' using errcode = '42501';
   end if;
+  perform public.inv_rollover2();
   return jsonb_build_object(
     'fields', jsonb_build_array('id', 'serial_no', 'description', 'specification', 'archived_at', 'balance', 'has_history', 'entries'),
     'rows', (select coalesce(jsonb_agg(jsonb_build_array(
@@ -197,6 +201,9 @@ begin
   if not public.inv_can_manage() then
     raise exception 'not permitted' using errcode = '42501';
   end if;
+  -- close any ended month first: a product that existed in it gets its
+  -- snapshot (history), so a closed month's figures never lose a product
+  perform public.inv_rollover2();
   -- shared ledger lock: no rollover snapshot can appear meanwhile
   perform public.inv_ledger_lock(false);
   select * into v_p from public.inv_products where id = p_product_id for update;

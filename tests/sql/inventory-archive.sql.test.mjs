@@ -199,3 +199,19 @@ test("supabase/scripts/0032_verify.sql: every check is ok right after the migrat
   assert.ok(rows.length >= 8);
   for (const r of rows) assert.equal(r.ok, true, r.check);
 });
+
+test("delete: a product that lived through an ended month is history even before anyone opened the new month", async () => {
+  const { db, ids } = await setup();
+  await setToday(db, "2026-11-17");
+  const p = await add(db, ids, "ZZ-821", "3");
+  await archive(db, ids, p);
+  await setToday(db, "2026-12-02"); // nobody has opened Inventory in December yet
+  assert.equal(await count(db, `select count(*)::int n from public.inv_month_snapshots`), 0);
+  // the delete closes November first: the product has a November snapshot, so it stays
+  assert.equal((await del(db, ids, p, "ZZ-821")).status, "has_history");
+  assert.equal(await count(db, `select count(*)::int n from public.inv_month_snapshots where product_id = $1`, [p]), 1);
+  assert.equal(rowsOf(await list(db, ids.admin))["ZZ-821"].has_history, true);
+  // November's figures still include it
+  const nov = await as(db, ids.admin, (tx) => rpc(tx, "inv_page3", { p_month: "2026-11-01", p_analytics: false }));
+  assert.ok(nov.rows.some((r) => r[1] === "ZZ-821"));
+});
